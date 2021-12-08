@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <key attr.name="originFileName" attr.type="string" for="edge" id="originfile">
+    <default>../../../benchexec-test/sv-benchmarks-svcomp21/c/pthread/queue_ok.i</default>
+  </key>
+  <key attr.name="invariant" attr.type="string" for="node" id="invariant"/>
+  <key attr.name="invariant.scope" attr.type="string" for="node" id="invariant.scope"/>
+  <key attr.name="namedValue" attr.type="string" for="node" id="named"/>
+  <key attr.name="nodeType" attr.type="string" for="node" id="nodetype">
+    <default>path</default>
+  </key>
+  <key attr.name="isFrontierNode" attr.type="boolean" for="node" id="frontier">
+    <default>false</default>
+  </key>
+  <key attr.name="isViolationNode" attr.type="boolean" for="node" id="violation">
+    <default>false</default>
+  </key>
+  <key attr.name="isEntryNode" attr.type="boolean" for="node" id="entry">
+    <default>false</default>
+  </key>
+  <key attr.name="isSinkNode" attr.type="boolean" for="node" id="sink">
+    <default>false</default>
+  </key>
+  <key attr.name="enterLoopHead" attr.type="boolean" for="edge" id="enterLoopHead">
+    <default>false</default>
+  </key>
+  <key attr.name="violatedProperty" attr.type="string" for="node" id="violatedProperty"/>
+  <key attr.name="threadId" attr.type="string" for="edge" id="threadId"/>
+  <key attr.name="sourcecodeLanguage" attr.type="string" for="graph" id="sourcecodelang"/>
+  <key attr.name="programFile" attr.type="string" for="graph" id="programfile"/>
+  <key attr.name="programHash" attr.type="string" for="graph" id="programhash"/>
+  <key attr.name="specification" attr.type="string" for="graph" id="specification"/>
+  <key attr.name="architecture" attr.type="string" for="graph" id="architecture"/>
+  <key attr.name="producer" attr.type="string" for="graph" id="producer"/>
+  <key attr.name="sourcecode" attr.type="string" for="edge" id="sourcecode"/>
+  <key attr.name="startline" attr.type="int" for="edge" id="startline"/>
+  <key attr.name="startoffset" attr.type="int" for="edge" id="startoffset"/>
+  <key attr.name="lineColSet" attr.type="string" for="edge" id="lineCols"/>
+  <key attr.name="control" attr.type="string" for="edge" id="control"/>
+  <key attr.name="assumption" attr.type="string" for="edge" id="assumption"/>
+  <key attr.name="assumption.resultfunction" attr.type="string" for="edge" id="assumption.resultfunction"/>
+  <key attr.name="assumption.scope" attr.type="string" for="edge" id="assumption.scope"/>
+  <key attr.name="enterFunction" attr.type="string" for="edge" id="enterFunction"/>
+  <key attr.name="returnFromFunction" attr.type="string" for="edge" id="returnFrom"/>
+  <key attr.name="predecessor" attr.type="string" for="edge" id="predecessor"/>
+  <key attr.name="successor" attr.type="string" for="edge" id="successor"/>
+  <key attr.name="witness-type" attr.type="string" for="graph" id="witness-type"/>
+  <graph edgedefault="directed">
+    <data key="witness-type">violation_witness</data>
+    <data key="sourcecodelang">C</data>
+    <data key="producer">Yogar-CBMC 1.0</data>
+    <data key="specification">CHECK( init(main()), LTL(G ! call(__VERIFIER_error())) )</data>
+    <data key="programfile">../../../benchexec-test/sv-benchmarks-svcomp21/c/pthread/queue_ok.i</data>
+    <data key="programhash">184097deaf27348269e5300e321c1d490b60fdd3</data>
+    <data key="architecture">32bit</data>
+    <node id="sink"/>
+    <node id="N1">
+      <data key="entry">true</data>
+    </node>
+    <node id="N2"/>
+    <edge source="N1" target="N2">
+      <data key="threadId">0</data>
+      <data key="startline">947</data>
+    </edge>
+    <node id="N3"/>
+    <edge source="N2" target="N3">
+      <data key="threadId">0</data>
+      <data key="startline">949</data>
+    </edge>
+    <node id="N4"/>
+    <edge source="N3" target="N4">
+      <data key="threadId">0</data>
+      <data key="startline">950</data>
+    </edge>
+    <node id="N5"/>
+    <edge source="N4" target="N5">
+      <data key="threadId">0</data>
+      <data key="startline">950</data>
+    </edge>
+    <node id="N6"/>
+    <edge source="N5" target="N6">
+      <data key="threadId">0</data>
+      <data key="startline">951</data>
+    </edge>
+    <node id="N7"/>
+    <edge source="N6" target="N7">
+      <data key="threadId">0</data>
+      <data key="startline">1042</data>
+      <data key="enterFunction">main</data>
+    </edge>
+    <node id="N8"/>
+    <edge source="N7" target="N8">
+      <data key="threadId">0</data>
+      <data key="startline">1045</data>
+    </edge>
+    <node id="N9"/>
+    <edge source="N8" target="N9">
+      <data key="threadId">0</data>
+      <data key="startline">1046</data>
+    </edge>
+    <node id="N10"/>
+    <edge source="N9" target="N10">
+      <data key="threadId">0</data>
+      <data key="startline">1047</data>
+      <data key="enterFunction">init</data>
+    </edge>
+    <node id="N11"/>
+    <edge source="N10" target="N11">
+      <data key="threadId">0</data>
+      <data key="startline">954</data>
+    </edge>
+    <node id="N12"/>
+    <edge source="N11" target="N12">
+      <data key="threadId">0</data>
+      <data key="startline">955</data>
+    </edge>
+    <node id="N13"/>
+    <edge source="N12" target="N13">
+      <data key="threadId">0</data>
+      <data key="startline">956</data>
+    </edge>
+    <node id="N14"/>
+    <edge source="N13" target="N14">
+      <data key="threadId">0</data>
+      <data key="startline">1048</data>
+      <data key="enterFunction">empty</data>
+    </edge>
+    <node id="N15"/>
+    <edge source="N14" target="N15">
+      <data key="threadId">0</data>
+      <data key="startline">1052</data>
+      <data key="createThread">1</data>
+    </edge>
+    <node id="N16"/>
+    <edge source="N15" target="N16">
+      <data key="threadId">0</data>
+      <data key="startline">1053</data>
+      <data key="createThread">2</data>
+    </edge>
+    <node id="N17"/>
+    <edge source="N16" target="N17">
+      <data key="threadId">1</data>
+      <data key="startline">1014</data>
+      <data key="enterFunction">enqueue</data>
+    </edge>
+    <node id="N18"/>
+    <edge source="N17" target="N18">
+      <data key="threadId">1</data>
+      <data key="startline">980</data>
+    </edge>
+    <node id="N19"/>
+    <edge source="N18" target="N19">
+      <data key="threadId">1</data>
+      <data key="startline">980</data>
+    </edge>
+    <node id="N20"/>
+    <edge source="N19" target="N20">
+      <data key="threadId">1</data>
+      <data key="startline">981</data>
+    </edge>
+    <node id="N21"/>
+    <edge source="N20" target="N21">
+      <data key="threadId">1</data>
+      <data key="startline">981</data>
+    </edge>
+    <node id="N22"/>
+    <edge source="N21" target="N22">
+      <data key="threadId">1</data>
+      <data key="startline">988</data>
+    </edge>
+    <node id="N23"/>
+    <edge source="N22" target="N23">
+      <data key="threadId">1</data>
+      <data key="startline">988</data>
+    </edge>
+    <node id="N24"/>
+    <edge source="N23" target="N24">
+      <data key="threadId">1</data>
+      <data key="startline">1015</data>
+    </edge>
+    <node id="N25"/>
+    <edge source="N24" target="N25">
+      <data key="threadId">1</data>
+      <data key="startline">1015</data>
+    </edge>
+    <node id="N26">
+      <data key="violation">true</data>
+    </node>
+    <edge source="N25" target="N26">
+      <data key="threadId">1</data>
+      <data key="startline">1014</data>
+      <data key="enterFunction">enqueue</data>
+    </edge>
+  </graph>
+</graphml>
