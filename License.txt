@@ -1,4 +1,4 @@
-Copyright (c) 2021-2031, Fei He, Zhihang Sun, and Hongyu Fan
+Copyright (c) 2021-2026, Fei He, Zhihang Sun, and Hongyu Fan
 		School of Software, Tsinghua University
 
    Deagle is licensed under GPLv3. See COPYING.
