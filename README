@@ -2,7 +2,7 @@
 
 Deagle is an SMT-based concurrent program verification tool. It is built on top of CBMC (front-end) and MiniSAT (back-end). The basic idea of Deagle is to integrate into the SAT solver an ordering consistency theory that handles ordering relations over shared variable accesses in the program. The front-end encodes the input program into an extended Boolean formula that contains ordering constraints. The back-end is reinforced with a solver for the ordering consistency theory. Additionally, Deagle transplants some features from Yogar-CBMC for availability, including preprocessing and counterexample generation.
 
-Please refer to https://github.com/Misasasa/Deagle for our source code.
+Please refer to https://github.com/thufv/Deagle for our source code.
 
 # Compile
 
