@@ -6,18 +6,22 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_TYPECHECK_H
-#define CPROVER_TYPECHECK_H
 
-#include "message_stream.h"
+#ifndef CPROVER_UTIL_TYPECHECK_H
+#define CPROVER_UTIL_TYPECHECK_H
 
-class typecheckt:public message_streamt
+#include "message.h"
+
+class typecheckt:public messaget
 {
 public:
-  typecheckt(message_handlert &_message_handler):
-    message_streamt(_message_handler) { }
+  explicit typecheckt(message_handlert &_message_handler):
+    messaget(_message_handler)
+  {
+  }
+
   virtual ~typecheckt() { }
-  
+
 protected:
   // main function -- overload this one
   virtual void typecheck()=0;
@@ -27,4 +31,4 @@ public:
   virtual bool typecheck_main();
 };
 
-#endif
+#endif // CPROVER_UTIL_TYPECHECK_H

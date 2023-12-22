@@ -2,128 +2,300 @@
 
 #undef abs
 
-inline int abs(int i) { return __CPROVER_abs(i); }
+int abs(int i)
+{
+  return __CPROVER_abs(i);
+}
 
 /* FUNCTION: labs */
 
 #undef labs
 
-inline long int labs(long int i) { return __CPROVER_labs(i); }
+long int labs(long int i)
+{
+  return __CPROVER_labs(i);
+}
+
+/* FUNCTION: llabs */
+
+#undef llabs
+
+long long int llabs(long long int i)
+{
+  return __CPROVER_llabs(i);
+}
+
+/* FUNCTION: __builtin_abs */
+
+int __builtin_abs(int i)
+{
+  return __CPROVER_abs(i);
+}
+
+/* FUNCTION: __builtin_labs */
+
+long int __builtin_labs(long int i)
+{
+  return __CPROVER_labs(i);
+}
+
+/* FUNCTION: __builtin_llabs */
+
+long long int __builtin_llabs(long long int i)
+{
+  return __CPROVER_llabs(i);
+}
 
 /* FUNCTION: exit */
 
 #undef exit
 
-inline void exit(int status)
+void exit(int status)
 {
   (void)status;
   __CPROVER_assume(0);
+#ifdef LIBRARY_CHECK
+  __builtin_unreachable();
+#endif
 }
 
 /* FUNCTION: _Exit */
 
 #undef _Exit
 
-inline void _Exit(int status)
+void _Exit(int status)
 {
   (void)status;
   __CPROVER_assume(0);
+#ifdef LIBRARY_CHECK
+  __builtin_unreachable();
+#endif
 }
 
 /* FUNCTION: abort */
 
 #undef abort
 
-inline void abort(void)
+void abort(void)
 {
   __CPROVER_assume(0);
+#ifdef LIBRARY_CHECK
+  __builtin_unreachable();
+#endif
 }
 
 /* FUNCTION: calloc */
 
 #undef calloc
-#undef malloc
 
-inline void *malloc(__CPROVER_size_t malloc_size);
+__CPROVER_bool __VERIFIER_nondet___CPROVER_bool();
+#ifndef __GNUC__
+_Bool __builtin_mul_overflow();
+#endif
 
-inline void *calloc(__CPROVER_size_t nmemb, __CPROVER_size_t size)
+void *calloc(__CPROVER_size_t nmemb, __CPROVER_size_t size)
 {
-  __CPROVER_HIDE:;
-  __CPROVER_size_t total_size=nmemb*size;
-  void *res;
-  res=malloc(total_size);
-  #ifdef __CPROVER_STRING_ABSTRACTION
-  __CPROVER_is_zero_string(res)=1;
-  __CPROVER_zero_string_length(res)=0;
-  //for(int i=0; i<nmemb*size; i++) res[i]=0;
-  #else
-  // there should be memset here
-  //char *p=res;
-  //for(int i=0; i<total_size; i++) p[i]=0;
-  #endif
-  return res;
+__CPROVER_HIDE:;
+  __CPROVER_size_t alloc_size;
+  if(__builtin_mul_overflow(nmemb, size, &alloc_size))
+    return (void *)0;
+
+  if(__CPROVER_malloc_failure_mode == __CPROVER_malloc_failure_mode_return_null)
+  {
+    __CPROVER_bool should_malloc_fail = __VERIFIER_nondet___CPROVER_bool();
+    if(
+      alloc_size > __CPROVER_max_malloc_size ||
+      (__CPROVER_malloc_may_fail && should_malloc_fail))
+    {
+      return (void *)0;
+    }
+  }
+  else if(
+    __CPROVER_malloc_failure_mode ==
+    __CPROVER_malloc_failure_mode_assert_then_assume)
+  {
+    // __CPROVER_assert(
+    //   alloc_size <= __CPROVER_max_malloc_size, "max allocation size exceeded");
+    __CPROVER_assume(alloc_size <= __CPROVER_max_malloc_size);
+
+    __CPROVER_bool should_malloc_fail = __VERIFIER_nondet___CPROVER_bool();
+    // __CPROVER_assert(
+    //   !__CPROVER_malloc_may_fail || !should_malloc_fail,
+    //   "max allocation may fail");
+    __CPROVER_assume(!__CPROVER_malloc_may_fail || !should_malloc_fail);
+  }
+
+  void *malloc_res;
+  // realistically, calloc may return NULL,
+  // and __CPROVER_allocate doesn't, but no one cares
+  malloc_res = __CPROVER_allocate(alloc_size, 1);
+
+  // make sure it's not recorded as deallocated
+  __CPROVER_deallocated =
+    (malloc_res == __CPROVER_deallocated) ? 0 : __CPROVER_deallocated;
+
+  // record the object size for non-determistic bounds checking
+  __CPROVER_bool record_malloc = __VERIFIER_nondet___CPROVER_bool();
+  __CPROVER_malloc_is_new_array =
+    record_malloc ? 0 : __CPROVER_malloc_is_new_array;
+
+  // detect memory leaks
+  __CPROVER_bool record_may_leak = __VERIFIER_nondet___CPROVER_bool();
+  __CPROVER_memory_leak = record_may_leak ? malloc_res : __CPROVER_memory_leak;
+
+#ifdef __CPROVER_STRING_ABSTRACTION
+  __CPROVER_assume(__CPROVER_buffer_size(malloc_res) == alloc_size);
+  __CPROVER_is_zero_string(malloc_res) = 1;
+  __CPROVER_zero_string_length(malloc_res) = 0;
+#endif
+
+  return malloc_res;
 }
 
 /* FUNCTION: malloc */
 
 #undef malloc
 
+__CPROVER_bool __VERIFIER_nondet___CPROVER_bool();
+
+// malloc is marked "inline" for the benefit of goto-analyzer. Really,
+// goto-analyzer should take care of inlining as needed.
 inline void *malloc(__CPROVER_size_t malloc_size)
 {
-  // realistically, malloc may return NULL,
-  // and __CPROVER_malloc doesn't, but no one cares
+// realistically, malloc may return NULL,
+// but we only do so if `--malloc-may-fail` is set
+__CPROVER_HIDE:;
+
+  if(__CPROVER_malloc_failure_mode == __CPROVER_malloc_failure_mode_return_null)
+  {
+    __CPROVER_bool should_malloc_fail = __VERIFIER_nondet___CPROVER_bool();
+    if(
+      malloc_size > __CPROVER_max_malloc_size ||
+      (__CPROVER_malloc_may_fail && should_malloc_fail))
+    {
+      return (void *)0;
+    }
+  }
+  else if(
+    __CPROVER_malloc_failure_mode ==
+    __CPROVER_malloc_failure_mode_assert_then_assume)
+  {
+    // __CPROVER_assert(
+    //   malloc_size <= __CPROVER_max_malloc_size, "max allocation size exceeded");
+    // __CPROVER_assume(malloc_size <= __CPROVER_max_malloc_size);
+
+    __CPROVER_bool should_malloc_fail = __VERIFIER_nondet___CPROVER_bool();
+    // __CPROVER_assert(
+    //   !__CPROVER_malloc_may_fail || !should_malloc_fail,
+    //   "max allocation may fail");
+    __CPROVER_assume(!__CPROVER_malloc_may_fail || !should_malloc_fail);
+  }
+
+  void *malloc_res;
+  malloc_res = __CPROVER_allocate(malloc_size, 0);
+
+  // make sure it's not recorded as deallocated
+  __CPROVER_deallocated =
+    (malloc_res == __CPROVER_deallocated) ? 0 : __CPROVER_deallocated;
+
+  // record the object size for non-determistic bounds checking
+  __CPROVER_bool record_malloc = __VERIFIER_nondet___CPROVER_bool();
+  __CPROVER_malloc_is_new_array =
+    record_malloc ? 0 : __CPROVER_malloc_is_new_array;
+
+  // detect memory leaks
+  __CPROVER_bool record_may_leak = __VERIFIER_nondet___CPROVER_bool();
+  __CPROVER_memory_leak = record_may_leak ? malloc_res : __CPROVER_memory_leak;
+
+#ifdef __CPROVER_STRING_ABSTRACTION
+  __CPROVER_assume(__CPROVER_buffer_size(malloc_res) == malloc_size);
+#endif
+
+  return malloc_res;
+}
+
+/* FUNCTION: __builtin_alloca */
+
+__CPROVER_bool __VERIFIER_nondet___CPROVER_bool();
+extern void *__CPROVER_alloca_object;
+
+void *__builtin_alloca(__CPROVER_size_t alloca_size)
+{
   __CPROVER_HIDE:;
   void *res;
-  res=__CPROVER_malloc(malloc_size);
+  res = __CPROVER_allocate(alloca_size, 0);
 
   // make sure it's not recorded as deallocated
   __CPROVER_deallocated=(res==__CPROVER_deallocated)?0:__CPROVER_deallocated;
-  
+
   // record the object size for non-determistic bounds checking
-  _Bool record_malloc;
-  __CPROVER_malloc_object=record_malloc?res:__CPROVER_malloc_object;
-  __CPROVER_malloc_size=record_malloc?malloc_size:__CPROVER_malloc_size;
+  __CPROVER_bool record_malloc=__VERIFIER_nondet___CPROVER_bool();
   __CPROVER_malloc_is_new_array=record_malloc?0:__CPROVER_malloc_is_new_array;
-  
-  // detect memory leaks
-  _Bool record_may_leak;
-  __CPROVER_memory_leak=record_may_leak?res:__CPROVER_memory_leak;
+
+  // record alloca to detect invalid free
+  __CPROVER_bool record_alloca = __VERIFIER_nondet___CPROVER_bool();
+  __CPROVER_alloca_object = record_alloca ? res : __CPROVER_alloca_object;
+
+#ifdef __CPROVER_STRING_ABSTRACTION
+  __CPROVER_assume(__CPROVER_buffer_size(res) == alloca_size);
+#endif
 
   return res;
+}
+
+/* FUNCTION: alloca */
+
+#undef alloca
+
+void *__builtin_alloca(__CPROVER_size_t alloca_size);
+
+void *alloca(__CPROVER_size_t alloca_size)
+{
+__CPROVER_HIDE:;
+  return __builtin_alloca(alloca_size);
 }
 
 /* FUNCTION: free */
 
 #undef free
 
-inline void free(void *ptr)
+__CPROVER_bool __VERIFIER_nondet___CPROVER_bool();
+extern void *__CPROVER_alloca_object;
+
+void free(void *ptr)
 {
   __CPROVER_HIDE:;
   // If ptr is NULL, no operation is performed.
+  // __CPROVER_precondition(
+  //   ptr == 0 || __CPROVER_r_ok(ptr, 0),
+  //   "free argument must be NULL or valid pointer");
+  // __CPROVER_precondition(ptr==0 || __CPROVER_DYNAMIC_OBJECT(ptr),
+  //                        "free argument must be dynamic object");
+  // __CPROVER_precondition(ptr==0 || __CPROVER_POINTER_OFFSET(ptr)==0,
+  //                        "free argument has offset zero");
+
+  // catch double free
+  // __CPROVER_precondition(ptr==0 || __CPROVER_deallocated!=ptr,
+  //                        "double free");
+
+  // catch people who try to use free(...) for stuff
+  // allocated with new[]
+  // __CPROVER_precondition(
+  //   ptr == 0 || __CPROVER_new_object != ptr || !__CPROVER_malloc_is_new_array,
+  //   "free called for new[] object");
+
+  // catch people who try to use free(...) with alloca
+  // __CPROVER_precondition(
+  //   ptr == 0 || __CPROVER_alloca_object != ptr,
+  //   "free called for stack-allocated object");
+
   if(ptr!=0)
   {
-    // is it dynamic?
-    __CPROVER_assert(__CPROVER_DYNAMIC_OBJECT(ptr),
-                     "free argument is dynamic object");
-    __CPROVER_assert(__CPROVER_POINTER_OFFSET(ptr)==0,
-                     "free argument has offset zero");
-
-    // catch double free
-    if(__CPROVER_deallocated==ptr)
-      __CPROVER_assert(0, "double free");
-      
-    // catch people who try to use free(...) for stuff
-    // allocated with new[]
-    __CPROVER_assert(__CPROVER_malloc_object!=ptr ||
-                     !__CPROVER_malloc_is_new_array,
-                     "free called for new[] object");
-    
-    // non-deterministically record as deallocated
-    _Bool record;
-    if(record) __CPROVER_deallocated=ptr;
+    __CPROVER_deallocate(ptr);
 
     // detect memory leaks
-    if(__CPROVER_memory_leak==ptr) __CPROVER_memory_leak=0;
+    if(__CPROVER_memory_leak==ptr)
+      __CPROVER_memory_leak=0;
   }
 }
 
@@ -146,11 +318,16 @@ inline void free(void *ptr)
 int isspace(int);
 int isdigit(int);
 
-inline long strtol(const char *nptr, char **endptr, int base)
+#ifndef __GNUC__
+_Bool __builtin_add_overflow();
+_Bool __builtin_mul_overflow();
+#endif
+
+long strtol(const char *nptr, char **endptr, int base)
 {
   __CPROVER_HIDE:;
   #ifdef __CPROVER_STRING_ABSTRACTION
-  __CPROVER_assert(__CPROVER_is_zero_string(nptr),
+  __CPROVER_precondition(__CPROVER_is_zero_string(nptr),
     "zero-termination of argument of strtol");
   #endif
 
@@ -206,9 +383,8 @@ inline long strtol(const char *nptr, char **endptr, int base)
       break;
 
     in_number=1;
-    long res_before=res;
-    res=res*base+ch-sub;
-    if(res<res_before)
+    _Bool overflow = __builtin_mul_overflow(res, (long)base, &res);
+    if(overflow || __builtin_add_overflow(res, (long)(ch - sub), &res))
     {
       errno=ERANGE;
       if(sign=='-')
@@ -234,7 +410,7 @@ inline long strtol(const char *nptr, char **endptr, int base)
 
 long strtol(const char *nptr, char **endptr, int base);
 
-inline int atoi(const char *nptr)
+int atoi(const char *nptr)
 {
   __CPROVER_HIDE:;
   return (int)strtol(nptr, (char **)0, 10);
@@ -247,7 +423,7 @@ inline int atoi(const char *nptr)
 
 long strtol(const char *nptr, char **endptr, int base);
 
-inline long atol(const char *nptr)
+long atol(const char *nptr)
 {
   __CPROVER_HIDE:;
   return strtol(nptr, (char **)0, 10);
@@ -257,41 +433,66 @@ inline long atol(const char *nptr)
 
 #undef getenv
 
-inline char *getenv(const char *name)
+#ifndef __CPROVER_STDDEF_H_INCLUDED
+#  include <stddef.h>
+#  define __CPROVER_STDDEF_H_INCLUDED
+#endif
+
+__CPROVER_bool __VERIFIER_nondet___CPROVER_bool();
+ptrdiff_t __VERIFIER_nondet_ptrdiff_t();
+
+char *getenv(const char *name)
 {
   __CPROVER_HIDE:;
 
   (void)*name;
   #ifdef __CPROVER_STRING_ABSTRACTION
-  __CPROVER_assert(__CPROVER_is_zero_string(name),
+  __CPROVER_precondition(__CPROVER_is_zero_string(name),
     "zero-termination of argument of getenv");
   #endif
 
-  _Bool found;
+#ifdef __CPROVER_CUSTOM_BITVECTOR_ANALYSIS
+  __CPROVER_event("invalidate_pointer", "getenv_result");
+  char *getenv_result;
+  __CPROVER_set_must(getenv_result, "getenv_result");
+  return getenv_result;
+
+#else
+
+  __CPROVER_bool found=__VERIFIER_nondet___CPROVER_bool();
   if(!found) return 0;
 
-  char *buffer;
-  __CPROVER_size_t buf_size;
+  ptrdiff_t buf_size = __VERIFIER_nondet_ptrdiff_t();
 
-  __CPROVER_assume(buf_size>=1);
-  buffer=(char *)__CPROVER_malloc(buf_size);
+  // It's reasonable to assume this won't exceed the signed
+  // range in practice, but in principle, this could exceed
+  // the range.
+
+  __CPROVER_assume(buf_size >= 1);
+  char *buffer = (char *)__CPROVER_allocate(buf_size * sizeof(char), 0);
   buffer[buf_size-1]=0;
 
-  // detect memory leaks
-  _Bool record_may_leak;
-  __CPROVER_memory_leak=record_may_leak?buffer:__CPROVER_memory_leak;
+#  ifdef __CPROVER_STRING_ABSTRACTION
+  __CPROVER_assume(__CPROVER_buffer_size(buffer) == buf_size);
+  __CPROVER_is_zero_string(buffer) = 1;
+  __CPROVER_zero_string_length(buffer) = buf_size - 1;
+#  endif
 
   return buffer;
+#endif
 }
 
 /* FUNCTION: realloc */
 
-inline void *malloc(__CPROVER_size_t malloc_size);
-inline void free(void *ptr);
+void *malloc(__CPROVER_size_t malloc_size);
+void free(void *ptr);
 
-inline void *realloc(void *ptr, __CPROVER_size_t malloc_size)
+void *realloc(void *ptr, __CPROVER_size_t malloc_size)
 {
   __CPROVER_HIDE:;
+
+  __CPROVER_precondition(ptr==0 || __CPROVER_DYNAMIC_OBJECT(ptr),
+                         "realloc argument is dynamic object");
 
   // if ptr is NULL, this behaves like malloc
   if(ptr==0)
@@ -305,39 +506,117 @@ inline void *realloc(void *ptr, __CPROVER_size_t malloc_size)
     return malloc(1);
   }
 
-  __CPROVER_assert(__CPROVER_DYNAMIC_OBJECT(ptr),
-                   "realloc argument is dynamic object");
-
   // this shouldn't move if the new size isn't bigger
   void *res;
   res=malloc(malloc_size);
-  __CPROVER_array_copy(res, ptr);
-  free(ptr);
+  if(res != (void *)0)
+  {
+    __CPROVER_array_copy(res, ptr);
+    free(ptr);
+  }
 
   return res;
 }
 
 /* FUNCTION: valloc */
 
-inline void *malloc(__CPROVER_size_t malloc_size);
+void *malloc(__CPROVER_size_t malloc_size);
 
-inline void *valloc(__CPROVER_size_t malloc_size)
+void *valloc(__CPROVER_size_t malloc_size)
 {
   // The allocated memory is aligned on a page
   // boundary, which we don't model.
-     
+
   __CPROVER_HIDE:;
   return malloc(malloc_size);
 }
 
+/* FUNCTION: posix_memalign */
+
+#ifndef __CPROVER_ERRNO_H_INCLUDED
+#include <errno.h>
+#define __CPROVER_ERRNO_H_INCLUDED
+#endif
+
+#undef posix_memalign
+
+void *malloc(__CPROVER_size_t malloc_size);
+int posix_memalign(
+  void **ptr,
+  __CPROVER_size_t alignment,
+  __CPROVER_size_t size)
+{
+__CPROVER_HIDE:;
+
+  __CPROVER_size_t multiplier = alignment / sizeof(void *);
+  // Modeling the posix_memalign checks on alignment.
+  if(
+    alignment % sizeof(void *) != 0 || ((multiplier) & (multiplier - 1)) != 0 ||
+    alignment == 0)
+  {
+    return EINVAL;
+  }
+  // The address of the allocated memory is supposed to be aligned with
+  // alignment. As cbmc doesn't model address alignment,
+  // assuming MALLOC_ALIGNMENT = MAX_INT_VALUE seems fair.
+  // As _mid_memalign simplifies for alignment <= MALLOC_ALIGNMENT
+  // to a malloc call, it should be sound, if we do it too.
+
+  void *tmp = malloc(size);
+  if(tmp != (void *)0)
+  {
+    *ptr = tmp;
+    return 0;
+  }
+  return ENOMEM;
+}
+
 /* FUNCTION: random */
+
+long __VERIFIER_nondet_long();
 
 long random(void)
 {
   // We return a non-deterministic value instead of a random one.
   __CPROVER_HIDE:;
-  long result;
+  long result=__VERIFIER_nondet_long();
   __CPROVER_assume(result>=0 && result<=2147483647);
   return result;
 }
 
+/* FUNCTION: rand */
+
+int __VERIFIER_nondet_int();
+
+int rand(void)
+{
+__CPROVER_HIDE:;
+  // We return a non-deterministic value instead of a random one.
+  int result = __VERIFIER_nondet_int();
+  __CPROVER_assume(result >= 0);
+  return result;
+}
+
+/* FUNCTION: rand_r */
+
+int __VERIFIER_nondet_int();
+
+int rand_r(unsigned int *seed)
+{
+__CPROVER_HIDE:;
+  // We return a non-deterministic value instead of a random one.
+  (void)*seed;
+  int result = __VERIFIER_nondet_int();
+  __CPROVER_assume(result >= 0);
+  return result;
+}
+
+/* FUNCTION: __CPROVER_deallocate */
+
+__CPROVER_bool __VERIFIER_nondet___CPROVER_bool();
+
+void __CPROVER_deallocate(void *ptr)
+{
+  if(__VERIFIER_nondet___CPROVER_bool())
+    __CPROVER_deallocated = ptr;
+}

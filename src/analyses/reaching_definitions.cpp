@@ -9,351 +9,449 @@ Date: February 2013
 
 \*******************************************************************/
 
-#include <limits>
-#include <algorithm>
-
-#include <util/std_code.h>
-#include <util/std_expr.h>
-#include <util/pointer_offset_size.h>
-#include <util/byte_operators.h>
-#include <util/arith_tools.h>
+/// \file
+/// Range-based reaching definitions analysis (following Field- Sensitive
+///   Program Dependence Analysis, Litvak et al., FSE 2010)
 
 #include "reaching_definitions.h"
 
-/*******************************************************************\
+#include <memory>
 
-Function: rd_range_domaint::transform
+#include <util/base_exceptions.h>
+#include <util/make_unique.h>
+#include <util/pointer_offset_size.h>
 
-  Inputs:
+#include <pointer-analysis/value_set_analysis_fi.h>
 
- Outputs:
+#include "is_threaded.h"
+#include "dirty.h"
 
- Purpose:
+/// This ensures that all domains are constructed with the appropriate pointer
+/// back to the analysis engine itself.  Using a factory is a tad verbose
+/// but it works well with the ait infrastructure.
+class rd_range_domain_factoryt : public ai_domain_factoryt<rd_range_domaint>
+{
+public:
+  rd_range_domain_factoryt(
+    sparse_bitvector_analysist<reaching_definitiont> *_bv_container)
+    : bv_container(_bv_container)
+  {
+    PRECONDITION(bv_container != nullptr);
+  }
 
-\*******************************************************************/
+  std::unique_ptr<statet> make(locationt) const override
+  {
+    auto p = util_make_unique<rd_range_domaint>(bv_container);
+    CHECK_RETURN(p->is_bottom());
+    return std::unique_ptr<statet>(p.release());
+  }
+
+private:
+  sparse_bitvector_analysist<reaching_definitiont> *const bv_container;
+};
+
+reaching_definitions_analysist::reaching_definitions_analysist(
+  const namespacet &_ns)
+  : concurrency_aware_ait<rd_range_domaint>(
+      util_make_unique<rd_range_domain_factoryt>(this)),
+    ns(_ns)
+{
+}
+
+reaching_definitions_analysist::~reaching_definitions_analysist()=default;
+
+/// Given the passed variable name `identifier` it collects data from
+/// `bv_container` for each `ID` in `values[identifier]` and stores them into
+/// `export_cache[identifier]`. Namely, for each `reaching_definitiont` instance
+/// `rd` obtained from `bv_container` it associates `rd.definition_at` with the
+/// bit-range `(rd.bit_begin, rd.bit_end)`.
+///
+/// This function is only used to fill in the cache `export_cache` for the
+/// `output` method.
+void rd_range_domaint::populate_cache(const irep_idt &identifier) const
+{
+  assert(bv_container);
+
+  valuest::const_iterator v_entry=values.find(identifier);
+  if(v_entry==values.end() ||
+     v_entry->second.empty())
+    return;
+
+  ranges_at_loct &export_entry=export_cache[identifier];
+
+  for(const auto &id : v_entry->second)
+  {
+    const reaching_definitiont &v=bv_container->get(id);
+
+    export_entry[v.definition_at].insert(
+      std::make_pair(v.bit_begin, v.bit_end));
+  }
+}
 
 void rd_range_domaint::transform(
-  const namespacet &ns,
-  locationt from,
-  locationt to)
+  const irep_idt &function_from,
+  trace_ptrt trace_from,
+  const irep_idt &function_to,
+  trace_ptrt trace_to,
+  ai_baset &ai,
+  const namespacet &ns)
 {
+  locationt from{trace_from->current_location()};
+  locationt to{trace_to->current_location()};
+
+  reaching_definitions_analysist *rd=
+    dynamic_cast<reaching_definitions_analysist*>(&ai);
+  INVARIANT_STRUCTURED(
+    rd!=nullptr,
+    bad_cast_exceptiont,
+    "ai has type reaching_definitions_analysist");
+
+  assert(bv_container);
+
+  // kill values
   if(from->is_dead())
+    transform_dead(ns, from);
+  // kill thread-local values
+  else if(from->is_start_thread())
+    transform_start_thread(ns, *rd);
+  // do argument-to-parameter assignments
+  else if(from->is_function_call())
+    transform_function_call(ns, function_from, from, function_to, *rd);
+  // cleanup parameters
+  else if(from->is_end_function())
+    transform_end_function(ns, function_from, from, function_to, to, *rd);
+  // lhs assignments
+  else if(from->is_assign())
+    transform_assign(ns, from, function_from, from, *rd);
+  // initial (non-deterministic) value
+  else if(from->is_decl())
+    transform_assign(ns, from, function_from, from, *rd);
+  // array_set, array_copy, array_replace have side effects
+  else if(from->is_other())
+    transform_assign(ns, from, function_from, from, *rd);
+}
+
+/// Computes an instance obtained from a `*this` by transformation over `DEAD v`
+/// GOTO instruction. The operation simply removes `v` from `this->values`.
+void rd_range_domaint::transform_dead(
+  const namespacet &,
+  locationt from)
+{
+  const irep_idt &identifier = from->dead_symbol().get_identifier();
+
+  valuest::iterator entry=values.find(identifier);
+
+  if(entry!=values.end())
   {
-    const symbol_exprt &symbol=
-      to_symbol_expr(to_code_dead(from->code).symbol());
-    values.erase(symbol.get_identifier());
-    return;
-  }
-  else if(!from->is_assign())
-    return;
-
-  const exprt &lhs=to_code_assign(from->code).lhs();
-
-  if(lhs.id()==ID_complex_real ||
-          lhs.id()==ID_complex_imag)
-  {
-    assert(lhs.type().id()==ID_complex);
-    mp_integer offset=compute_pointer_offset(ns, lhs.op0());
-    mp_integer sub_size=pointer_offset_size(ns, lhs.type().subtype());
-
-    assign(
-      ns,
-      from,
-      lhs.op0(),
-      offset+((offset==-1 || lhs.id()==ID_complex_real) ? 0 : sub_size),
-      sub_size);
-  }
-  else
-  {
-    mp_integer size=pointer_offset_size(ns, lhs.type());
-
-    assign(ns, from, lhs, size);
+    values.erase(entry);
+    export_cache.erase(identifier);
   }
 }
 
-/*******************************************************************\
-
-Function: rd_range_domaint::assign
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rd_range_domaint::assign(
+void rd_range_domaint::transform_start_thread(
   const namespacet &ns,
-  locationt from,
-  const exprt &lhs,
-  const mp_integer &size)
+  reaching_definitions_analysist &rd)
 {
-  if(lhs.id()==ID_typecast)
-    assign(ns, from, to_typecast_expr(lhs).op(), size);
-  else if(lhs.id()==ID_if)
-    assign_if(ns, from, to_if_expr(lhs), size);
-  else if(lhs.id()==ID_dereference)
-    assign_dereference(ns, from, to_dereference_expr(lhs), size);
-  else if(lhs.id()==ID_byte_extract_little_endian ||
-          lhs.id()==ID_byte_extract_big_endian)
-    assign_byte_extract(ns, from, to_byte_extract_expr(lhs), size);
-  else if(lhs.id()==ID_symbol ||
-          lhs.id()==ID_index ||
-          lhs.id()==ID_member)
-    assign(ns, from, lhs, compute_pointer_offset(ns, lhs), size);
-  else
-    throw "assignment to `"+lhs.id_string()+"' not handled";
-}
-
-/*******************************************************************\
-
-Function: rd_range_domaint::assign_if
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rd_range_domaint::assign_if(
-  const namespacet &ns,
-  locationt from,
-  const if_exprt &if_expr,
-  const mp_integer &size)
-{
-  if(if_expr.cond().is_false())
-    assign(ns, from, if_expr.false_case(), size);
-  else if(if_expr.cond().is_true())
-    assign(ns, from, if_expr.true_case(), size);
-  else
+  for(valuest::iterator it=values.begin();
+      it!=values.end();
+      ) // no ++it
   {
-    rd_range_domaint false_case(*this);
-    assign(ns, from, if_expr.false_case(), size);
-    values.swap(false_case.values);
-    assign(ns, from, if_expr.true_case(), size);
+    const irep_idt &identifier=it->first;
 
-    merge(false_case, from);
-  }
-}
-
-/*******************************************************************\
-
-Function: rd_range_domaint::assign_dereference
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rd_range_domaint::assign_dereference(
-  const namespacet &ns,
-  locationt from,
-  const dereference_exprt &deref,
-  const mp_integer &size)
-{
-  assert(local_may_alias);
-
-  const exprt &pointer=deref.pointer();
-  std::set<exprt> alias_set=local_may_alias->get(from, pointer);
-
-  valuest before(values);
-  for(std::set<exprt>::const_iterator it=alias_set.begin();
-      it!=alias_set.end();
-      it++)
-  {
-    if(it->id()!=ID_unknown &&
-       it->id()!=ID_dynamic_object &&
-       it->id()!=ID_null_object)
+    if(!ns.lookup(identifier).is_shared() &&
+       !rd.get_is_dirty()(identifier))
     {
-      valuest bak;
-      bak.swap(values);
+      export_cache.erase(identifier);
 
-      values=before;
-      assign(ns, from, *it, size);
-
-      rd_range_domaint this_object;
-      this_object.values.swap(values);
-      values.swap(bak);
-
-      merge(this_object, from);
-    }
-  }
-}
-
-/*******************************************************************\
-
-Function: rd_range_domaint::assign_byte_extract
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rd_range_domaint::assign_byte_extract(
-  const namespacet &ns,
-  locationt from,
-  const byte_extract_exprt &be,
-  const mp_integer &size)
-{
-  assert(size==1);
-  mp_integer op_offset=compute_pointer_offset(ns, be.op());
-
-  mp_integer index;
-  if(op_offset==-1 || to_integer(be.offset(), index))
-    assign(ns, from, be.op(), -1, 1);
-  else
-  {
-    endianness_mapt map(
-      be.op().type(),
-      be.id()==ID_byte_extract_little_endian,
-      ns);
-    assert(index<std::numeric_limits<unsigned>::max());
-    op_offset+=map.map_byte(integer2long(index));
-    assign(ns, from, be.op(), op_offset, 1);
-  }
-}
-
-/*******************************************************************\
-
-Function: rd_range_domaint::assign
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rd_range_domaint::assign(
-  const namespacet &ns,
-  locationt from,
-  const exprt &lhs,
-  const mp_integer &range_start,
-  const mp_integer &size)
-{
-  if(lhs.id()==ID_member)
-    assign(ns, from, to_member_expr(lhs).struct_op(), range_start, size);
-  else if(lhs.id()==ID_index)
-    assign(ns, from, to_index_expr(lhs).array(), range_start, size);
-  else
-  {
-    const symbol_exprt &symbol=to_symbol_expr(lhs);
-    const irep_idt identifier=symbol.get_identifier();
-
-    if(range_start>=0)
-    {
-      kill(from, identifier, range_start, size);
-      gen(from, identifier, range_start, size);
+      valuest::iterator next=it;
+      ++next;
+      values.erase(it);
+      it=next;
     }
     else
-    {
-      mp_integer full_size=pointer_offset_size(ns, symbol.type());
-      gen(from, identifier, 0, full_size);
-    }
+      ++it;
   }
 }
 
-/*******************************************************************\
+void rd_range_domaint::transform_function_call(
+  const namespacet &ns,
+  const irep_idt &function_from,
+  locationt from,
+  const irep_idt &function_to,
+  reaching_definitions_analysist &rd)
+{
+  // only if there is an actual call, i.e., we have a body
+  const symbol_exprt &fn_symbol_expr = to_symbol_expr(from->call_function());
+  if(function_to == fn_symbol_expr.get_identifier())
+  {
+    for(valuest::iterator it=values.begin();
+        it!=values.end();
+       ) // no ++it
+    {
+      const irep_idt &identifier=it->first;
 
-Function: rd_range_domaint::kill
+      // dereferencing may introduce extra symbols
+      const symbolt *sym;
+      if((ns.lookup(identifier, sym) ||
+          !sym->is_shared()) &&
+         !rd.get_is_dirty()(identifier))
+      {
+        export_cache.erase(identifier);
 
-  Inputs:
+        valuest::iterator next=it;
+        ++next;
+        values.erase(it);
+        it=next;
+      }
+      else
+        ++it;
+    }
 
- Outputs:
+    const code_typet &code_type=
+      to_code_type(ns.lookup(fn_symbol_expr.get_identifier()).type);
 
- Purpose:
+    for(const auto &param : code_type.parameters())
+    {
+      const irep_idt &identifier=param.get_identifier();
 
-\*******************************************************************/
+      if(identifier.empty())
+        continue;
+
+      auto param_bits = pointer_offset_bits(param.type(), ns);
+      if(param_bits.has_value())
+      {
+        gen(
+          from,
+          identifier,
+          range_spect{0},
+          range_spect::to_range_spect(*param_bits));
+      }
+      else
+        gen(from, identifier, range_spect{0}, range_spect::unknown());
+    }
+  }
+  else
+  {
+    // handle return values of undefined functions
+    if(from->call_lhs().is_not_nil())
+      transform_assign(ns, from, function_from, from, rd);
+  }
+}
+
+void rd_range_domaint::transform_end_function(
+  const namespacet &ns,
+  const irep_idt &function_from,
+  locationt from,
+  const irep_idt &function_to,
+  locationt to,
+  reaching_definitions_analysist &rd)
+{
+  locationt call = to;
+  --call;
+
+  valuest new_values;
+  new_values.swap(values);
+  values=rd[call].values;
+
+  for(const auto &new_value : new_values)
+  {
+    const irep_idt &identifier=new_value.first;
+
+    if(!rd.get_is_threaded()(call) ||
+       (!ns.lookup(identifier).is_shared() &&
+        !rd.get_is_dirty()(identifier)))
+    {
+      for(const auto &id : new_value.second)
+      {
+        const reaching_definitiont &v=bv_container->get(id);
+        kill(v.identifier, v.bit_begin, v.bit_end);
+      }
+    }
+
+    for(const auto &id : new_value.second)
+    {
+      const reaching_definitiont &v=bv_container->get(id);
+      gen(v.definition_at, v.identifier, v.bit_begin, v.bit_end);
+    }
+  }
+
+  const code_typet &code_type = to_code_type(ns.lookup(function_from).type);
+
+  for(const auto &param : code_type.parameters())
+  {
+    const irep_idt &identifier=param.get_identifier();
+
+    if(identifier.empty())
+      continue;
+
+    valuest::iterator entry=values.find(identifier);
+
+    if(entry!=values.end())
+    {
+      values.erase(entry);
+      export_cache.erase(identifier);
+    }
+  }
+
+  // handle return values
+  if(call->call_lhs().is_not_nil())
+  {
+    transform_assign(ns, from, function_to, call, rd);
+  }
+}
+
+void rd_range_domaint::transform_assign(
+  const namespacet &ns,
+  locationt from,
+  const irep_idt &function_to,
+  locationt to,
+  reaching_definitions_analysist &rd)
+{
+  rw_range_set_value_sett rw_set(ns, rd.get_value_sets());
+  goto_rw(function_to, to, rw_set);
+  const bool is_must_alias=rw_set.get_w_set().size()==1;
+
+  for(const auto &written_object_entry : rw_set.get_w_set())
+  {
+    const irep_idt &identifier = written_object_entry.first;
+    // ignore symex::invalid_object
+    const symbolt *symbol_ptr;
+    if(ns.lookup(identifier, symbol_ptr))
+      continue;
+    INVARIANT_STRUCTURED(
+      symbol_ptr!=nullptr,
+      nullptr_exceptiont,
+      "Symbol is in symbol table");
+
+    const range_domaint &ranges =
+      rw_set.get_ranges(written_object_entry.second);
+
+    if(is_must_alias &&
+       (!rd.get_is_threaded()(from) ||
+        (!symbol_ptr->is_shared() &&
+         !rd.get_is_dirty()(identifier))))
+      for(const auto &range : ranges)
+        kill(identifier, range.first, range.second);
+
+    for(const auto &range : ranges)
+      gen(from, identifier, range.first, range.second);
+  }
+}
 
 void rd_range_domaint::kill(
-  locationt from,
   const irep_idt &identifier,
-  const mp_integer &range_start,
-  const mp_integer &size)
+  const range_spect &range_start,
+  const range_spect &range_end)
 {
-  assert(range_start>=0);
-  // -1 for objects of infinite/unknown size
-  if(size==-1)
+  PRECONDITION(range_start >= range_spect{0});
+
+  if(range_end.is_unknown())
   {
-    kill_inf(from, identifier, range_start);
+    kill_inf(identifier, range_start);
     return;
   }
 
-  assert(size>0);
-  mp_integer range_end=range_start+size;
+  assert(range_end>range_start);
 
   valuest::iterator entry=values.find(identifier);
   if(entry==values.end())
     return;
 
-  rangest &ranges=entry->second;
+  bool clear_export_cache=false;
+  values_innert new_values;
 
-  for(rangest::iterator it=ranges.begin();
-      it!=ranges.end();
+  for(values_innert::iterator
+      it=entry->second.begin();
+      it!=entry->second.end();
      ) // no ++it
-    if(it->first >= range_end)
-      break;
-    else if(it->second.first!=-1 &&
-            it->second.first <= range_start)
+  {
+    const reaching_definitiont &v=bv_container->get(*it);
+
+    if(v.bit_begin >= range_end)
       ++it;
-    else if(it->first >= range_start &&
-            it->second.first!=-1 &&
-            it->second.first <= range_end) // rs <= a < b <= re
+    else if(!v.bit_end.is_unknown() && v.bit_end <= range_start)
     {
-      ranges.erase(it++);
-    }
-    else if(it->first >= range_start) // rs <= a <= re < b
-    {
-      ranges.insert(std::make_pair(range_end, it->second));
-      ranges.erase(it++);
-    }
-    else if(it->second.first==-1 ||
-            it->second.first >= range_end) // a <= rs < re <= b
-    {
-      ranges.insert(std::make_pair(range_end, it->second));
-      it->second.first=range_start;
       ++it;
     }
-    else // a <= rs < b < re
+    else if(
+      v.bit_begin >= range_start && !v.bit_end.is_unknown() &&
+      v.bit_end <= range_end) // rs <= a < b <= re
     {
-      it->second.first=range_start;
+      clear_export_cache=true;
+
+      entry->second.erase(it++);
+    }
+    else if(v.bit_begin >= range_start) // rs <= a <= re < b
+    {
+      clear_export_cache=true;
+
+      reaching_definitiont v_new=v;
+      v_new.bit_begin=range_end;
+      new_values.insert(bv_container->add(v_new));
+
+      entry->second.erase(it++);
+    }
+    else if(v.bit_end.is_unknown() || v.bit_end > range_end) // a <= rs < re < b
+    {
+      clear_export_cache=true;
+
+      reaching_definitiont v_new=v;
+      v_new.bit_end=range_start;
+
+      reaching_definitiont v_new2=v;
+      v_new2.bit_begin=range_end;
+
+      new_values.insert(bv_container->add(v_new));
+      new_values.insert(bv_container->add(v_new2));
+
+      entry->second.erase(it++);
+    }
+    else // a <= rs < b <= re
+    {
+      clear_export_cache=true;
+
+      reaching_definitiont v_new=v;
+      v_new.bit_end=range_start;
+      new_values.insert(bv_container->add(v_new));
+
+      entry->second.erase(it++);
+    }
+  }
+
+  if(clear_export_cache)
+    export_cache.erase(identifier);
+
+  values_innert::iterator it=entry->second.begin();
+  for(const auto &id : new_values)
+  {
+    while(it!=entry->second.end() && *it<id)
+      ++it;
+    if(it==entry->second.end() || id<*it)
+    {
+      entry->second.insert(it, id);
+    }
+    else if(it!=entry->second.end())
+    {
+      assert(*it==id);
       ++it;
     }
+  }
 }
 
-/*******************************************************************\
-
-Function: rd_range_domaint::kill_inf
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void rd_range_domaint::kill_inf(
-  locationt from,
-  const irep_idt &identifier,
-  const mp_integer &range_start)
+  const irep_idt &,
+  const range_spect &range_start)
 {
-  assert(range_start>=0);
+  PRECONDITION(range_start >= range_spect{0});
 
+#if 0
   valuest::iterator entry=values.find(identifier);
   if(entry==values.end())
     return;
 
+  XXX export_cache_available=false;
+
+  // makes the analysis underapproximating
   rangest &ranges=entry->second;
 
   for(rangest::iterator it=ranges.begin();
@@ -371,36 +469,41 @@ void rd_range_domaint::kill_inf(
       it->second.first=range_start;
       ++it;
     }
+#endif
 }
 
-/*******************************************************************\
-
-Function: rd_range_domaint::gen
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// A utility function which updates internal data structures by inserting a
+/// new reaching definition record, for the variable name `identifier`, written
+/// in given GOTO instruction referenced by `from`, at the range of bits defined
+/// by `range_start` and `range_end`.
 bool rd_range_domaint::gen(
   locationt from,
   const irep_idt &identifier,
-  const mp_integer &range_start,
-  const mp_integer &size)
+  const range_spect &range_start,
+  const range_spect &range_end)
 {
-  assert(range_start>=0);
-  // -1 for objects of infinite/unknown size
-  assert(size>0 || size==-1);
-  mp_integer range_end=size==-1 ? -1 : range_start+size;
+  // objects of size 0 like union U { signed : 0; };
+  if(range_start == range_spect{0} && range_end == range_spect{0})
+    return false;
+
+  PRECONDITION(range_start >= range_spect{0});
+  PRECONDITION(range_end == range_spect::unknown() || range_end > range_start);
+
+  reaching_definitiont v{identifier, from, range_start, range_end};
+  if(!values[identifier].insert(bv_container->add(v)).second)
+    return false;
+
+  export_cache.erase(identifier);
+
+#if 0
+  range_spect merged_range_end=range_end;
 
   std::pair<valuest::iterator, bool> entry=
     values.insert(std::make_pair(identifier, rangest()));
   rangest &ranges=entry.first->second;
 
   if(!entry.second)
+  {
     for(rangest::iterator it=ranges.begin();
         it!=ranges.end();
         ) // no ++it
@@ -412,7 +515,7 @@ bool rd_range_domaint::gen(
       else if(it->first > range_start) // rs < a < b,re
       {
         if(range_end!=-1)
-          range_end=std::max(range_end, it->second.first);
+          merged_range_end=std::max(range_end, it->second.first);
         ranges.erase(it++);
       }
       else if(it->second.first==-1 ||
@@ -428,140 +531,216 @@ bool rd_range_domaint::gen(
         return true;
       }
     }
+  }
 
   ranges.insert(std::make_pair(
       range_start,
-      std::make_pair(range_end, from)));
+      std::make_pair(merged_range_end, from)));
+#endif
 
   return true;
 }
 
-/*******************************************************************\
-
-Function: rd_range_domaint::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rd_range_domaint::output(
-  const namespacet &ns,
-  std::ostream &out) const
+void rd_range_domaint::output(std::ostream &out) const
 {
-  out << "Reaching definitions:" << std::endl;
-  for(valuest::const_iterator
-      it=values.begin();
-      it!=values.end();
-      ++it)
+  out << "Reaching definitions:\n";
+
+  if(has_values.is_known())
   {
-    out << "  " << it->first << "[";
-    for(rangest::const_iterator itr=it->second.begin();
-        itr!=it->second.end();
-        ++itr)
-    {
-      if(itr!=it->second.begin()) out << ";";
-      out << itr->first << ":" << itr->second.first;
-    }
-    out << "]" << std::endl;
+    out << has_values.to_string() << '\n';
+    return;
+  }
+
+  for(const auto &value : values)
+  {
+    const irep_idt &identifier=value.first;
+
+    const ranges_at_loct &ranges=get(identifier);
+
+    out << "  " << identifier << "[";
+
+    for(ranges_at_loct::const_iterator itl=ranges.begin();
+        itl!=ranges.end();
+        ++itl)
+      for(rangest::const_iterator itr=itl->second.begin();
+          itr!=itl->second.end();
+          ++itr)
+      {
+        if(itr!=itl->second.begin() ||
+           itl!=ranges.begin())
+          out << ";";
+
+        out << itr->first << ":" << itr->second;
+        out << "@" << itl->first->location_number;
+      }
+
+    out << "]\n";
+
+    clear_cache(identifier);
   }
 }
 
-/*******************************************************************\
-
-Function: rd_range_domaint::merge
-
-  Inputs:
-
- Outputs: returns true iff there is s.th. new
-
- Purpose:
-
-\*******************************************************************/
-
-bool rd_range_domaint::merge(
-  const rd_range_domaint &other,
-  locationt to)
+/// \return returns true iff there is something new
+bool rd_range_domaint::merge_inner(
+  values_innert &dest,
+  const values_innert &other)
 {
   bool more=false;
 
-  valuest::iterator it=values.begin();
-  for(valuest::const_iterator ito=other.values.begin();
-      ito!=other.values.end();
-      ++ito)
+#if 0
+  ranges_at_loct::iterator itr=it->second.begin();
+  for(const auto &o : ito->second)
   {
-    while(it!=values.end() && it->first<ito->first)
-      ++it;
-    if(it==values.end() || ito->first<it->first)
+    while(itr!=it->second.end() && itr->first<o.first)
+      ++itr;
+    if(itr==it->second.end() || o.first<itr->first)
     {
-      values.insert(*ito);
+      it->second.insert(o);
       more=true;
     }
-    else if(it!=values.end())
+    else if(itr!=it->second.end())
     {
-      assert(it->first==ito->first);
-      const rangest &rangeso=ito->second;
-      for(rangest::const_iterator itro=rangeso.begin();
-          itro!=rangeso.end();
-          ++itro)
-        more|=gen(
-          itro->second.second,
-          ito->first,
-          itro->first,
-          itro->second.first);
-      ++it;
+      assert(itr->first==o.first);
+
+      for(const auto &o_range : o.second)
+        more=gen(itr->second, o_range.first, o_range.second) ||
+          more;
+
+      ++itr;
     }
   }
+#else
+  values_innert::iterator itr=dest.begin();
+  for(const auto &id : other)
+  {
+    while(itr!=dest.end() && *itr<id)
+      ++itr;
+    if(itr==dest.end() || id<*itr)
+    {
+      dest.insert(itr, id);
+      more=true;
+    }
+    else if(itr!=dest.end())
+    {
+      assert(*itr==id);
+      ++itr;
+    }
+  }
+#endif
 
   return more;
 }
 
-/*******************************************************************\
+bool rd_range_domaint::merge(
+  const rd_range_domaint &other,
+  trace_ptrt,
+  trace_ptrt)
+{
+  bool changed=has_values.is_false();
+  has_values=tvt::unknown();
 
-Function: reaching_definitions_analysist::initialize
+  valuest::iterator it=values.begin();
+  for(const auto &value : other.values)
+  {
+    while(it!=values.end() && it->first<value.first)
+      ++it;
+    if(it==values.end() || value.first<it->first)
+    {
+      values.insert(value);
+      changed=true;
+    }
+    else if(it!=values.end())
+    {
+      assert(it->first==value.first);
 
-  Inputs:
+      if(merge_inner(it->second, value.second))
+      {
+        changed=true;
+        export_cache.erase(it->first);
+      }
 
- Outputs:
+      ++it;
+    }
+  }
 
- Purpose:
+  return changed;
+}
 
-\*******************************************************************/
+/// \return returns true iff there is something new
+bool rd_range_domaint::merge_shared(
+  const rd_range_domaint &other,
+  locationt,
+  locationt,
+  const namespacet &ns)
+{
+  // TODO: dirty vars
+#if 0
+  reaching_definitions_analysist *rd=
+    dynamic_cast<reaching_definitions_analysist*>(&ai);
+  assert(rd!=0);
+#endif
+
+  bool changed=has_values.is_false();
+  has_values=tvt::unknown();
+
+  valuest::iterator it=values.begin();
+  for(const auto &value : other.values)
+  {
+    const irep_idt &identifier=value.first;
+
+    if(!ns.lookup(identifier).is_shared()
+       /*&& !rd.get_is_dirty()(identifier)*/)
+      continue;
+
+    while(it!=values.end() && it->first<value.first)
+      ++it;
+    if(it==values.end() || value.first<it->first)
+    {
+      values.insert(value);
+      changed=true;
+    }
+    else if(it!=values.end())
+    {
+      assert(it->first==value.first);
+
+      if(merge_inner(it->second, value.second))
+      {
+        changed=true;
+        export_cache.erase(it->first);
+      }
+
+      ++it;
+    }
+  }
+
+  return changed;
+}
+
+const rd_range_domaint::ranges_at_loct &rd_range_domaint::get(
+  const irep_idt &identifier) const
+{
+  populate_cache(identifier);
+
+  static ranges_at_loct empty;
+
+  export_cachet::const_iterator entry=export_cache.find(identifier);
+
+  if(entry==export_cache.end())
+    return empty;
+  else
+    return entry->second;
+}
 
 void reaching_definitions_analysist::initialize(
   const goto_functionst &goto_functions)
 {
-  forall_goto_functions(f_it, goto_functions)
-  {
-    local_may_aliases.insert(
-      std::make_pair(f_it->first, local_may_aliast(f_it->second)));
-  }
+  auto value_sets_=util_make_unique<value_set_analysis_fit>(ns);
+  (*value_sets_)(goto_functions);
+  value_sets=std::move(value_sets_);
 
-  static_analysist<rd_range_domaint>::initialize(goto_functions);
+  is_threaded=util_make_unique<is_threadedt>(goto_functions);
+
+  is_dirty=util_make_unique<dirtyt>(goto_functions);
+
+  concurrency_aware_ait<rd_range_domaint>::initialize(goto_functions);
 }
-
-/*******************************************************************\
-
-Function: reaching_definitions_analysist::generate_state
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void reaching_definitions_analysist::generate_state(locationt l)
-{
-  static_analysist<rd_range_domaint>::generate_state(l);
-
-  may_aliasest::iterator entry=
-    local_may_aliases.find(l->function);
-  if(entry!=local_may_aliases.end())
-    state_map[l].set_may_alias(&(entry->second));
-}
-

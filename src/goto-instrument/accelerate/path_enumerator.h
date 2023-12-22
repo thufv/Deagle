@@ -1,5 +1,16 @@
-#ifndef PATH_ENUMERATOR_H
-#define PATH_ENUMERATOR_H
+/*******************************************************************\
+
+Module: Loop Acceleration
+
+Author: Matt Lewis
+
+\*******************************************************************/
+
+/// \file
+/// Loop Acceleration
+
+#ifndef CPROVER_GOTO_INSTRUMENT_ACCELERATE_PATH_ENUMERATOR_H
+#define CPROVER_GOTO_INSTRUMENT_ACCELERATE_PATH_ENUMERATOR_H
 
 #include <goto-programs/goto_program.h>
 
@@ -7,12 +18,14 @@
 
 #include "path.h"
 
-class path_enumeratort {
+class path_enumeratort
+{
  public:
-  virtual ~path_enumeratort() {
+  virtual ~path_enumeratort()
+  {
   }
 
   virtual bool next(patht &path) = 0;
 };
 
-#endif // PATH_ENUMERATOR_H
+#endif // CPROVER_GOTO_INSTRUMENT_ACCELERATE_PATH_ENUMERATOR_H

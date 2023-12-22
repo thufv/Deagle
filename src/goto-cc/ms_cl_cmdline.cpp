@@ -6,28 +6,22 @@ Author: Daniel Kroening
 
 \*******************************************************************/
 
-#include <cassert>
-#include <cstring>
-#include <cstdlib>
-#include <iostream>
-#include <fstream>
-
-#include <util/unicode.h>
+/// \file
+/// A special command line object for the CL options
 
 #include "ms_cl_cmdline.h"
 
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::parse
- 
-  Inputs: argument count, argument strings
- 
- Outputs: none
- 
- Purpose: parses the commandline options into a cmdlinet
- 
-\*******************************************************************/
+#include <climits>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
 
+#include <util/unicode.h>
+
+/// parses the command line options into a cmdlinet
+/// \par parameters: argument count, argument strings
+/// \return none
+// clang-format off
 const char *non_ms_cl_options[]=
 {
   "--show-symbol-table",
@@ -44,76 +38,69 @@ const char *non_ms_cl_options[]=
   "--little-endian",
   "--big-endian",
   "--unsigned-char",
-  "--no-arch",            
   "--help",
   "--xml",
   "--partial-inlining",
   "--verbosity",
   "--function",
-  NULL
+  "--validate-goto-model",
+  "--export-file-local-symbols",
+  "--mangle-suffix",
+  nullptr
 };
+// clang-format on
 
-bool ms_cl_cmdlinet::parse(const std::vector<std::string> &options)
+bool ms_cl_cmdlinet::parse(const std::vector<std::string> &arguments)
 {
-  for(unsigned i=0; i<options.size(); i++)
+  for(std::size_t i = 0; i < arguments.size(); i++)
   {
     // is it a non-cl option?
-    if(std::string(options[i], 0, 2)=="--")
+    if(std::string(arguments[i], 0, 2) == "--")
     {
-      process_non_cl_option(options[i]);
+      process_non_cl_option(arguments[i]);
 
-      if(options[i]=="--verbosity" ||
-         options[i]=="--function")
-        if(i<options.size()-1)
+      if(
+        arguments[i] == "--verbosity" || arguments[i] == "--function" ||
+        arguments[i] == "--mangle-suffix")
+      {
+        if(i < arguments.size() - 1)
         {
-          set(options[i], options[i+1]);
+          set(arguments[i], arguments[i + 1]);
           i++; // skip ahead
         }
+      }
     }
-    else if(!options[i].empty() && options[i][0]=='@')
+    else if(!arguments[i].empty() && arguments[i][0] == '@')
     {
       // potentially recursive
-      process_response_file(
-        std::string(options[i], 1, std::string::npos));
+      process_response_file(std::string(arguments[i], 1, std::string::npos));
     }
-    else if(options[i]=="/link" ||
-            options[i]=="-link")
+    else if(arguments[i] == "/link" || arguments[i] == "-link")
     {
       // anything that follows goes to the linker
-      i=options.size()-1;
+      i = arguments.size() - 1;
     }
-    else if(options[i].size()==2 &&
-            (options[i]=="/D" || options[i]=="-D") &&
-            i!=options.size()-1)
+    else if(
+      arguments[i].size() == 2 &&
+      (arguments[i] == "/D" || arguments[i] == "-D") &&
+      i != arguments.size() - 1)
     {
       // this requires special treatment, as you can do "/D something"
-      std::string tmp="/D"+options[i+1];
+      std::string tmp = "/D" + arguments[i + 1];
       i++;
       process_cl_option(tmp);
     }
     else
-      process_cl_option(options[i]);
+      process_cl_option(arguments[i]);
   }
 
   return false;
 }
 
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::parse_env
- 
-  Inputs:
- 
- Outputs: none
- 
- Purpose:
- 
-\*******************************************************************/
-
 void ms_cl_cmdlinet::parse_env()
 {
   // first do environment
-  
+
   #ifdef _WIN32
 
   const wchar_t *CL_env=_wgetenv(L"CL");
@@ -125,48 +112,27 @@ void ms_cl_cmdlinet::parse_env()
 
   const char *CL_env=getenv("CL");
 
-  if(CL_env!=NULL)
+  if(CL_env!=nullptr)
     process_response_file_line(CL_env);
 
-  #endif  
+  #endif
 }
 
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::parse
- 
-  Inputs: argument count, argument strings
- 
- Outputs: none
- 
- Purpose: parses the commandline options into a cmdlinet
- 
-\*******************************************************************/
-
+/// parses the command line options into a cmdlinet
+/// \par parameters: argument count, argument strings
+/// \return none
 bool ms_cl_cmdlinet::parse(int argc, const char **argv)
 {
   // should really use "wide" argv from wmain()
 
-  std::vector<std::string> options;
+  std::vector<std::string> arguments;
 
   // skip argv[0]
   for(int i=1; i<argc; i++)
-    options.push_back(argv[i]);
-  
-  return parse(options);
-}
+    arguments.push_back(argv[i]);
 
-/*******************************************************************\
- 
-Function: my_wgetline
- 
-  Inputs: 
- 
- Outputs:
- 
- Purpose: 
- 
-\*******************************************************************/
+  return parse(arguments);
+}
 
 static std::istream &my_wgetline(std::istream &in, std::wstring &dest)
 {
@@ -179,10 +145,11 @@ static std::istream &my_wgetline(std::istream &in, std::wstring &dest)
     char ch1, ch2;
     in.get(ch1);
     in.get(ch2);
-    
+
     if(!in)
     {
-      if(!dest.empty()) in.clear();
+      if(!dest.empty())
+        in.clear();
       break;
     }
 
@@ -196,32 +163,19 @@ static std::istream &my_wgetline(std::istream &in, std::wstring &dest)
       break; // line end
     }
     else
-      dest+=wchar_t(ch1+(ch2<<8));
+      dest += wchar_t(ch1 + (ch2 << CHAR_BIT));
   }
-        
+
   return in;
 }
 
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::process_response_file
- 
-  Inputs: 
- 
- Outputs: none
- 
- Purpose: 
- 
-\*******************************************************************/
-
 void ms_cl_cmdlinet::process_response_file(const std::string &file)
 {
-  std::ifstream infile(file.c_str());
-  
+  std::ifstream infile(file);
+
   if(!infile)
   {
-    std::cerr << "failed to open response file `"
-              << file << "'" << std::endl;
+    std::cerr << "failed to open response file '" << file << "'\n";
     return;
   }
 
@@ -229,40 +183,40 @@ void ms_cl_cmdlinet::process_response_file(const std::string &file)
   std::string line;
   getline(infile, line);
   if(line.size()>=2 &&
-     line[0]==char(0xff) &&
-     line[1]==char(0xfe))
+     line[0]==static_cast<char>(0xff) &&
+     line[1]==static_cast<char>(0xfe))
   {
     // Unicode, UTF-16 little endian
-    
+
     #if 1
     // Re-open -- should be using wifstream,
     // but this isn't available everywhere.
-    std::ifstream infile2(file.c_str(), std::ios::binary);
+    std::ifstream infile2(file, std::ios::binary);
     infile2.seekg(2);
     std::wstring wline;
-    
+
     while(my_wgetline(infile2, wline))
       process_response_file_line(narrow(wline)); // we UTF-8 it
 
     #else
-    
-    std::wifstream infile2(file.c_str(), std::ios::binary);
+
+    std::wifstream infile2(file, std::ios::binary);
     std::wstring wline;
-    
+
     while(std::getline(infile2, wline))
       process_response_file_line(narrow(wline)); // we UTF-8 it
-    
+
     #endif
   }
   else if(line.size()>=3 &&
-          line[0]==char(0xef) &&
-          line[1]==char(0xbb) &&
-          line[2]==char(0xbf))
+          line[0]==static_cast<char>(0xef) &&
+          line[1]==static_cast<char>(0xbb) &&
+          line[2]==static_cast<char>(0xbf))
   {
     // This is the UTF-8 BOM. We can proceed as usual, since
     // we use UTF-8 internally.
     infile.seekg(3);
-    
+
     while(getline(infile, line))
       process_response_file_line(line);
   }
@@ -275,18 +229,6 @@ void ms_cl_cmdlinet::process_response_file(const std::string &file)
   }
 }
 
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::process_response_file_line
- 
-  Inputs: 
- 
- Outputs: none
- 
- Purpose: 
- 
-\*******************************************************************/
-
 void ms_cl_cmdlinet::process_response_file_line(const std::string &line)
 {
   // In a response file, multiple compiler options and source-code files can
@@ -294,20 +236,22 @@ void ms_cl_cmdlinet::process_response_file_line(const std::string &line)
   // on one line (cannot span multiple lines).  Response files can have
   // comments that begin with the # symbol.
 
-  if(line.empty()) return;
-  if(line[0]=='#') return; // comment
+  if(line.empty())
+    return;
+  if(line[0]=='#')
+    return; // comment
 
-  std::vector<std::string> options;
+  std::vector<std::string> arguments;
   std::string option;
   bool in_quotes=false;
-
-  for(unsigned i=0; i<line.size(); i++)
+  for(std::size_t i=0; i<line.size(); i++)
   {
     char ch=line[i];
-    
+
     if(ch==' ' && !in_quotes)
     {
-      if(!option.empty()) options.push_back(option);
+      if(!option.empty())
+        arguments.push_back(option);
       option.clear();
     }
     else if(ch=='"')
@@ -318,68 +262,30 @@ void ms_cl_cmdlinet::process_response_file_line(const std::string &line)
       option+=ch;
   }
 
-  if(!option.empty()) options.push_back(option);
+  if(!option.empty())
+    arguments.push_back(option);
 
-  parse(options);
+  parse(arguments);
 }
-
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::process_non_cl_option
- 
-  Inputs: 
- 
- Outputs: none
- 
- Purpose: 
- 
-\*******************************************************************/
 
 void ms_cl_cmdlinet::process_non_cl_option(
   const std::string &s)
 {
-  cmdlinet::optiont option;
+  set(s);
 
-  option.isset=true;
-  option.islong=true;
-  option.optstring=std::string(s, 2, std::string::npos);
-  option.optchar=0;
-
-  int optnr=getoptnr(s);
-
-  if(optnr==-1)
-  {
-    options.push_back(option);
-    optnr=options.size()-1;
-  }
-
-  options[optnr].isset=true;
-      
-  for(unsigned j=0; non_ms_cl_options[j]!=NULL; j++)
+  for(unsigned j=0; non_ms_cl_options[j]!=nullptr; j++)
     if(s==non_ms_cl_options[j])
       return;
 
   // unrecognized option
-  std::cout << "Warning: uninterpreted non-CL option `"
-            << s << "'" << std::endl;
+  std::cout << "Warning: uninterpreted non-CL option '" << s << "'\n";
 }
 
-/*******************************************************************\
- 
-Function: ms_cl_cmdlinet::process_cl_option
- 
-  Inputs: 
- 
- Outputs: none
- 
- Purpose: 
- 
-\*******************************************************************/
-
+/// \return none
 const char *ms_cl_flags[]=
 {
   "c", // compile only
-  NULL
+  nullptr
 };
 
 const char *ms_cl_prefixes[]=
@@ -488,21 +394,25 @@ const char *ms_cl_prefixes[]=
   "Y", // - disable all PCH options
   "Zm", // <n> max memory alloc (% of default)
   "Wp64", // enable 64 bit porting warnings
-  "LD", //  Create .DLL
-  "LDd", //  Create .DLL debug library
-  "LN", //  Create a .netmodule
+  "LD", // Create .DLL
+  "LDd", // Create .DLL debug library
+  "LN", // Create a .netmodule
   "F", // <num> set stack size
-  "link", //  [linker options and libraries]
-  "MD", //  link with MSVCRT.LIB
-  "MT", //  link with LIBCMT.LIB
-  "MDd", //  link with MSVCRTD.LIB debug lib
-  "MTd", //  link with LIBCMTD.LIB debug lib
-  NULL
+  "link", // [linker options and libraries]
+  "MD", // link with MSVCRT.LIB
+  "MT", // link with LIBCMT.LIB
+  "MDd", // link with MSVCRTD.LIB debug lib
+  "MTd", // link with LIBCMTD.LIB debug lib
+  "std", // specify C++ language standard
+  "sdl", // Enable Additional Security Checks
+  "diagnostics", // unknown
+  nullptr
 };
 
 void ms_cl_cmdlinet::process_cl_option(const std::string &s)
 {
-  if(s=="") return;
+  if(s.empty())
+    return;
 
   if(s[0]!='/' && s[0]!='-')
   {
@@ -510,17 +420,17 @@ void ms_cl_cmdlinet::process_cl_option(const std::string &s)
     return;
   }
 
-  for(unsigned j=0; ms_cl_flags[j]!=NULL; j++)
+  for(std::size_t j=0; ms_cl_flags[j]!=nullptr; j++)
   {
     if(std::string(s, 1, std::string::npos)==ms_cl_flags[j])
     {
       cmdlinet::optiont option;
-      int optnr;
+      optionalt<std::size_t> optnr;
 
       if(s.size()==2)
       {
         option.islong=false;
-        option.optstring="";
+        option.optstring.clear();
         option.optchar=s[1];
         optnr=getoptnr(option.optchar);
       }
@@ -532,31 +442,31 @@ void ms_cl_cmdlinet::process_cl_option(const std::string &s)
         optnr=getoptnr(option.optstring);
       }
 
-      if(optnr==-1)
+      if(!optnr.has_value())
       {
         options.push_back(option);
         optnr=options.size()-1;
       }
 
-      options[optnr].isset=true;
+      options[*optnr].isset=true;
       return;
     }
   }
-  
-  for(unsigned j=0; ms_cl_prefixes[j]!=NULL; j++)
+
+  for(std::size_t j=0; ms_cl_prefixes[j]!=nullptr; j++)
   {
     std::string ms_cl_prefix=ms_cl_prefixes[j];
 
     if(std::string(s, 1, ms_cl_prefix.size())==ms_cl_prefix)
     {
       cmdlinet::optiont option;
-      
-      int optnr;
+
+      optionalt<std::size_t> optnr;
 
       if(ms_cl_prefix.size()==1)
       {
         option.islong=false;
-        option.optstring="";
+        option.optstring.clear();
         option.optchar=ms_cl_prefix[0];
         optnr=getoptnr(option.optchar);
       }
@@ -568,14 +478,14 @@ void ms_cl_cmdlinet::process_cl_option(const std::string &s)
         optnr=getoptnr(option.optstring);
       }
 
-      if(optnr==-1)
+      if(!optnr.has_value())
       {
         options.push_back(option);
         optnr=options.size()-1;
       }
 
-      options[optnr].isset=true;
-      options[optnr].values.push_back(
+      options[*optnr].isset=true;
+      options[*optnr].values.push_back(
         std::string(s, ms_cl_prefix.size()+1, std::string::npos));
 
       return;
@@ -583,6 +493,5 @@ void ms_cl_cmdlinet::process_cl_option(const std::string &s)
   }
 
   // unrecognized option
-  std::cout << "Warning: uninterpreted CL option `"
-            << s << "'" << std::endl;
+  std::cout << "Warning: uninterpreted CL option '" << s << "'\n";
 }

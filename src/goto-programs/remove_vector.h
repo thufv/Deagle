@@ -8,13 +8,18 @@ Date:   September 2014
 
 \*******************************************************************/
 
+/// \file
+/// Remove the 'vector' data type by compilation into arrays
+
 #ifndef CPROVER_GOTO_PROGRAMS_REMOVE_VECTOR_H
 #define CPROVER_GOTO_PROGRAMS_REMOVE_VECTOR_H
 
-#include <goto-programs/goto_model.h>
+class goto_functionst;
+class goto_modelt;
+class symbol_tablet;
 
 void remove_vector(symbol_tablet &, goto_functionst &);
 
 void remove_vector(goto_modelt &);
 
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_REMOVE_VECTOR_H

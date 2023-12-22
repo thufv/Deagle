@@ -6,42 +6,20 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// ANSI-C Language Type Checking
+
 #include "ansi_c_typecheck.h"
 
-/*******************************************************************\
-
-Function: ansi_c_typecheckt::typecheck
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "ansi_c_parse_tree.h"
 
 void ansi_c_typecheckt::typecheck()
 {
-  for(ansi_c_parse_treet::itemst::iterator
-      it=parse_tree.items.begin();
-      it!=parse_tree.items.end();
-      it++)
-  {
-    typecheck_declaration(*it);
-  }
+  start_typecheck_code();
+
+  for(auto &item : parse_tree.items)
+    typecheck_declaration(item);
 }
-
-/*******************************************************************\
-
-Function: ansi_c_typecheck
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bool ansi_c_typecheck(
   ansi_c_parse_treet &ansi_c_parse_tree,
@@ -54,23 +32,14 @@ bool ansi_c_typecheck(
   return ansi_c_typecheck.typecheck_main();
 }
 
-/*******************************************************************\
-
-Function: ansi_c_typecheck
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool ansi_c_typecheck(
   exprt &expr,
   message_handlert &message_handler,
   const namespacet &ns)
 {
+  const unsigned errors_before=
+    message_handler.get_message_count(messaget::M_ERROR);
+
   symbol_tablet symbol_table;
   ansi_c_parse_treet ansi_c_parse_tree;
 
@@ -90,13 +59,19 @@ bool ansi_c_typecheck(
 
   catch(const char *e)
   {
-    ansi_c_typecheck.error(e);
+    ansi_c_typecheck.error() << e << messaget::eom;
   }
 
   catch(const std::string &e)
   {
-    ansi_c_typecheck.error(e);
+    ansi_c_typecheck.error() << e << messaget::eom;
   }
-  
-  return ansi_c_typecheck.get_error_found();
+
+  catch(const invalid_source_file_exceptiont &e)
+  {
+    ansi_c_typecheck.error().source_location = e.get_source_location();
+    ansi_c_typecheck.error() << e.get_reason() << messaget::eom;
+  }
+
+  return message_handler.get_message_count(messaget::M_ERROR)!=errors_before;
 }

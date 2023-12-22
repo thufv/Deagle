@@ -2,7 +2,7 @@
 
 .PHONY:	r d p sh cr cd cp csh lr ld lp lsh config all install install-headers install-lib\
         install-bin clean distclean
-all:	r lr lsh
+all:	r cr lr lsh closure_oc_r icd_oc_r
 
 ## Load Previous Configuration ####################################################################
 
@@ -51,6 +51,9 @@ mandir      ?= $(datarootdir)/man
 # Target file names
 MINISAT      = minisat#       Name of MiniSat main executable.
 MINISAT_CORE = minisat_core#  Name of simplified MiniSat executable (only core solver support).
+MINISAT_CLOSURE_OC = minisat_closure_oc
+MINISAT_ICD_OC = minisat_icd_oc
+
 MINISAT_SLIB = lib$(MINISAT).a#  Name of MiniSat static library.
 MINISAT_DLIB = lib$(MINISAT).so# Name of MiniSat shared library.
 
@@ -88,6 +91,16 @@ ld:	$(BUILD_DIR)/debug/lib/$(MINISAT_SLIB)
 lp:	$(BUILD_DIR)/profile/lib/$(MINISAT_SLIB)
 lsh:	$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)
 
+closure_oc_r: 	$(BUILD_DIR)/release/bin/$(MINISAT_CLOSURE_OC)
+closure_oc_d: 	$(BUILD_DIR)/debug/bin/$(MINISAT_CLOSURE_OC)
+closure_oc_p: 	$(BUILD_DIR)/profile/bin/$(MINISAT_CLOSURE_OC)
+closure_oc_sh: 	$(BUILD_DIR)/dynamic/bin/$(MINISAT_CLOSURE_OC)
+
+icd_oc_r: 	$(BUILD_DIR)/release/bin/$(MINISAT_ICD_OC)
+icd_oc_d: 	$(BUILD_DIR)/debug/bin/$(MINISAT_ICD_OC)
+icd_oc_p: 	$(BUILD_DIR)/profile/bin/$(MINISAT_ICD_OC)
+icd_oc_sh: 	$(BUILD_DIR)/dynamic/bin/$(MINISAT_ICD_OC)
+
 ## Build-type Compile-flags:
 $(BUILD_DIR)/release/%.o:			MINISAT_CXXFLAGS +=$(MINISAT_REL) $(MINISAT_RELSYM)
 $(BUILD_DIR)/debug/%.o:				MINISAT_CXXFLAGS +=$(MINISAT_DEB) -g
@@ -95,10 +108,14 @@ $(BUILD_DIR)/profile/%.o:			MINISAT_CXXFLAGS +=$(MINISAT_PRF) -pg
 $(BUILD_DIR)/dynamic/%.o:			MINISAT_CXXFLAGS +=$(MINISAT_REL) $(MINISAT_FPIC)
 
 ## Build-type Link-flags:
-$(BUILD_DIR)/profile/bin/$(MINISAT):		MINISAT_LDFLAGS += -pg
-$(BUILD_DIR)/release/bin/$(MINISAT):		MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
-$(BUILD_DIR)/profile/bin/$(MINISAT_CORE):	MINISAT_LDFLAGS += -pg
-$(BUILD_DIR)/release/bin/$(MINISAT_CORE):	MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
+$(BUILD_DIR)/profile/bin/$(MINISAT):				MINISAT_LDFLAGS += -pg
+$(BUILD_DIR)/release/bin/$(MINISAT):				MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
+$(BUILD_DIR)/profile/bin/$(MINISAT_CORE):			MINISAT_LDFLAGS += -pg
+$(BUILD_DIR)/release/bin/$(MINISAT_CORE):			MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
+$(BUILD_DIR)/profile/bin/$(MINISAT_CLOSURE_OC):		MINISAT_LDFLAGS += -pg
+$(BUILD_DIR)/release/bin/$(MINISAT_CLOSURE_OC):		MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
+$(BUILD_DIR)/profile/bin/$(MINISAT_ICD_OC):			MINISAT_LDFLAGS += -pg
+$(BUILD_DIR)/release/bin/$(MINISAT_ICD_OC):			MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
 
 ## Executable dependencies
 $(BUILD_DIR)/release/bin/$(MINISAT):	 	$(BUILD_DIR)/release/minisat/simp/Main.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB)
@@ -113,6 +130,19 @@ $(BUILD_DIR)/debug/bin/$(MINISAT_CORE):	 	$(BUILD_DIR)/debug/minisat/core/Main.o
 $(BUILD_DIR)/profile/bin/$(MINISAT_CORE):	$(BUILD_DIR)/profile/minisat/core/Main.o $(BUILD_DIR)/profile/lib/$(MINISAT_SLIB)
 # need the main-file be compiled with fpic?
 $(BUILD_DIR)/dynamic/bin/$(MINISAT_CORE): 	$(BUILD_DIR)/dynamic/minisat/core/Main.o $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
+
+## Executable dependencies (oc)
+$(BUILD_DIR)/release/bin/$(MINISAT_CLOSURE_OC):	$(BUILD_DIR)/release/minisat/core/ClosureMain.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB)
+$(BUILD_DIR)/debug/bin/$(MINISAT_CLOSURE_OC):	 	$(BUILD_DIR)/debug/minisat/core/ClosureMain.o $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB)
+$(BUILD_DIR)/profile/bin/$(MINISAT_CLOSURE_OC):	$(BUILD_DIR)/profile/minisat/core/ClosureMain.o $(BUILD_DIR)/profile/lib/$(MINISAT_SLIB)
+# need the main-file be compiled with fpic?
+$(BUILD_DIR)/dynamic/bin/$(MINISAT_CLOSURE_OC): 	$(BUILD_DIR)/dynamic/minisat/core/ClosureMain.o $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
+
+$(BUILD_DIR)/release/bin/$(MINISAT_ICD_OC):	$(BUILD_DIR)/release/minisat/core/ClosureMain.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB)
+$(BUILD_DIR)/debug/bin/$(MINISAT_ICD_OC):	 	$(BUILD_DIR)/debug/minisat/core/ClosureMain.o $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB)
+$(BUILD_DIR)/profile/bin/$(MINISAT_ICD_OC):	$(BUILD_DIR)/profile/minisat/core/ClosureMain.o $(BUILD_DIR)/profile/lib/$(MINISAT_SLIB)
+# need the main-file be compiled with fpic?
+$(BUILD_DIR)/dynamic/bin/$(MINISAT_ICD_OC): 	$(BUILD_DIR)/dynamic/minisat/core/ClosureMain.o $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
 
 ## Library dependencies
 $(BUILD_DIR)/release/lib/$(MINISAT_SLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/release/$(o))
@@ -145,7 +175,9 @@ $(BUILD_DIR)/dynamic/%.o:	%.cc
 
 ## Linking rule
 $(BUILD_DIR)/release/bin/$(MINISAT) $(BUILD_DIR)/debug/bin/$(MINISAT) $(BUILD_DIR)/profile/bin/$(MINISAT) $(BUILD_DIR)/dynamic/bin/$(MINISAT)\
-$(BUILD_DIR)/release/bin/$(MINISAT_CORE) $(BUILD_DIR)/debug/bin/$(MINISAT_CORE) $(BUILD_DIR)/profile/bin/$(MINISAT_CORE) $(BUILD_DIR)/dynamic/bin/$(MINISAT_CORE):
+$(BUILD_DIR)/release/bin/$(MINISAT_CORE) $(BUILD_DIR)/debug/bin/$(MINISAT_CORE) $(BUILD_DIR)/profile/bin/$(MINISAT_CORE) $(BUILD_DIR)/dynamic/bin/$(MINISAT_CORE)\
+$(BUILD_DIR)/release/bin/$(MINISAT_CLOSURE_OC) $(BUILD_DIR)/debug/bin/$(MINISAT_CLOSURE_OC) $(BUILD_DIR)/profile/bin/$(MINISAT_CLOSURE_OC) $(BUILD_DIR)/dynamic/bin/$(MINISAT_CLOSURE_OC)\
+$(BUILD_DIR)/release/bin/$(MINISAT_ICD_OC) $(BUILD_DIR)/debug/bin/$(MINISAT_ICD_OC) $(BUILD_DIR)/profile/bin/$(MINISAT_ICD_OC) $(BUILD_DIR)/dynamic/bin/$(MINISAT_ICD_OC):
 	$(ECHO) Linking Binary: $@
 	$(VERB) mkdir -p $(dir $@)
 	$(VERB) $(CXX) $^ $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@

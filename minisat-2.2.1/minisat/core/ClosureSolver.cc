@@ -15,9 +15,9 @@ using namespace Minisat;
 
 literal_vector closure_empty_reason;
 
-inline bool oclt_reasonable(edge_kindt kind) //for initially existing edges
+inline bool oc_reasonable(edge_kindt kind) //for initially existing edges
 {
-    return kind == OCLT_RFI || kind == OCLT_RFE;
+    return kind == OC_RF;
 }
 
 ClosureSolver::ClosureSolver()
@@ -30,18 +30,22 @@ ClosureSolver::ClosureSolver()
 void ClosureSolver::init()
 {
     graph.init(this);
+    set_graph();
 }
 
-void ClosureSolver::save_raw_graph(oclt_convert_tablet& _oclt_convert_table, oclt_guard_mapt& _oclt_write_guard, oclt_location_mapt& _oclt_write_location)
+void ClosureSolver::save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_guard_mapt& _oc_guard_map, oc_location_mapt& _oc_location_map, std::map<std::string, int>& _oc_result_order)
 {
-    oclt_convert_table = _oclt_convert_table;
-    oclt_write_guard = _oclt_write_guard;
-    oclt_write_location = _oclt_write_location;
+    oc_edge_table = _oc_edge_table;
+    oc_guard_map = _oc_guard_map;
+    oc_location_map = _oc_location_map;
+    oc_result_order = &_oc_result_order;
+
+    init();
 }
 
 void ClosureSolver::set_graph()
 {
-    for(auto pair: oclt_convert_table) //init nodes first
+    for(auto pair: oc_edge_table) //init nodes first
     {
         if(pair.first.first == "" || pair.first.second == "")
             continue;
@@ -50,13 +54,13 @@ void ClosureSolver::set_graph()
         graph.get_node(pair.first.second);
     }
 
-    // for(auto pair: oclt_write_guard)
+    // for(auto pair: oc_guard_map)
     // {
     //     auto write_name = pair.first;
     //     graph.get_node(write_name);
     // }
 
-    for(auto pair: oclt_write_location)
+    for(auto pair: oc_location_map)
     {
         auto write_name = pair.first;
         auto write_location = pair.second;
@@ -66,54 +70,7 @@ void ClosureSolver::set_graph()
         // std::cout << "write " << id << "(" << write_name << ")'s location is " << write_location << "\n";
     }
 
-    for(auto pair: oclt_convert_table)
-    {
-        if(pair.first.first == "" || pair.first.second == "")
-            continue;
-
-        int u = graph.get_node(pair.first.first);
-        int v = graph.get_node(pair.first.second);
-        edge_kindt kind = str_to_kind(pair.second.second);
-
-        if(kind != OCLT_EPO)
-            continue;
-
-        if(OC_VERBOSITY >= 1)
-            std::cout << "initing " << u << "(" << pair.first.first << ") " << v << "(" << pair.first.second << ") " << kind_to_str(kind) << "\n";
-
-        graph.activate_epo(u, v);
-    }
-
-    graph.atomic_remove_self();
-
-    for(auto pair: oclt_convert_table)
-    {
-        if(pair.first.first == "" || pair.first.second == "")
-            continue;
-
-        int u = graph.get_node(pair.first.first);
-        int v = graph.get_node(pair.first.second);
-        edge_kindt kind = str_to_kind(pair.second.second);
-
-        if(kind == OCLT_EPO)
-            continue;
-
-        if(OC_VERBOSITY >= 1)
-            std::cout << "initing " << u << "(" << pair.first.first << ") " << v << "(" << pair.first.second << ") " << kind_to_str(kind) << "\n";
-
-        if(oclt_reasonable(kind))
-        {
-            Lit& l = pair.second.first;
-            graph.init_reasonable_edge(u, v, kind, l);
-        }
-        else
-        {
-            if(graph.activate_edge(u, v, kind, closure_empty_reason))
-                std::cout << "WARNING: Find cycle during set_graph\n";
-        }
-    }
-
-    for(auto pair: oclt_write_guard)
+    for(auto pair: oc_guard_map)
     {
         auto write_name = pair.first;
 
@@ -121,18 +78,92 @@ void ClosureSolver::set_graph()
         auto& guard_literal = pair.second;
 
         if(graph.add_guard_literal(guard_literal, u))
+        {
             std::cout << "WARNING: find cycle during set_graph\n";
+            ok = false;
+        }
 
         if(OC_VERBOSITY >= 1)
             std::cout << "guard of " << u << "(" << write_name << ") is " << var(guard_literal) << "(" << sign(guard_literal) << ")\n";
     }
 
+    for(auto pair: oc_edge_table) //race first 
+    {
+        if(pair.first.first == "" || pair.first.second == "")
+            continue;
+
+        int u = graph.get_node(pair.first.first);
+        int v = graph.get_node(pair.first.second);
+        edge_kindt kind = str_to_kind(pair.second.second);
+
+        if(kind != OC_RACE)
+            continue;
+
+        Lit& l = pair.second.first;
+        graph.init_race(u, v, l);
+    }
+
+    for(auto pair: oc_edge_table) //atomic po second
+    {
+        if(pair.first.first == "" || pair.first.second == "")
+            continue;
+
+        int u = graph.get_node(pair.first.first);
+        int v = graph.get_node(pair.first.second);
+        edge_kindt kind = str_to_kind(pair.second.second);
+
+        if(kind != OC_APO)
+            continue;
+
+        if(OC_VERBOSITY >= 1)
+            std::cout << "initing " << u << "(" << pair.first.first << ") " << v << "(" << pair.first.second << ") " << kind_to_str(kind) << "\n";
+
+        graph.activate_apo(u, v);
+    }
+
+    graph.atomic_remove_self();
+
+    for(auto pair: oc_edge_table) // others last
+    {
+        if(pair.first.first == "" || pair.first.second == "")
+            continue;
+
+        int u = graph.get_node(pair.first.first);
+        int v = graph.get_node(pair.first.second);
+        edge_kindt kind = str_to_kind(pair.second.second);
+
+        if(kind == OC_RACE || kind == OC_APO)
+            continue;
+
+        if(OC_VERBOSITY >= 1)
+            std::cout << "initing " << u << "(" << pair.first.first << ") " << v << "(" << pair.first.second << ") " << kind_to_str(kind) << "\n";
+
+        if(oc_reasonable(kind))
+        {
+            Lit& l = pair.second.first;
+            graph.init_reasonable_edge(u, v, kind, l);
+        }
+        else
+        {
+            if(graph.activate_edge(u, v, kind, closure_empty_reason))
+            {
+                std::cout << "WARNING: Find cycle during set_graph\n";
+                ok = false;
+            }
+        }
+    }
+
+    if(OC_VERBOSITY >= 1)
+        std::cout << "apply literal assignment after setting graph\n";
+
+    apply_literal_assignment();
+
     //sort atomic_items by write and read
     graph.refine_atomic_atoms();
 
-    if(OC_VERBOSITY >= 1) //show epo info
+    if(OC_VERBOSITY >= 1) //show apo info
     {
-        for(int i = 0; i < graph.nodes.size(); i++)
+        for(int i = 0; i < int(graph.nodes.size()); i++)
         {
             auto& node = graph.nodes[i];
             std::cout << i << "'s representative is " << graph.union_find_parent(i) << ", has atomic_in: ";
@@ -322,6 +353,7 @@ lbool ClosureSolver::solve_()
 
         graph.final_check();
         graph.show_rf();
+        graph.show_model();
     }
     else if (status == l_False && conflict.size() == 0)
         ok = false;
@@ -335,6 +367,7 @@ lbool ClosureSolver::solve_()
 CRef ClosureSolver::propagate()
 {
     literals_to_assign.clear();
+    assigned_literals.clear();
 
     CRef confl = CRef_Undef;
     int num_props = 0;
@@ -426,7 +459,7 @@ CRef ClosureSolver::propagate()
         {
             cycle = graph.activate_edge(edge.from, edge.to, edge.kind, edge.reason);
 
-            if(decisionLevel() == 0 && (edge.kind == OCLT_RFE || edge.kind == OCLT_RFI))
+            if(decisionLevel() == 0 && edge.kind == OC_RF)
             {
                 graph.remove_rf(edge.from, edge.to, edge.reason[0]);
             }
@@ -447,6 +480,8 @@ CRef ClosureSolver::propagate()
 
         if(cycle)
         {
+            graph.triplets_to_check.clear();
+
             conflict_cycle++;
             if (OC_VERBOSITY >= 1)
             {
@@ -467,43 +502,11 @@ CRef ClosureSolver::propagate()
         else if(!literals_to_assign.empty())//add literals propagated by unit edge
         {
             one_more_time = true;
-            for(auto p : literals_to_assign)
-            {
-                if(OC_VERBOSITY >= 1)
-                {
-                    std::cout << var(p.first) << "(" << sign(p.first) << ") is now assigned\n";
-                    std::cout << "its value was " << toInt(value(p.first)) << "\n";
-                }
-
-                auto& raw_learnt_clause = p.second;
-
-                vec<Lit> learnt_clause;
-
-//                for(auto lit: raw_learnt_clause)
-//                    learnt_clause.push(lit);
-
-                learnt_clause.push(p.first);
-
-                for(auto lit: raw_learnt_clause)
-                    if(lit != p.first)
-                        learnt_clause.push(lit);
-
-                CRef cr = ca.alloc(learnt_clause, true);
-                //learnts.push(cr);
-                //attachClause(cr);
-                //claBumpActivity(ca[cr]);
-                if(value(learnt_clause[0]) == l_Undef)
-                {
-                    if(OC_VERBOSITY >= 1)
-                        std::cout << learnt_clause[0].x << " is really assigned\n";
-
-                    uncheckedEnqueue(learnt_clause[0], cr);
-                    theory_propagation++;
-                }
-            }
+            apply_literal_assignment();
         }
 
         literals_to_assign.clear();
+        assigned_literals.clear();
     }
     //our method ends
 
@@ -649,13 +652,73 @@ void ClosureSolver::show_rf()
 
 void ClosureSolver::assign_literal(Lit l, literal_set& lv)
 {
+    if(assigned_literals.find(l) != assigned_literals.end())
+        return;
+
     literals_to_assign.push_back(std::make_pair(l, lv));
+    assigned_literals.insert(l);
 }
 
 void ClosureSolver::assign_literal(Lit l, literal_vector& lv)
 {
+    if(assigned_literals.find(l) != assigned_literals.end())
+        return;
+
     literal_set ls(lv.begin(), lv.end());
     assign_literal(l, ls);
+}
+
+void ClosureSolver::apply_literal_assignment()
+{
+    for(auto p : literals_to_assign)
+    {
+        if(OC_VERBOSITY >= 1)
+        {
+            std::cout << var(p.first) << "(" << sign(p.first) << ") is now assigned\n";
+            std::cout << "its value was " << toInt(value(p.first)) << "\n";
+        }
+
+        auto& raw_learnt_clause = p.second;
+
+        vec<Lit> learnt_clause;
+
+//      for(auto lit: raw_learnt_clause)
+//          learnt_clause.push(lit);
+
+        learnt_clause.push(p.first);
+
+        for(auto lit: raw_learnt_clause)
+            if(lit != p.first)
+                learnt_clause.push(lit);
+
+
+        if (learnt_clause.size() == 1)
+        {
+            if(OC_VERBOSITY >= 1)
+                std::cout << learnt_clause[0].x << " is really assigned\n";
+            uncheckedEnqueue(learnt_clause[0]);
+            theory_propagation++;
+        }
+        else
+        {
+            CRef cr = ca.alloc(learnt_clause, true);
+            learnts.push(cr);
+            attachClause(cr);
+            claBumpActivity(ca[cr]);
+            if(value(learnt_clause[0]) == l_Undef)
+            {
+                if(OC_VERBOSITY >= 1)
+                    std::cout << learnt_clause[0].x << " is really assigned\n";
+
+                uncheckedEnqueue(learnt_clause[0], cr);
+                theory_propagation++;
+            }
+        }
+
+    }
+
+    literals_to_assign.clear();
+    assigned_literals.clear();
 }
 
 extern std::vector<std::string> write_order;
@@ -663,6 +726,22 @@ extern std::vector<std::string> write_order;
 std::vector<std::string> ClosureSolver::get_write_order()
 {
     return write_order;
+}
+
+void ClosureSolver::addOC(std::string from, std::string to, std::string type, Lit related_lit)
+{
+    oc_edge_table.push_back(std::make_pair(std::make_pair(from, to), std::make_pair(related_lit, type)));
+}
+
+void ClosureSolver::addGuard(std::string node, Lit guard)
+{
+    oc_guard_map[node] = guard;
+}
+
+void ClosureSolver::setRawGraph(oc_edge_tablet& _oc_edge_table, oc_guard_mapt& _oc_guard_map)
+{
+    oc_edge_table = _oc_edge_table;
+    oc_guard_map = _oc_guard_map;
 }
 
 // __SZH_ADD_END__

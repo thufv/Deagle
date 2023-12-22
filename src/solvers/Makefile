@@ -1,5 +1,4 @@
 include ../config.inc
-include ../common
 
 ifneq ($(CHAFF),)
   CHAFF_SRC=sat/satcheck_zchaff.cpp sat/satcheck_zcore.cpp
@@ -12,13 +11,21 @@ ifneq ($(MINISAT),)
   MINISAT_INCLUDE=-I $(MINISAT)
   MINISAT_LIB=$(MINISAT)/Solver$(OBJEXT) $(MINISAT)/Proof$(OBJEXT) $(MINISAT)/File$(OBJEXT)
   CP_CXXFLAGS += -DHAVE_MINISAT
+  CLEANFILES += $(MINISAT_LIB) $(patsubst %$(OBJEXT), %$(DEPEXT), $(MINISAT_LIB))
 endif
 
 ifneq ($(MINISAT2),)
   MINISAT2_SRC=sat/satcheck_minisat2.cpp
   MINISAT2_INCLUDE=-I $(MINISAT2)
-  MINISAT2_LIB=$(MINISAT2)/simp/SimpSolver$(OBJEXT) $(MINISAT2)/core/Solver$(OBJEXT) $(MINISAT2)/core/ClosureSolver$(OBJEXT) $(MINISAT2)/core/Closure$(OBJEXT) $(MINISAT2)/core/ClosureTypes$(OBJEXT) $(MINISAT2)/core/ICDSolver$(OBJEXT) $(MINISAT2)/core/ICD$(OBJEXT) $(MINISAT2)/core/ICDTypes$(OBJEXT) $(MINISAT2)/core/GraphTypes$(OBJEXT)
+  MINISAT2_LIB=$(MINISAT2)/minisat/core/MemoryModelSolver$(OBJEXT) $(MINISAT2)/minisat/core/ClosureSolver$(OBJEXT) $(MINISAT2)/minisat/core/Closure$(OBJEXT) $(MINISAT2)/minisat/core/ClosureTypes$(OBJEXT) $(MINISAT2)/minisat/core/GraphTypes$(OBJEXT) $(MINISAT2)/minisat/simp/SimpSolver$(OBJEXT) $(MINISAT2)/minisat/core/Solver$(OBJEXT) $(MINISAT2)/minisat/utils/Options$(OBJEXT) ../cat/cat_module$(OBJEXT)
   CP_CXXFLAGS += -DHAVE_MINISAT2 -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
+  CLEANFILES += $(MINISAT2_LIB) $(patsubst %$(OBJEXT), %$(DEPEXT), $(MINISAT2_LIB))
+endif
+
+ifneq ($(IPASIR),)
+  IPASIR_SRC=sat/satcheck_ipasir.cpp
+  IPASIR_INCLUDE=-I $(IPASIR)
+  CP_CXXFLAGS += -DHAVE_IPASIR -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
   override CXXFLAGS := $(filter-out -pedantic, $(CXXFLAGS))
 endif
 
@@ -27,13 +34,7 @@ ifneq ($(GLUCOSE),)
   GLUCOSE_INCLUDE=-I $(GLUCOSE)
   GLUCOSE_LIB=$(GLUCOSE)/simp/SimpSolver$(OBJEXT) $(GLUCOSE)/core/Solver$(OBJEXT)
   CP_CXXFLAGS += -DHAVE_GLUCOSE -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
-  override CXXFLAGS := $(filter-out -pedantic, $(CXXFLAGS))
-endif
-
-ifneq ($(SMVSAT),)
-  SMVSAT_SRC=sat/satcheck_smvsat.cpp
-  SMVSAT_INCLUDE=-I $(SMVSAT)/include
-  SMVSAT_LIB=$(SMVSAT)/lib/libsmvsat$(LIBEXT)
+  CLEANFILES += $(GLUCOSE_LIB) $(patsubst %$(OBJEXT), %$(DEPEXT), $(GLUCOSE_LIB))
 endif
 
 ifneq ($(SQUOLEM2),)
@@ -43,18 +44,7 @@ ifneq ($(SQUOLEM2),)
 endif
 
 ifneq ($(CUDD),)
-  CUDD_SRC=qbf/qbf_bdd_core.cpp qbf/qbf_skizzo_core.cpp
-  CUDD_INCLUDE=-I $(CUDD)/include
-  CUDD_LIB=-L $(CUDD)/cudd -L $(CUDD)/util -L $(CUDD)/mtr \
-           -L $(CUDD)/st -L $(CUDD)/obj -L $(CUDD)/dddmp \
-           -L $(CUDD)/epd -lobj -lcudd -lmtr -lst -lutil -lepd -ldddmp
-endif
-
-ifneq ($(PRECOSAT),)
-  PRECOSAT_SRC=sat/satcheck_precosat.cpp
-  PRECOSAT_INCLUDE=-I $(PRECOSAT)
-  PRECOSAT_LIB=$(PRECOSAT)/precosat$(OBJEXT)
-  CP_CXXFLAGS += -DHAVE_PRECOSAT
+  CUDD_LIB=$(CUDD)/cudd/.libs/libcudd$(LIBEXT) $(CUDD)/cplusplus/.libs/libobj$(LIBEXT)
 endif
 
 ifneq ($(PICOSAT),)
@@ -71,60 +61,209 @@ ifneq ($(LINGELING),)
   CP_CXXFLAGS += -DHAVE_LINGELING
 endif
 
-SRC = $(CHAFF_SRC) $(BOOLEFORCE_SRC) $(MINISAT_SRC) $(MINISAT2_SRC) \
-      $(SMVSAT_SRC) $(SQUOLEM2_SRC) $(CUDD_SRC) $(GLUCOSE_SRC) \
-      $(PRECOSAT_SRC) $(PICOSAT_SRC) $(LINGELING_SRC) \
-      sat/cnf.cpp sat/dimacs_cnf.cpp sat/cnf_clause_list.cpp \
-      sat/pbs_dimacs_cnf.cpp sat/read_dimacs_cnf.cpp \
-      sat/resolution_proof.cpp sat/satcheck.cpp \
-      qbf/qdimacs_cnf.cpp qbf/qbf_quantor.cpp \
-      qbf/qbf_skizzo.cpp qbf/qdimacs_core.cpp qbf/qbf_qube.cpp \
-      qbf/qbf_qube_core.cpp \
-      prop/prop.cpp prop/prop_conv.cpp prop/prop_conv_store.cpp \
-      prop/cover_goals.cpp prop/literal.cpp \
-      prop/aig.cpp prop/aig_prop.cpp prop/minimize.cpp \
-      prop/prop_assignment.cpp \
-      cvc/cvc_conv.cpp cvc/cvc_dec.cpp \
-      smt1/smt1_dec.cpp smt1/smt1_conv.cpp \
-      smt2/smt2_dec.cpp smt2/smt2_conv.cpp smt2/smt2_parser.cpp smt2/smt2irep.cpp \
-      flattening/equality.cpp flattening/arrays.cpp \
-      flattening/functions.cpp flattening/bv_minimize.cpp \
-      flattening/boolbv_width.cpp flattening/boolbv.cpp \
+ifneq ($(CADICAL),)
+  CADICAL_SRC=sat/satcheck_cadical.cpp
+  CADICAL_INCLUDE=-I $(CADICAL)/src
+  CADICAL_LIB=$(CADICAL)/build/libcadical$(LIBEXT)
+  CP_CXXFLAGS += -DHAVE_CADICAL
+endif
+
+SRC = $(BOOLEFORCE_SRC) \
+      $(CHAFF_SRC) \
+      $(CUDD_SRC) \
+      $(GLUCOSE_SRC) \
+      $(LINGELING_SRC) \
+      $(MINISAT2_SRC) \
+      $(IPASIR_SRC) \
+      $(MINISAT_SRC) \
+      $(PICOSAT_SRC) \
+      $(SQUOLEM2_SRC) \
+      $(CADICAL_SRC) \
+      decision_procedure.cpp \
+      flattening/arrays.cpp \
+      flattening/boolbv.cpp \
+      flattening/boolbv_abs.cpp \
+      flattening/boolbv_add_sub.cpp \
+      flattening/boolbv_array.cpp \
+      flattening/boolbv_array_of.cpp \
+      flattening/boolbv_bitreverse.cpp \
+      flattening/boolbv_bitwise.cpp \
+      flattening/boolbv_bswap.cpp \
+      flattening/boolbv_bv_rel.cpp \
+      flattening/boolbv_byte_extract.cpp \
+      flattening/boolbv_byte_update.cpp \
+      flattening/boolbv_case.cpp \
+      flattening/boolbv_complex.cpp \
+      flattening/boolbv_concatenation.cpp \
+      flattening/boolbv_cond.cpp \
+      flattening/boolbv_constant.cpp \
       flattening/boolbv_constraint_select_one.cpp \
-      flattening/bv_pointers.cpp flattening/bv_utils.cpp \
-      flattening/boolbv_abs.cpp flattening/boolbv_with.cpp \
-      flattening/boolbv_typecast.cpp flattening/boolbv_index.cpp \
-      flattening/boolbv_member.cpp flattening/boolbv_if.cpp \
-      flattening/boolbv_byte_extract.cpp flattening/boolbv_add_sub.cpp \
-      flattening/boolbv_mult.cpp flattening/boolbv_constant.cpp \
-      flattening/boolbv_extractbit.cpp flattening/boolbv_bv_rel.cpp \
-      flattening/boolbv_shift.cpp flattening/boolbv_case.cpp \
-      flattening/boolbv_cond.cpp flattening/boolbv_concatenation.cpp \
-      flattening/boolbv_div.cpp flattening/boolbv_mod.cpp \
-      flattening/boolbv_extractbits.cpp flattening/boolbv_replication.cpp \
-      flattening/boolbv_reduction.cpp flattening/boolbv_overflow.cpp \
-      flattening/boolbv_get.cpp flattening/boolbv_bitwise.cpp \
-      flattening/boolbv_equality.cpp flattening/boolbv_unary_minus.cpp \
-      flattening/boolbv_ieee_float_rel.cpp flattening/pointer_logic.cpp \
-      flattening/boolbv_quantifier.cpp flattening/boolbv_struct.cpp \
-      flattening/boolbv_byte_update.cpp flattening/boolbv_array_of.cpp \
-      flattening/boolbv_map.cpp flattening/boolbv_type.cpp \
-      flattening/boolbv_array.cpp flattening/boolbv_vector.cpp \
-      flattening/boolbv_complex.cpp flattening/boolbv_floatbv_op.cpp \
-      flattening/boolbv_union.cpp flattening/flatten_byte_operators.cpp \
+      flattening/boolbv_div.cpp \
+      flattening/boolbv_equality.cpp \
+      flattening/boolbv_extractbit.cpp \
+      flattening/boolbv_extractbits.cpp \
+      flattening/boolbv_floatbv_mod_rem.cpp \
+      flattening/boolbv_floatbv_op.cpp \
+      flattening/boolbv_get.cpp \
+      flattening/boolbv_ieee_float_rel.cpp \
+      flattening/boolbv_if.cpp \
+      flattening/boolbv_index.cpp \
+      flattening/boolbv_let.cpp \
+      flattening/boolbv_map.cpp \
+      flattening/boolbv_member.cpp \
+      flattening/boolbv_mod.cpp \
+      flattening/boolbv_mult.cpp \
+      flattening/boolbv_not.cpp \
+      flattening/boolbv_onehot.cpp \
+      flattening/boolbv_overflow.cpp \
+      flattening/boolbv_power.cpp \
+      flattening/boolbv_quantifier.cpp \
+      flattening/boolbv_reduction.cpp \
+      flattening/boolbv_replication.cpp \
+      flattening/boolbv_shift.cpp \
+      flattening/boolbv_struct.cpp \
+      flattening/boolbv_type.cpp \
+      flattening/boolbv_typecast.cpp \
+      flattening/boolbv_unary_minus.cpp \
+      flattening/boolbv_union.cpp \
       flattening/boolbv_update.cpp \
-      floatbv/float_utils.cpp floatbv/float_bv.cpp \
-      refinement/bv_refinement_loop.cpp refinement/refine_arithmetic.cpp \
-      refinement/refine_arrays.cpp
+      flattening/boolbv_vector.cpp \
+      flattening/boolbv_width.cpp \
+      flattening/boolbv_with.cpp \
+      flattening/bv_dimacs.cpp \
+      flattening/bv_minimize.cpp \
+      flattening/bv_pointers.cpp \
+      flattening/bv_utils.cpp \
+      flattening/c_bit_field_replacement_type.cpp \
+      flattening/equality.cpp \
+      flattening/pointer_logic.cpp \
+      floatbv/float_bv.cpp \
+      floatbv/float_utils.cpp \
+      floatbv/float_approximation.cpp \
+      lowering/byte_operators.cpp \
+      lowering/functions.cpp \
+      bdd/miniBDD/miniBDD.cpp \
+      prop/bdd_expr.cpp \
+      prop/cover_goals.cpp \
+      prop/literal.cpp \
+      prop/prop_minimize.cpp \
+      prop/prop.cpp \
+      prop/prop_conv.cpp \
+      prop/prop_conv_solver.cpp \
+      qbf/qbf_quantor.cpp \
+      qbf/qbf_qube.cpp \
+      qbf/qbf_qube_core.cpp \
+      qbf/qbf_skizzo.cpp \
+      qbf/qdimacs_cnf.cpp \
+      qbf/qdimacs_core.cpp \
+      refinement/bv_refinement_loop.cpp \
+      refinement/refine_arithmetic.cpp \
+      refinement/refine_arrays.cpp \
+      strings/array_pool.cpp \
+      strings/equation_symbol_mapping.cpp \
+      strings/format_specifier.cpp \
+      strings/string_builtin_function.cpp \
+      strings/string_dependencies.cpp \
+      strings/string_concatenation_builtin_function.cpp \
+      strings/string_format_builtin_function.cpp \
+      strings/string_insertion_builtin_function.cpp \
+      strings/string_refinement.cpp \
+      strings/string_refinement_util.cpp \
+      strings/string_constraint.cpp \
+      strings/string_constraint_generator_code_points.cpp \
+      strings/string_constraint_generator_comparison.cpp \
+      strings/string_constraint_generator_constants.cpp \
+      strings/string_constraint_generator_indexof.cpp \
+      strings/string_constraint_generator_float.cpp \
+      strings/string_constraint_generator_main.cpp \
+      strings/string_constraint_generator_testing.cpp \
+      strings/string_constraint_generator_transformation.cpp \
+      strings/string_constraint_generator_valueof.cpp \
+      strings/string_constraint_instantiation.cpp \
+      sat/cnf.cpp \
+      sat/cnf_clause_list.cpp \
+      sat/dimacs_cnf.cpp \
+      sat/external_sat.cpp \
+      sat/pbs_dimacs_cnf.cpp \
+      sat/resolution_proof.cpp \
+      smt2/letify.cpp \
+      smt2/smt2_conv.cpp \
+      smt2/smt2_dec.cpp \
+      smt2/smt2_format.cpp \
+      smt2/smt2_parser.cpp \
+      smt2/smt2_tokenizer.cpp \
+      smt2/smt2irep.cpp \
+      smt2_incremental/ast/smt_commands.cpp \
+      smt2_incremental/ast/smt_index.cpp \
+      smt2_incremental/ast/smt_logics.cpp \
+      smt2_incremental/ast/smt_options.cpp \
+      smt2_incremental/ast/smt_responses.cpp \
+      smt2_incremental/ast/smt_sorts.cpp \
+      smt2_incremental/ast/smt_terms.cpp \
+      smt2_incremental/construct_value_expr_from_smt.cpp \
+      smt2_incremental/convert_expr_to_smt.cpp \
+      smt2_incremental/object_tracking.cpp \
+      smt2_incremental/type_size_mapping.cpp \
+      smt2_incremental/smt_object_size.cpp \
+      smt2_incremental/smt_response_validation.cpp \
+      smt2_incremental/smt_solver_process.cpp \
+      smt2_incremental/smt_to_smt2_string.cpp \
+      smt2_incremental/smt2_incremental_decision_procedure.cpp \
+      smt2_incremental/theories/smt_array_theory.cpp \
+      smt2_incremental/theories/smt_bit_vector_theory.cpp \
+      smt2_incremental/theories/smt_core_theory.cpp \
+      # Empty last line
 
-INCLUDES= -I .. \
+include ../common
+
+ifneq ($(MINISAT2),)
+ifeq ($(BUILD_ENV_),MSVC)
+sat/satcheck_minisat2$(OBJEXT): sat/satcheck_minisat2.cpp
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(MINISAT2)/minisat/core/MemoryModelSolver$(OBJEXT): $(MINISAT2)/minisat/core/MemoryModelSolver.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(MINISAT2)/minisat/core/ClosureSolver$(OBJEXT): $(MINISAT2)/minisat/core/ClosureSolver.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(MINISAT2)/minisat/core/Closure$(OBJEXT): $(MINISAT2)/minisat/core/Closure.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(MINISAT2)/minisat/core/ClosureTypes$(OBJEXT): $(MINISAT2)/minisat/core/ClosureTypes.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(MINISAT2)/minisat/simp/SimpSolver$(OBJEXT): $(MINISAT2)/minisat/simp/SimpSolver.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(MINISAT2)/minisat/core/Solver$(OBJEXT): $(MINISAT2)/minisat/core/Solver.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+endif
+endif
+
+ifneq ($(GLUCOSE),)
+ifeq ($(BUILD_ENV_),MSVC)
+sat/satcheck_glucose$(OBJEXT): sat/satcheck_glucose.cpp
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(GLUCOSE)/simp/SimpSolver$(OBJEXT): $(GLUCOSE)/simp/SimpSolver.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+
+$(GLUCOSE)/core/Solver$(OBJEXT): $(GLUCOSE)/core/Solver.cc
+	$(CXX) $(CP_CXXFLAGS) /w /nologo /c /EHsc $< /Fo$@
+endif
+endif
+
+INCLUDES += -I .. \
   $(CHAFF_INCLUDE) $(BOOLEFORCE_INCLUDE) $(MINISAT_INCLUDE) $(MINISAT2_INCLUDE) \
-  $(SMVSAT_INCLUDE) $(SQUOLEM2_INC) $(CUDD_INCLUDE) $(GLUCOSE_INCLUDE) \
-	$(PRECOSAT_INCLUDE) $(PICOSAT_INCLUDE) $(LINGELING_INCLUDE)
+  $(IPASIR_INCLUDE) \
+  $(SQUOLEM2_INC) $(CUDD_INCLUDE) $(GLUCOSE_INCLUDE) \
+	$(PICOSAT_INCLUDE) $(LINGELING_INCLUDE) $(CADICAL_INCLUDE)
 
-CLEANFILES = solvers$(LIBEXT)
+CLEANFILES += solvers$(LIBEXT) \
+  smt2_solver$(EXEEXT) smt2/smt2_solver$(OBJEXT) smt2/smt2_solver$(DEPEXT)
 
-all: solvers$(LIBEXT)
+all: solvers$(LIBEXT) smt2_solver$(EXEEXT)
 
 ifneq ($(SQUOLEM2),)
   CP_CXXFLAGS += -DHAVE_QBF_CORE
@@ -134,14 +273,22 @@ ifneq ($(CUDD),)
 endif
 endif
 
-# extra dependencies
+SOLVER_LIB = $(CHAFF_LIB) $(BOOLEFORCE_LIB) $(MINISAT_LIB) \
+        $(MINISAT2_LIB) $(SQUOLEM2_LIB) $(CUDD_LIB) \
+        $(PICOSAT_LIB) $(LINGELING_LIB) $(GLUCOSE_LIB) $(CADICAL_LIB)
 
--include $(SRC:.cpp=.d)
+SOLVER_OBJS = $(filter %$(OBJEXT), $(SOLVER_LIB))
+ifneq ($(SOLVER_OBJS),)
+-include $(SOLVER_OBJS:$(OBJEXT)=$(DEPEXT))
+endif
 
 ###############################################################################
 
-solvers$(LIBEXT): $(OBJ) $(CHAFF_LIB) $(BOOLEFORCE_LIB) $(MINISAT_LIB) \
-        $(MINISAT2_LIB) $(SMVSAT_LIB) $(SQUOLEM2_LIB) $(CUDD_LIB) \
-	$(PRECOSAT_LIB) $(PICOSAT_LIB) $(LINGELING_LIB) $(GLUCOSE_LIB)
+solvers$(LIBEXT): $(OBJ) $(SOLVER_LIB)
 	$(LINKLIB)
 
+-include smt2/smt2_solver$(DEPEXT)
+
+smt2_solver$(EXEEXT): $(OBJ) smt2/smt2_solver$(OBJEXT) \
+	../util/util$(LIBEXT) ../big-int/big-int$(LIBEXT) $(SOLVER_LIB)
+	$(LINKBIN)

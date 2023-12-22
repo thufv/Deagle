@@ -6,106 +6,33 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
-
 #include "prop.h"
 
-/*******************************************************************\
-
-Function: propt::set_equal
-
-  Inputs:
-
- Outputs:
-
- Purpose: asserts a==b in the propositional formula
-
-\*******************************************************************/
-
+/// asserts a==b in the propositional formula
 void propt::set_equal(literalt a, literalt b)
 {
-  bvt bv;
-  bv.resize(2);
-  bv[0]=a;
-  bv[1]=lnot(b);
-  lcnf(bv);
-  
-  bv[0]=lnot(a);
-  bv[1]=b;
-  lcnf(bv);
+  lcnf(a, !b);
+  lcnf(!a, b);
 }
 
-/*******************************************************************\
-
-Function: propt::set_assignment
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void propt::set_assignment(literalt a, bool value)
-{
-  assert(false);
-}
-
-/*******************************************************************\
-
-Function: propt::copy_assignment_from
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void propt::copy_assignment_from(const propt &src)
-{
-  assert(false);
-}
-
-/*******************************************************************\
-
-Function: propt::is_in_conflict
-
-  Inputs:
-
- Outputs: true iff the given literal is part of the final conflict
-
- Purpose:  
-
-\*******************************************************************/
-
-bool propt::is_in_conflict(literalt l) const
-{
-  assert(false);
-  return false;
-}
-
-/*******************************************************************\
-
-Function: propt::new_variables
-
-  Inputs: width
-
- Outputs: bitvector 
-
- Purpose: generates a bitvector of given width with new variables 
-
-\*******************************************************************/
-
-bvt propt::new_variables(unsigned width)
+/// generates a bitvector of given width with new variables
+/// \return bitvector
+bvt propt::new_variables(std::size_t width)
 {
   bvt result;
-  result.resize(width);
-  for(unsigned i=0; i<width; i++)
-    result[i]=new_variable();
+  result.reserve(width);
+  for(std::size_t i=0; i<width; i++)
+    result.push_back(new_variable());
   return result;
 }
 
+propt::resultt propt::prop_solve()
+{
+  ++number_of_solver_calls;
+  return do_prop_solve();
+}
 
+std::size_t propt::get_number_of_solver_calls() const
+{
+  return number_of_solver_calls;
+}

@@ -6,26 +6,11 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <stdlib.h>
-#include <string.h>
+#include "xml_parser.h"
 
 #include <fstream>
 
-#include "xml_parser.h"
-
 xml_parsert xml_parser;
-
-/*******************************************************************\
-
-Function: parse_xml
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 // 'do it all' function
 bool parse_xml(
@@ -47,20 +32,8 @@ bool parse_xml(
   // save some memory
   xml_parser.clear();
 
-  return result;  
+  return result;
 }
-
-/*******************************************************************\
-
-Function: parse_xml
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 // 'do it all' function
 bool parse_xml(
@@ -68,9 +41,10 @@ bool parse_xml(
   message_handlert &message_handler,
   xmlt &dest)
 {
-  std::ifstream in(filename.c_str());
-  
-  if(!in) return true;
- 
+  std::ifstream in(filename);
+
+  if(!in)
+    return true;
+
   return parse_xml(in, filename, message_handler, dest);
 }

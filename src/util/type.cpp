@@ -1,71 +1,36 @@
 /*******************************************************************\
 
-Module:
+Module: Implementations of some functions of typet
 
 Author: Daniel Kroening, kroening@kroening.com
+        Maria Svorenova, maria.svorenova@diffblue.com
 
 \*******************************************************************/
+
+/// \file
+/// Implementations of some functions of typet
 
 #include "type.h"
 
-/*******************************************************************\
-
-Function: typet::copy_to_subtypes
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void typet::copy_to_subtypes(const typet &type)
+/// Copy the provided type to the subtypes of this type.
+/// \param type: The type to add to subtypes
+void type_with_subtypest::copy_to_subtypes(const typet &type)
 {
   subtypes().push_back(type);
 }
 
-/*******************************************************************\
-
-Function: typet::move_to_subtypes
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void typet::move_to_subtypes(typet &type)
+/// Move the provided type to the subtypes of this type. Destroys the
+/// provided type.
+/// \param type: The type to add to subtypes
+void type_with_subtypest::move_to_subtypes(typet &type)
 {
   subtypest &sub=subtypes();
   sub.push_back(static_cast<const typet &>(get_nil_irep()));
   sub.back().swap(type);
 }
 
-/*******************************************************************\
-
-Function: is_number
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool is_number(const typet &type)
+typet remove_const(typet type)
 {
-  const irep_idt &id=type.id();
-  return id==ID_rational ||
-         id==ID_real ||
-         id==ID_integer ||
-         id==ID_natural || 
-         id==ID_complex ||
-         id==ID_unsignedbv ||
-         id==ID_signedbv || 
-         id==ID_floatbv ||
-         id==ID_fixedbv;
+  type.remove(ID_C_constant);
+  return type;
 }

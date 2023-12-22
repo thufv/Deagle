@@ -6,37 +6,11 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
-
 #include "float_approximation.h"
-
-/*******************************************************************\
-
-Function: float_approximationt::~float_approximationt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 float_approximationt::~float_approximationt()
 {
 }
-
-/*******************************************************************\
-
-Function: float_approximationt::round_fraction
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void float_approximationt::normalization_shift(bvt &fraction, bvt &exponent)
 {
@@ -53,7 +27,7 @@ void float_approximationt::normalization_shift(bvt &fraction, bvt &exponent)
     // the bits above need to be zero
     for(unsigned j=0; j<i; j++)
       equal.push_back(
-        prop.lnot(fraction[fraction.size()-1-j]));
+        !fraction[fraction.size()-1-j]);
 
     // this one needs to be one
     equal.push_back(fraction[fraction.size()-1-i]);
@@ -66,12 +40,14 @@ void float_approximationt::normalization_shift(bvt &fraction, bvt &exponent)
     if(over_approximate)
       shifted_fraction=overapproximating_left_shift(fraction, i);
     else
-      shifted_fraction=bv_utils.shift(fraction, bv_utilst::LEFT, i);
+      shifted_fraction=bv_utils.shift(
+        fraction, bv_utilst::shiftt::SHIFT_LEFT, i);
 
     bv_utils.cond_implies_equal(shift, shifted_fraction, new_fraction);
 
     // build new exponent
-    bvt adjustment=bv_utils.build_constant(-i, exponent.size());
+    bvt adjustment =
+      bv_utils.build_constant(-static_cast<int>(i), exponent.size());
     bvt added_exponent=bv_utils.add(exponent, adjustment);
     bv_utils.cond_implies_equal(shift, added_exponent, new_exponent);
   }
@@ -86,18 +62,6 @@ void float_approximationt::normalization_shift(bvt &fraction, bvt &exponent)
   fraction=new_fraction;
   exponent=new_exponent;
 }
-
-/*******************************************************************\
-
-Function: float_approximationt::overapproximating_left_shift
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bvt float_approximationt::overapproximating_left_shift(
   const bvt &src, unsigned dist)

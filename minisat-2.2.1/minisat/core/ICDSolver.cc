@@ -15,9 +15,9 @@ using namespace Minisat;
 
 ICD_reasont ICD_empty_reason;
 
-inline bool oclt_reasonable(edge_kindt kind)
+inline bool oc_reasonable(edge_kindt kind)
 {
-    return kind == OCLT_RFI || kind == OCLT_RFE || kind == OCLT_COI || kind == OCLT_COE || kind == OCLT_FR;
+    return kind == OC_RF || kind == OC_WS || kind == OC_FR;
 }
 
 ICDSolver::ICDSolver()
@@ -31,14 +31,14 @@ void ICDSolver::init()
     graph.init(this);
 }
 
-void ICDSolver::save_raw_graph(oclt_convert_tablet& _oclt_convert_table)
+void ICDSolver::setRawGraph(oc_edge_tablet& _oc_edge_table)
 {
-    oclt_convert_table = _oclt_convert_table;
+    oc_edge_table = _oc_edge_table;
 }
 
 void ICDSolver::set_graph()
 {
-    for(auto pair: oclt_convert_table)
+    for(auto pair: oc_edge_table)
     {
         if(pair.first.first == "" || pair.first.second == "")
             continue;
@@ -47,16 +47,16 @@ void ICDSolver::set_graph()
         int v = graph.get_node(pair.first.second);
         edge_kindt kind = str_to_kind(pair.second.second);
 
-        if(kind != OCLT_EPO)
+        if(kind != OC_APO)
             continue;
 
         if(OC_VERBOSITY >= 1)
             std::cout << "initing " << u << "(" << pair.first.first << ") " << v << "(" << pair.first.second << ") " << kind_to_str(kind) << "\n";
 
-        graph.activate_epo(u, v);
+        graph.activate_apo(u, v);
     }
 
-    for(auto pair: oclt_convert_table)
+    for(auto pair: oc_edge_table)
     {
         if(pair.first.first == "" || pair.first.second == "")
             continue;
@@ -65,13 +65,13 @@ void ICDSolver::set_graph()
         int v = graph.get_node(pair.first.second);
         edge_kindt kind = str_to_kind(pair.second.second);
 
-        if(kind == OCLT_EPO)
+        if(kind == OC_APO)
             continue;
 
         if(OC_VERBOSITY >= 1)
             std::cout << "initing " << u << "(" << pair.first.first << ") " << v << "(" << pair.first.second << ") " << kind_to_str(kind) << "\n";
 
-        if(oclt_reasonable(kind))
+        if(oc_reasonable(kind))
         {
             Lit& l = pair.second.first;
             graph.init_reasonable_edge(u, v, kind, l);
@@ -79,11 +79,14 @@ void ICDSolver::set_graph()
         else
         {
             if(graph.activate_edge(u, v, kind, ICD_empty_reason))
+            {
                 std::cout << "ERROR: find cycle during set_graph\n";
+                ok = false;
+            }
         }
     }
 
-    if(OC_VERBOSITY >= 1) //show epo info
+    if(OC_VERBOSITY >= 1) //show apo info
     {
         for(int i = 0; i < graph.nodes.size(); i++)
         {
@@ -349,7 +352,7 @@ CRef ICDSolver::propagate()
         {
             cycle = graph.activate_edge(edge.from, edge.to, edge.kind, edge.reason);
 
-            if(decisionLevel() == 0 && (edge.kind == OCLT_RFE || edge.kind == OCLT_RFI))
+            if(decisionLevel() == 0 && edge.kind == OC_RF)
             {
                 if(edge.reason.num != 1)
                     std::cout << "ERROR: the reason of an inactive_edge to remove has num " << edge.reason.num << "\n";
@@ -412,7 +415,7 @@ CRef ICDSolver::propagate()
                 //learnts.push(cr);
                 //attachClause(cr);
                 //claBumpActivity(ca[cr]);
-                if(value(learnt_clause[0]) != l_Undef)
+                if(value(learnt_clause[0]) == l_Undef)
                     uncheckedEnqueue(learnt_clause[0], cr);
             }
         }

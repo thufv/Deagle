@@ -1,0 +1,67 @@
+let Marked = (_ \ M) | IW | Once | Release | Acquire | (RMW & R) | (RMW & W) |
+        LKR | LKW | UL | LF | RL | RU
+let Plain = M \ Marked
+
+let acq-po = [Acquire] ; po ; [M]
+let po-rel = [M] ; po ; [Release]
+let po-unlock-lock-po = po ; [UL] ; (po|rf) ; [LKR] ; po
+
+let R4rmb = R \ Noreturn	(* Reads for which rmb works *)
+let rmb = [R4rmb] ; fencerel(Rmb) ; [R4rmb]
+let wmb = [W] ; fencerel(Wmb) ; [W]
+let mb = ([M] ; fencerel(Mb) ; [M]) |
+	([M] ; fencerel(Before-atomic) ; [RMW] ; po? ; [M]) |
+	([M] ; po? ; [RMW] ; fencerel(After-atomic) ; [M]) |
+	([M] ; po? ; [LKW] ; fencerel(After-spinlock) ; [M]) |
+	([M] ; po ; [UL] ; (co | po) ; [LKW] ;
+		fencerel(After-unlock-lock) ; [M])
+let gp = po ; [Sync-rcu | Sync-srcu] ; po?
+let strong-fence = mb | gp
+
+let nonrw-fence = strong-fence | po-rel | acq-po
+let fence = nonrw-fence | wmb | rmb
+
+let com = rf | co | fr
+acyclic po-loc | com as coherence
+
+empty rmw & (fre ; coe) as atomic
+
+let dep = addr | data
+let rwdep = (dep | ctrl) ; [W]
+let overwrite = co | fr
+let to-w = rwdep | (overwrite & int) | (addr ; [Plain] ; wmb)
+let to-r = addr | (dep ; [Marked] ; rfi)
+let ppo = to-r | to-w | fence | (po-unlock-lock-po & int)
+
+let cumul-fence = [Marked] ; ((rfe ; [Marked])? ; (strong-fence | po-rel) | wmb | po-unlock-lock-po) ; [Marked]
+let prop = [Marked] ; (overwrite & ext)? ; cumul-fence* ; [Marked] ; rfe? ; [Marked]
+
+let hb = [Marked] ; (ppo | rfe | ((prop \ id) & int)) ; [Marked]
+acyclic hb as happens-before
+
+let pb = prop ; strong-fence ; hb* ; [Marked]
+acyclic pb as propagation
+
+let rcu-gp = [Sync-rcu]
+let srcu-gp = [Sync-srcu]
+let rcu-rscsi = rcu-rscs^-1
+// NOTE: We don't support SRCU
+let srcu-rscsi = 0
+
+let rcu-link = po? ; hb* ; pb* ; prop ; po
+
+let rec rcu-order = rcu-gp | srcu-gp |
+	(rcu-gp ; rcu-link ; rcu-rscsi) |
+	((srcu-gp ; rcu-link ; srcu-rscsi) & loc) |
+	(rcu-rscsi ; rcu-link ; rcu-gp) |
+	((srcu-rscsi ; rcu-link ; srcu-gp) & loc) |
+	(rcu-gp ; rcu-link ; rcu-order ; rcu-link ; rcu-rscsi) |
+	((srcu-gp ; rcu-link ; rcu-order ; rcu-link ; srcu-rscsi) & loc) |
+	(rcu-rscsi ; rcu-link ; rcu-order ; rcu-link ; rcu-gp) |
+	((srcu-rscsi ; rcu-link ; rcu-order ; rcu-link ; srcu-gp) & loc) |
+	(rcu-order ; rcu-link ; rcu-order)
+let rcu-fence = po ; rcu-order ; po?
+
+let rb = prop ; rcu-fence ; hb* ; pb* ; [Marked]
+
+irreflexive rb as rcu

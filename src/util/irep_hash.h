@@ -6,8 +6,11 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 
 \*******************************************************************/
 
-#ifndef CPROVER_IREP_HASH_H
-#define CPROVER_IREP_HASH_H
+/// \file
+/// irep hash functions
+
+#ifndef CPROVER_UTIL_IREP_HASH_H
+#define CPROVER_UTIL_IREP_HASH_H
 
 // you need to pick one of the following options
 
@@ -32,6 +35,7 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 // MURMURHASH2A compares most favourably on String6 with 3076 fewer
 // calls (2.9%)
 
+#include <climits>
 #include <cstddef> // std::size_t
 
 #ifdef _MSC_VER
@@ -41,8 +45,8 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 #  include <cstdint>
 #  include <cstdlib>
 
-#  define ROTL32(x,y)     _rotl(x,y)
-#  define ROTL64(x,y)     _rotl64(x,y)
+#  define ROTL32(x, y)     _rotl(x, y)
+#  define ROTL64(x, y)     _rotl64(x, y)
 
 #  define BIG_CONSTANT(x) (x)
 
@@ -54,12 +58,12 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 
 static FORCE_INLINE uint32_t ROTL32(uint32_t x, int8_t r)
 {
-  return (x << r) | (x >> (32 - r));
+  return (x << r) | (x >> (32-r));
 }
 
 static FORCE_INLINE uint64_t ROTL64(uint64_t x, int8_t r)
 {
-  return (x << r) | (x >> (64 - r));
+  return (x << r) | (x >> (64-r));
 }
 
 #  define BIG_CONSTANT(x) (x##LLU)
@@ -74,18 +78,6 @@ std::size_t basic_hash_combine(
   std::size_t h1,
   std::size_t h2);
 
-/*******************************************************************\
-
-Function: basic_hash_combine
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 template<>
 inline std::size_t basic_hash_combine<32>(
   std::size_t h1,
@@ -93,18 +85,6 @@ inline std::size_t basic_hash_combine<32>(
 {
   return ROTL32(h1, 7)^h2;
 }
-
-/*******************************************************************\
-
-Function: basic_hash_combine
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 template<>
 inline std::size_t basic_hash_combine<64>(
@@ -127,19 +107,7 @@ inline std::size_t basic_hash_combine<64>(
   #endif
 }
 
-/*******************************************************************\
-
-Function: basic_hash_finalize
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-static inline std::size_t basic_hash_finalize(
+inline std::size_t basic_hash_finalize(
   std::size_t h1,
   std::size_t len)
 {
@@ -148,10 +116,11 @@ static inline std::size_t basic_hash_finalize(
   return h1;
 }
 
-#define hash_combine(h1, h2) \
-  basic_hash_combine<sizeof(std::size_t)*8>(h1, h2)
-#define hash_finalize(h1, len) \
-  basic_hash_finalize(h1, len)
+// Boost uses the symbol hash_combine, if you're getting problems here then
+//  you've probably included a Boost header after this one
+#  define hash_combine(h1, h2)                                                 \
+    basic_hash_combine<sizeof(std::size_t) * CHAR_BIT>(h1, h2)
+#  define hash_finalize(h1, len) basic_hash_finalize(h1, len)
 
 #endif
 
@@ -173,25 +142,13 @@ std::size_t murmurhash2a_hash_finalize(
   std::size_t h1,
   std::size_t len);
 
-/*******************************************************************\
-
-Function: murmurhash2a_hash_combine
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 static FORCE_INLINE uint32_t mmix32(uint32_t h1, uint32_t h2)
 {
   const int r=24;
   const uint32_t m=0x5bd1e995;
 
   h2*=m;
-  h2^=h2 >> r;
+  h2^=h2>>r; // NOLINT(whitespace/operators)
   h2*=m;
   h1*=m;
   h1^=h2;
@@ -207,18 +164,7 @@ inline std::size_t murmurhash2a_hash_combine<32>(
   return mmix32(h1, h2);
 }
 
-/*******************************************************************\
-
-Function: murmurhash2a_hash_finalize
-
-  Inputs:
-
- Outputs:
-
- Purpose: force all bits of a hash block to avalanche
-
-\*******************************************************************/
-
+/// force all bits of a hash block to avalanche
 template<>
 inline std::size_t murmurhash2a_hash_finalize<32>(
   std::size_t h1,
@@ -228,24 +174,12 @@ inline std::size_t murmurhash2a_hash_finalize<32>(
 
   h1=mmix32(h1, len);
 
-  h1^=h1 >> 13;
+  h1^=h1>>13;
   h1*=m;
-  h1^=h1 >> 15;
+  h1^=h1>>15;
 
   return h1;
 }
-
-/*******************************************************************\
-
-Function: murmurhash2a_hash_combine
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 static FORCE_INLINE uint64_t mmix64(uint64_t h1, uint64_t h2)
 {
@@ -253,7 +187,7 @@ static FORCE_INLINE uint64_t mmix64(uint64_t h1, uint64_t h2)
   const uint64_t m=0xc6a4a7935bd1e995;
 
   h2*=m;
-  h2^=h2 >> r;
+  h2^=h2>>r; // NOLINT(whitespace/operators)
   h2*=m;
   // the original 64bit (non-incremental) algorithm swaps the
   // following two operations
@@ -271,18 +205,7 @@ inline std::size_t murmurhash2a_hash_combine<64>(
   return mmix64(h1, h2);
 }
 
-/*******************************************************************\
-
-Function: murmurhash2a_hash_finalize
-
-  Inputs:
-
- Outputs:
-
- Purpose: force all bits of a hash block to avalanche
-
-\*******************************************************************/
-
+/// force all bits of a hash block to avalanche
 template<>
 inline std::size_t murmurhash2a_hash_finalize<64>(
   std::size_t h1,
@@ -294,17 +217,17 @@ inline std::size_t murmurhash2a_hash_finalize<64>(
   // not in the original code
   h1=mmix64(h1, len);
 
-  h1^=h1 >> r;
+  h1^=h1>>r; // NOLINT(whitespace/operators)
   h1*=m;
-  h1^=h1 >> r;
+  h1^=h1>>r; // NOLINT(whitespace/operators)
 
   return h1;
 }
 
-#define hash_combine(h1, h2) \
-  murmurhash2a_hash_combine<sizeof(std::size_t)*8>(h1, h2)
-#define hash_finalize(h1, len) \
-  murmurhash2a_hash_finalize<sizeof(std::size_t)*8>(h1, len)
+#  define hash_combine(h1, h2)                                                 \
+    murmurhash2a_hash_combine<sizeof(std::size_t) * CHAR_BIT>(h1, h2)
+#  define hash_finalize(h1, len)                                               \
+    murmurhash2a_hash_finalize<sizeof(std::size_t) * CHAR_BIT>(h1, len)
 
 #endif
 
@@ -326,18 +249,6 @@ std::size_t murmurhash3_hash_finalize(
   std::size_t h1,
   std::size_t len);
 
-/*******************************************************************\
-
-Function: murmurhash3_hash_combine
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 template<>
 inline std::size_t murmurhash3_hash_combine<32>(
   std::size_t h1,
@@ -347,35 +258,24 @@ inline std::size_t murmurhash3_hash_combine<32>(
   const uint32_t c2=0x1b873593;
 
   h2*=c1;
-  h2=ROTL32(h2,15);
+  h2=ROTL32(h2, 15);
   h2*=c2;
 
   h1^=h2;
-  h1=ROTL32(h1,13);
+  h1=ROTL32(h1, 13);
   h1=h1*5+0xe6546b64;
 
   return h1;
 }
 
-/*******************************************************************\
-
-Function: murmurhash3_hash_finalize
-
-  Inputs:
-
- Outputs:
-
- Purpose: force all bits of a hash block to avalanche
-
-\*******************************************************************/
-
+/// force all bits of a hash block to avalanche
 static FORCE_INLINE uint32_t fmix32(uint32_t h)
 {
-  h^=h >> 16;
+  h^=h>>16;
   h*=0x85ebca6b;
-  h^=h >> 13;
+  h^=h>>13;
   h*=0xc2b2ae35;
-  h^=h >> 16;
+  h^=h>>16;
 
   return h;
 }
@@ -390,18 +290,6 @@ inline std::size_t murmurhash3_hash_finalize<32>(
   return fmix32(h1);
 }
 
-/*******************************************************************\
-
-Function: murmurhash3_hash_combine
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 template<>
 inline std::size_t murmurhash3_hash_combine<64>(
   std::size_t h1,
@@ -413,42 +301,31 @@ inline std::size_t murmurhash3_hash_combine<64>(
   const uint64_t c2=BIG_CONSTANT(0x4cf5ad432745937f);
 
   h2*=c1;
-  h2=ROTL64(h2,31);
+  h2=ROTL64(h2, 31);
   h2*=c2;
 
   h1^=h2;
-  h1=ROTL64(h1,27);
+  h1=ROTL64(h1, 27);
   // it may be better to omit the following re-combination according
-  // to the LLBMC benchmark set (reduces the hash collisions in
-  // boolbv_width::get_entry, but slightly increases them elsewhere)
+  // to the LLBMC benchmark set, as it reduces the hash collisions in
+  // boolbv_width::get_entry, but slightly increases them elsewhere
   h1+=h1_tmp;
   h1=h1*5+0x52dce729;
 
   return h1;
 }
 
-/*******************************************************************\
-
-Function: murmurhash3_hash_finalize
-
-  Inputs:
-
- Outputs:
-
- Purpose: force all bits of a hash block to avalanche
-
-\*******************************************************************/
-
+/// force all bits of a hash block to avalanche
 static FORCE_INLINE uint64_t fmix64(uint64_t h)
 {
   // a brief experiment with supposedly better constants from
   // http://zimbry.blogspot.co.uk/2011/09/better-bit-mixing-improving-on.html
   // rather resulted in a slightly worse result
-  h^=h >> 33;
+  h^=h>>33;
   h*=BIG_CONSTANT(0xff51afd7ed558ccd);
-  h^=h >> 33;
+  h^=h>>33;
   h*=BIG_CONSTANT(0xc4ceb9fe1a85ec53);
-  h^=h >> 33;
+  h^=h>>33;
 
   return h;
 }
@@ -463,11 +340,11 @@ inline std::size_t murmurhash3_hash_finalize<64>(
   return fmix64(h1);
 }
 
-#define hash_combine(h1, h2) \
-  murmurhash3_hash_combine<sizeof(std::size_t)*8>(h1, h2)
-#define hash_finalize(h1, len) \
-  murmurhash3_hash_finalize<sizeof(std::size_t)*8>(h1, len)
+#  define hash_combine(h1, h2)                                                 \
+    murmurhash3_hash_combine<sizeof(std::size_t) * CHAR_BIT>(h1, h2)
+#  define hash_finalize(h1, len)                                               \
+    murmurhash3_hash_finalize<sizeof(std::size_t) * CHAR_BIT>(h1, len)
 
 #endif
 
-#endif
+#endif // CPROVER_UTIL_IREP_HASH_H

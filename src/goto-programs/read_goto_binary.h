@@ -6,27 +6,33 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// Read Goto Programs
+
 #ifndef CPROVER_GOTO_PROGRAMS_READ_GOTO_BINARY_H
 #define CPROVER_GOTO_PROGRAMS_READ_GOTO_BINARY_H
 
+#include <list>
 #include <string>
 
-class symbol_tablet;
-class goto_functionst;
-class message_handlert;
-class goto_modelt;
+#include <util/optional.h>
 
-bool read_goto_binary(
-  const std::string &filename,
-  symbol_tablet &symbol_table,
-  goto_functionst &dest,
-  message_handlert &message_handler);
-  
-bool read_goto_binary(
-  const std::string &filename,
+class goto_modelt;
+class message_handlert;
+
+optionalt<goto_modelt>
+read_goto_binary(const std::string &filename, message_handlert &);
+
+bool is_goto_binary(const std::string &filename, message_handlert &);
+
+/// Reads object files and updates the config if any files were read.
+/// \param file_names: file names of goto binaries; if empty, just returns false
+/// \param [out] dest: GOTO model to update.
+/// \param message_handler: for diagnostics
+/// \return True on error, false otherwise
+bool read_objects_and_link(
+  const std::list<std::string> &file_names,
   goto_modelt &dest,
   message_handlert &message_handler);
-  
-bool is_goto_binary(const std::string &filename);
 
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_READ_GOTO_BINARY_H

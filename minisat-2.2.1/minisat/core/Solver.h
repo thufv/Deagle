@@ -27,6 +27,7 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 #include "../../minisat/utils/Options.h"
 #include "../../minisat/core/SolverTypes.h"
 
+#include <string>
 
 namespace Minisat {
 
@@ -52,6 +53,9 @@ public:
     bool    addClause (Lit p, Lit q, Lit r);                    // Add a ternary clause to the solver. 
     bool    addClause_(      vec<Lit>& ps);                     // Add a clause to the solver without making superflous internal copy. Will
                                                                 // change the passed vector 'ps'.
+
+    virtual void addOC(std::string from, std::string to, std::string type, Lit related_lit);
+    virtual void addGuard(std::string node, Lit guard);
 
     // Solving:
     //

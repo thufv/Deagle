@@ -8,18 +8,20 @@ Date: June 2011
 
 \*******************************************************************/
 
-#ifndef CPROVER_GOTO_SYMEX_VCD_GOTO_TRACE_H
-#define CPROVER_GOTO_SYMEX_VCD_GOTO_TRACE_H
+/// \file
+/// Traces of GOTO Programs in VCD (Value Change Dump) Format
+
+#ifndef CPROVER_GOTO_PROGRAMS_VCD_GOTO_TRACE_H
+#define CPROVER_GOTO_PROGRAMS_VCD_GOTO_TRACE_H
 
 #include <iosfwd>
 
-#include <util/namespace.h>
-
-#include "goto_trace.h"
+class goto_tracet;
+class namespacet;
 
 void output_vcd(
   const namespacet &ns,
   const goto_tracet &goto_trace,
   std::ostream &out);
 
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_VCD_GOTO_TRACE_H

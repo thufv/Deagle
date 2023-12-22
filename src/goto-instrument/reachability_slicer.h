@@ -6,11 +6,54 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_GOTO_PROGRAMS_SLICER_H
-#define CPROVER_GOTO_PROGRAMS_SLICER_H
+/// \file
+/// Slicing
 
-#include <goto-programs/goto_functions.h>
+#ifndef CPROVER_GOTO_INSTRUMENT_REACHABILITY_SLICER_H
+#define CPROVER_GOTO_INSTRUMENT_REACHABILITY_SLICER_H
 
-void reachability_slicer(goto_functionst &goto_functions);
+#include <list>
+#include <string>
 
-#endif
+class goto_modelt;
+class message_handlert;
+
+void reachability_slicer(goto_modelt &, message_handlert &);
+
+void reachability_slicer(
+  goto_modelt &,
+  const std::list<std::string> &properties,
+  message_handlert &);
+
+void function_path_reachability_slicer(
+  goto_modelt &goto_model,
+  const std::list<std::string> &functions_list,
+  message_handlert &);
+
+void reachability_slicer(
+  goto_modelt &,
+  const bool include_forward_reachability,
+  message_handlert &);
+
+void reachability_slicer(
+  goto_modelt &,
+  const std::list<std::string> &properties,
+  const bool include_forward_reachability,
+  message_handlert &);
+
+// clang-format off
+#define OPT_REACHABILITY_SLICER                                                \
+  "(fp-reachability-slice):(reachability-slice)(reachability-slice-fb)" // NOLINT(*)
+
+#define HELP_REACHABILITY_SLICER                                                      \
+  " --fp-reachability-slice f    remove instructions that cannot appear on a trace\n" \
+  "                              that visits all given functions. The list of\n"      \
+  "                              functions has to be given as a comma separated\n"    \
+  "                              list f.\n"                                           \
+  " --reachability-slice         remove instructions that cannot appear on a trace\n" \
+  "                              from entry point to a property\n" // NOLINT(*)
+#define HELP_REACHABILITY_SLICER_FB                                                   \
+  " --reachability-slice-fb      remove instructions that cannot appear on a trace\n" \
+  "                              from entry point through a property\n" // NOLINT(*)
+// clang-format on
+#endif // CPROVER_GOTO_INSTRUMENT_REACHABILITY_SLICER_H

@@ -2,322 +2,276 @@
 
 Module: LD Mode
 
-Author: Daniel Kroening, 2013
+Author: CM Wintersteiger, 2006
 
 \*******************************************************************/
 
-#include <iostream>
+/// \file
+/// LD Mode
 
-#include <util/string2int.h>
-#include <util/config.h>
-
-#include <cbmc/version.h>
-
-#include "compile.h"
 #include "ld_mode.h"
 
-/*******************************************************************\
+#ifdef _WIN32
+#define EX_OK 0
+#define EX_USAGE 64
+#define EX_SOFTWARE 70
+#else
+#include <sysexits.h>
+#endif
 
-Function: ld_modet::doit
+#include <cstring>
+#include <fstream>
+#include <iostream>
 
-  Inputs:
+#include <util/cmdline.h>
+#include <util/config.h>
+#include <util/file_util.h>
+#include <util/invariant.h>
+#include <util/run.h>
 
- Outputs:
+#include "compile.h"
+#include "goto_cc_cmdline.h"
+#include "hybrid_binary.h"
+#include "linker_script_merge.h"
 
- Purpose: does it.
+static std::string
+linker_name(const cmdlinet &cmdline, const std::string &base_name)
+{
+  if(cmdline.isset("native-linker"))
+    return cmdline.get_value("native-linker");
 
-\*******************************************************************/
+  std::string::size_type pos = base_name.find("goto-ld");
 
-bool ld_modet::doit()
+  if(
+    pos == std::string::npos || base_name == "goto-gcc" ||
+    base_name == "goto-ld")
+    return "ld";
+
+  std::string result = base_name;
+  result.replace(pos, 7, "ld");
+
+  return result;
+}
+
+ld_modet::ld_modet(goto_cc_cmdlinet &_cmdline, const std::string &_base_name)
+  : goto_cc_modet(_cmdline, _base_name, gcc_message_handler),
+    goto_binary_tmp_suffix(".goto-cc-saved")
+{
+}
+
+/// does it.
+int ld_modet::doit()
 {
   if(cmdline.isset("help"))
   {
     help();
-    return false;
+    return EX_OK;
   }
 
-  int verbosity=1;
+  native_tool_name = linker_name(cmdline, base_name);
 
-  compilet compiler(cmdline);
-  
-  if(cmdline.isset('v') || cmdline.isset('V'))
-  {
-    // This a) prints the version and b) increases verbosity.
-    // Linking continues, don't exit!
-    
-    print("GNU ld version 2.16.91 20050610 (goto-cc " CBMC_VERSION ")");
-    
-    // 'V' should also print some supported "emulations".
-  }
+  if(cmdline.isset("version") || cmdline.isset("print-sysroot"))
+    return run_ld();
 
-  if(cmdline.isset("version"))
-  {
-    print("GNU ld version 2.16.91 20050610 (goto-cc " CBMC_VERSION ")");
-    print("Copyright (C) 2006-2013 Daniel Kroening, Christoph Wintersteiger");
-    return false; // Exit!
-  }
+  messaget::eval_verbosity(
+    cmdline.get_value("verbosity"), messaget::M_ERROR, gcc_message_handler);
 
-  if(cmdline.isset("verbosity"))
-    verbosity=unsafe_string2int(cmdline.getval("verbosity"));
+  compilet compiler(cmdline, gcc_message_handler, false);
 
-  compiler.ui_message_handler.set_verbosity(verbosity);
-  ui_message_handler.set_verbosity(verbosity);
+  // determine actions to be undertaken
+  compiler.mode = compilet::LINK_LIBRARY;
 
-  if(produce_hybrid_binary)
-    debugx("LD mode (hybrid)");
-  else
-    debugx("LD mode");
-  
+  // model validation
+  compiler.validate_goto_model = cmdline.isset("validate-goto-model");
+
   // get configuration
   config.set(cmdline);
-  
-  // determine actions to be undertaken
-  compiler.mode=compilet::LINK_LIBRARY;
 
-  compiler.object_file_extension="o";
+  compiler.object_file_extension = "o";
 
   if(cmdline.isset('L'))
-    compiler.library_paths=cmdline.get_values('L');
-    // Don't add the system paths!
-
-  if(cmdline.isset("library-path"))
-    compiler.library_paths=cmdline.get_values("library-path");
-    // Don't add the system paths!
+    compiler.library_paths = cmdline.get_values('L');
+  // Don't add the system paths!
 
   if(cmdline.isset('l'))
-    compiler.libraries=cmdline.get_values('l');
+    compiler.libraries = cmdline.get_values('l');
 
-  if(cmdline.isset("library"))
-    compiler.libraries=cmdline.get_values("library");
+  if(cmdline.isset("static"))
+    compiler.libraries.push_back("c");
 
   if(cmdline.isset('o'))
   {
     // given gcc -o file1 -o file2,
     // gcc will output to file2, not file1
-    compiler.output_file_object=cmdline.get_values('o').back();
-    compiler.output_file_executable=cmdline.get_values('o').back();
-  }
-  else if(cmdline.isset("output"))
-  {
-    // given gcc -o file1 -o file2,
-    // gcc will output to file2, not file1
-    compiler.output_file_object=cmdline.get_values("output").back();
-    compiler.output_file_executable=cmdline.get_values("output").back();
+    compiler.output_file_object = cmdline.get_values('o').back();
+    compiler.output_file_executable = cmdline.get_values('o').back();
   }
   else
   {
-    // defaults
-    compiler.output_file_object="";
-    compiler.output_file_executable="a.out";
+    compiler.output_file_object.clear();
+    compiler.output_file_executable = "a.out";
   }
-    
-  // do all the rest
-  bool result=compiler.doit();
 
-  #if 0
-  if(produce_hybrid_binary)
-  {
-    if(gcc_hybrid_binary(original_args))
-      result=true;
-  }
-  #endif
-  
-  return result;
+  // We now iterate over any input files
+
+  for(const auto &arg : cmdline.parsed_argv)
+    if(arg.is_infile_name)
+      compiler.add_input_file(arg.arg);
+
+  // Revert to gcc in case there is no source to compile
+  // and no binary to link.
+
+  if(compiler.source_files.empty() && compiler.object_files.empty())
+    return run_ld(); // exit!
+
+  // do all the rest
+  if(compiler.doit())
+    return 1; // LD exit code for all kinds of errors
+
+  // We can generate hybrid ELF and Mach-O binaries
+  // containing both executable machine code and the goto-binary.
+  return ld_hybrid_binary(
+    compiler.mode == compilet::COMPILE_LINK_EXECUTABLE, compiler.object_files);
 }
 
-/*******************************************************************\
-
-Function: ld_modet::gcc_hybrid_binary
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-#if 0
-int ld_modet::gcc_hybrid_binary(const cmdlinet::argst &input_files)
+int ld_modet::run_ld()
 {
-  if(input_files.empty())
-    return 0;
-
-  std::list<std::string> output_files;
-  
-  if(cmdline.isset('c'))
-  {
-    if(cmdline.isset('o'))
-    {
-      // there should be only one input file
-      output_files.push_back(cmdline.getval('o'));
-    }
-    else
-    {
-      for(cmdlinet::argst::const_iterator
-          i_it=input_files.begin();
-          i_it!=input_files.end();
-          i_it++)
-      {
-        if(is_supported_source_file(*i_it) && cmdline.isset('c'))
-          output_files.push_back(get_base_name(*i_it)+".o");
-      }
-    }
-  }
-  else
-  {
-    // -c is not given
-    if(cmdline.isset('o'))
-      output_files.push_back(cmdline.getval('o'));
-    else
-      output_files.push_back("a.out");      
-  }
-
-  if(output_files.empty()) return 0;
-
-  debugx("Running gcc to generate hybrid binary");
-  
-  // save the goto-cc output files
-  for(std::list<std::string>::const_iterator
-      it=output_files.begin();
-      it!=output_files.end();
-      it++)
-  {
-    rename(it->c_str(), (*it+".goto-cc-saved").c_str());
-  }
+  PRECONDITION(!cmdline.parsed_argv.empty());
 
   // build new argv
   std::vector<std::string> new_argv;
-  
   new_argv.reserve(cmdline.parsed_argv.size());
-  
-  bool skip_next=false;
-
-  for(ld_cmdlinet::parsed_argvt::const_iterator
-      it=cmdline.parsed_argv.begin();
-      it!=cmdline.parsed_argv.end();
-      it++)
-  {
-    if(skip_next)
-    {
-      // skip
-      skip_next=false;
-    }
-    else if(it->arg=="--verbosity")
-    {
-      // ignore here
-      skip_next=true;
-    }
-    else
-      new_argv.push_back(it->arg);
-  }
+  for(const auto &a : cmdline.parsed_argv)
+    new_argv.push_back(a.arg);
 
   // overwrite argv[0]
-  assert(new_argv.size()>=1);
-  new_argv[0]="gcc";
-  
-  #if 0
-  std::cout << "RUN:";
-  for(unsigned i=0; i<new_argv.size(); i++)
-    std::cout << " " << new_argv[i];
-  std::cout << std::endl;
-  #endif
-  
-  int result=run("gcc", new_argv);
-  
-  // merge output from gcc with goto-binaries
-  // using objcopy
-  for(std::list<std::string>::const_iterator
-      it=output_files.begin();
-      it!=output_files.end();
-      it++)
-  {
-    #ifdef __linux__
-    debugx("merging "+*it);
+  new_argv[0] = native_tool_name;
 
-    if(!cmdline.isset('c'))
+  messaget log{gcc_message_handler};
+  log.debug() << "RUN:";
+  for(std::size_t i = 0; i < new_argv.size(); i++)
+    log.debug() << " " << new_argv[i];
+  log.debug() << messaget::eom;
+
+  return run(new_argv[0], new_argv, cmdline.stdin_file, "", "");
+}
+
+int ld_modet::ld_hybrid_binary(
+  bool building_executable,
+  const std::list<std::string> &object_files)
+{
+  std::string output_file;
+
+  if(cmdline.isset('o'))
+  {
+    output_file = cmdline.get_value('o');
+
+    if(output_file == "/dev/null")
+      return EX_OK;
+  }
+  else
+    output_file = "a.out";
+
+  messaget log{gcc_message_handler};
+  log.debug() << "Running " << native_tool_name << " to generate hybrid binary"
+              << messaget::eom;
+
+  // save the goto-cc output file
+  std::string goto_binary = output_file + goto_binary_tmp_suffix;
+
+  try
+  {
+    file_rename(output_file, goto_binary);
+  }
+  catch(const cprover_exception_baset &e)
+  {
+    log.error() << "Rename failed: " << e.what() << messaget::eom;
+    return 1;
+  }
+
+  const bool linking_efi = cmdline.get_value('m') == "i386pep";
+
+#ifdef __linux__
+  if(linking_efi)
+  {
+    const std::string objcopy_cmd = objcopy_command(native_tool_name);
+
+    for(const auto &object_file : object_files)
     {
+      log.debug() << "stripping goto-cc sections before building EFI binary"
+                  << messaget::eom;
+      // create a backup copy
+      const std::string bin_name = object_file + goto_binary_tmp_suffix;
+
+      std::ifstream in(object_file, std::ios::binary);
+      std::ofstream out(bin_name, std::ios::binary);
+      out << in.rdbuf();
+
       // remove any existing goto-cc section
       std::vector<std::string> objcopy_argv;
-    
-      objcopy_argv.push_back("objcopy");
+
+      objcopy_argv.push_back(objcopy_cmd);
       objcopy_argv.push_back("--remove-section=goto-cc");
-      objcopy_argv.push_back(*it);
-      
-      run(objcopy_argv[0], objcopy_argv);
+      objcopy_argv.push_back(object_file);
+
+      if(run(objcopy_argv[0], objcopy_argv) != 0)
+      {
+        log.debug() << "EFI binary preparation: removing goto-cc section failed"
+                    << messaget::eom;
+      }
     }
-
-    // now add goto-binary as goto-cc section  
-    std::string saved=*it+".goto-cc-saved";
-
-    std::vector<std::string> objcopy_argv;
-  
-    objcopy_argv.push_back("objcopy");
-    objcopy_argv.push_back("--add-section");
-    objcopy_argv.push_back("goto-cc="+saved);
-    objcopy_argv.push_back(*it);
-    
-    run(objcopy_argv[0], objcopy_argv);
-
-    remove(saved.c_str());    
-
-    #elif defined(__APPLE__)
-    // Mac
-
-    for(std::list<std::string>::const_iterator
-        it=output_files.begin();
-        it!=output_files.end();
-        it++)
-    {
-      debugx("merging "+*it);
-
-      std::vector<std::string> lipo_argv;
-    
-      // now add goto-binary as hppa7100LC section  
-      std::string saved=*it+".goto-cc-saved";
-
-      lipo_argv.push_back("lipo");
-      lipo_argv.push_back(*it);
-      lipo_argv.push_back("-create");
-      lipo_argv.push_back("-arch");
-      lipo_argv.push_back("hppa7100LC");
-      lipo_argv.push_back(saved);
-      lipo_argv.push_back("-output");
-      lipo_argv.push_back(*it);
-      
-      run(lipo_argv[0], lipo_argv);
-
-      remove(saved.c_str());    
-    }
-    
-    return 0;
-    
-    #else
-    
-    error() << "binary merging not implemented for this architecture" << eom;
-    return 1;
-
-    #endif
   }
-  
-  return result!=0;
-}
+#else
+  (void)object_files; // unused parameter
 #endif
 
-/*******************************************************************\
+  int result = run_ld();
 
-Function: ld_modet::help_mode
+  if(result == 0 && cmdline.isset('T'))
+  {
+    linker_script_merget ls_merge(
+      output_file, goto_binary, cmdline, message_handler);
+    result = ls_merge.add_linker_script_definitions();
+  }
 
-  Inputs:
+#ifdef __linux__
+  if(linking_efi)
+  {
+    log.debug() << "arch set with " << object_files.size() << messaget::eom;
+    for(const auto &object_file : object_files)
+    {
+      log.debug() << "EFI binary preparation: restoring object files"
+                  << messaget::eom;
+      const std::string bin_name = object_file + goto_binary_tmp_suffix;
+      const int mv_result = rename(bin_name.c_str(), object_file.c_str());
+      if(mv_result != 0)
+      {
+        log.debug() << "Rename failed: " << std::strerror(errno)
+                    << messaget::eom;
+      }
+    }
+  }
+#endif
 
- Outputs:
+  if(result == 0)
+  {
+    std::string native_linker = linker_name(cmdline, base_name);
 
- Purpose: display command line help
+    result = hybrid_binary(
+      native_linker,
+      goto_binary,
+      output_file,
+      building_executable,
+      message_handler,
+      linking_efi);
+  }
 
-\*******************************************************************/
-
-void ld_modet::help_mode()
-{
-  std::cout << "goto-ld understands the options of ld plus the following.\n\n";
+  return result;
 }
 
+/// display command line help
+void ld_modet::help_mode()
+{
+  std::cout << "goto-ld understands the options of "
+            << "ld plus the following.\n\n";
+}

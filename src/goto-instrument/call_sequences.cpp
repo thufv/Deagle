@@ -8,35 +8,33 @@ Date: April 2013
 
 \*******************************************************************/
 
-#include <stack>
-#include <iostream>
-
-#include <util/std_expr.h>
+/// \file
+/// Printing function call sequences for Ofer
 
 #include "call_sequences.h"
 
-/*******************************************************************\
+#include <stack>
+#include <iostream>
 
-Function: show_call_sequences
+#include <util/simplify_expr.h>
 
-  Inputs:
+#include <goto-programs/goto_model.h>
 
- Outputs:
+#include <langapi/language_util.h>
 
- Purpose:
-
-\*******************************************************************/
+#include <linking/static_lifetime_init.h>
 
 void show_call_sequences(
-  const irep_idt &function,
-  const goto_programt &goto_program,
-  const goto_programt::const_targett start)
+  const irep_idt &caller,
+  const goto_programt &goto_program)
 {
-  std::cout << "# From " << function << std::endl;
-      
+  // show calls in  blocks within caller body
+  // dfs on code blocks using stack
+  std::cout << "# " << caller << '\n';
   std::stack<goto_programt::const_targett> stack;
   std::set<goto_programt::const_targett> seen;
-  
+  const goto_programt::const_targett start=goto_program.instructions.begin();
+
   if(start!=goto_program.instructions.end())
     stack.push(start);
 
@@ -44,126 +42,50 @@ void show_call_sequences(
   {
     goto_programt::const_targett t=stack.top();
     stack.pop();
-    
+
     if(!seen.insert(t).second)
       continue; // seen it already
-    
     if(t->is_function_call())
     {
-      const exprt &function2=to_code_function_call(t->code).function();
-      if(function2.id()==ID_symbol)
+      const exprt &callee = t->call_function();
+      if(callee.id()==ID_symbol)
       {
-        // print pair function, function2
-        std::cout << function << " -> "
-                  << to_symbol_expr(function2).get_identifier() << std::endl;
+        std::cout << caller << " -> "
+                  << to_symbol_expr(callee).get_identifier() << '\n';
       }
-      continue; // abort search
     }
 
-    // get successors
-    goto_programt::const_targetst s;
-    goto_program.get_successors(t, s);
-    
-    // add to stack
-    for(goto_programt::const_targetst::const_iterator
-        it=s.begin(); it!=s.end(); it++)
-      stack.push(*it);
+    // get successors and add to stack
+    for(const auto &it : goto_program.get_successors(t))
+    {
+      stack.push(it);
+    }
   }
+  std::cout << '\n';
 }
 
-/*******************************************************************\
-
-Function: show_call_sequences
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void show_call_sequences(
-  const irep_idt &function,
-  const goto_programt &goto_program)
-{
-  // this is quadratic
-  
-  std::cout << "# " << function << std::endl;
-  
-  show_call_sequences(
-    function,
-    goto_program,
-    goto_program.instructions.begin());
-  
-  forall_goto_program_instructions(i_it, goto_program)
-  {
-    if(!i_it->is_function_call())
-      continue;
-      
-    const exprt &f1=to_code_function_call(i_it->code).function();
-    
-    if(f1.id()!=ID_symbol)
-      continue;
-      
-    // find any calls reachable from this one
-    goto_programt::const_targett next=i_it;
-    next++;
-
-    show_call_sequences(
-      to_symbol_expr(f1).get_identifier(),
-      goto_program,
-      next);
-  }
-  
-  std::cout << std::endl;
-}
-
-/*******************************************************************\
-
-Function: show_call_sequences
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void show_call_sequences(const goto_functionst &goto_functions)
+void show_call_sequences(const goto_modelt &goto_model)
 {
   // do per function
+  // show the calls in the body of the specific function
 
-  forall_goto_functions(f_it, goto_functions)
-    show_call_sequences(f_it->first, f_it->second.body);
+  for(const auto &gf_entry : goto_model.goto_functions.function_map)
+    show_call_sequences(gf_entry.first, gf_entry.second.body);
 }
-
-/*******************************************************************\
-
-Function: check_call_sequence
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 class check_call_sequencet
 {
 public:
   explicit check_call_sequencet(
-    const goto_functionst &_goto_functions,
+    const goto_modelt &_goto_model,
     const std::vector<irep_idt> &_sequence):
-    goto_functions(_goto_functions),
+    goto_functions(_goto_model.goto_functions),
     sequence(_sequence)
   {
-  }  
+  }
 
   void operator()();
-  
+
 protected:
   const goto_functionst &goto_functions;
   const std::vector<irep_idt> &sequence;
@@ -172,15 +94,15 @@ protected:
   {
     goto_functionst::function_mapt::const_iterator f;
     goto_programt::const_targett return_address;
+
+    bool operator==(const call_stack_entryt &other) const
+    {
+      return
+        f->first==other.f->first &&
+        return_address==other.return_address;
+    }
   };
-  
-  friend bool operator==(const call_stack_entryt &e1,
-                         const call_stack_entryt &e2)
-  {
-    return e1.f->first==e2.f->first &&
-           e1.return_address==e2.return_address;
-  }
-  
+
   struct statet
   {
     goto_functionst::function_mapt::const_iterator f;
@@ -188,31 +110,32 @@ protected:
     std::vector<call_stack_entryt> call_stack;
     unsigned index;
 
-    friend bool operator==(const statet &s1, const statet &s2)
+    bool operator==(const statet &other) const
     {
-      return s1.f->first==s2.f->first &&
-             s1.pc==s2.pc &&
-             s1.call_stack==s2.call_stack &&
-             s1.index==s2.index;
+      return
+        f->first==other.f->first &&
+        pc==other.pc &&
+        call_stack==other.call_stack &&
+        index==other.index;
     }
   };
-  
-  class state_hash
+
+  // NOLINTNEXTLINE(readability/identifiers)
+  struct state_hash
   {
-  public:
     std::size_t operator()(const statet &s) const
     {
       size_t pc_hash=
         s.pc==s.f->second.body.instructions.end()?0:
         (size_t)&*s.pc;
-      
+
       return hash_string(s.f->first)^
              pc_hash^
              s.index^s.call_stack.size();
     }
   };
-    
-  typedef hash_set_cont<statet, state_hash> statest;
+
+  typedef std::unordered_set<statet, state_hash> statest;
   statest states;
 };
 
@@ -225,7 +148,7 @@ void check_call_sequencet::operator()()
     std::cout << "empty sequence given\n";
     return;
   }
-  
+
   irep_idt entry=sequence.front();
 
   goto_functionst::function_mapt::const_iterator f_it=
@@ -238,11 +161,11 @@ void check_call_sequencet::operator()()
     queue.top().pc=f_it->second.body.instructions.begin();
     queue.top().index=1;
   }
-  
+
   while(!queue.empty())
   {
     statet &e=queue.top();
-    
+
     // seen already?
     if(states.find(e)!=states.end())
     {
@@ -250,10 +173,10 @@ void check_call_sequencet::operator()()
       queue.pop();
       continue;
     }
-    
+
     // insert
     states.insert(e);
-    
+
     // satisfies sequence?
     if(e.index==sequence.size())
     {
@@ -276,18 +199,18 @@ void check_call_sequencet::operator()()
     }
     else if(e.pc->is_function_call())
     {
-      const exprt &function=to_code_function_call(e.pc->code).function();
+      const exprt &function = e.pc->call_function();
       if(function.id()==ID_symbol)
       {
         irep_idt identifier=to_symbol_expr(function).get_identifier();
-        
+
         if(sequence[e.index]==identifier)
         {
           e.index++; // yes, we have seen it
-        
+
           goto_functionst::function_mapt::const_iterator f_call_it=
             goto_functions.function_map.find(identifier);
-          
+
           if(f_call_it==goto_functions.function_map.end())
             e.pc++;
           else
@@ -308,7 +231,7 @@ void check_call_sequencet::operator()()
     {
       goto_programt::const_targett t=e.pc->get_target();
 
-      if(e.pc->guard.is_true())
+      if(e.pc->condition().is_true())
         e.pc=t;
       else
       {
@@ -326,34 +249,74 @@ void check_call_sequencet::operator()()
   std::cout << "sequence not feasible\n";
 }
 
-/*******************************************************************\
-
-Function: check_call_sequence
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void check_call_sequence(const goto_functionst &goto_functions)
+void check_call_sequence(const goto_modelt &goto_model)
 {
   // read the sequence from stdin
-  
+
   std::vector<irep_idt> sequence;
-  
+
   std::string line;
   while(std::getline(std::cin, line))
   {
-    if(line!="" && line[line.size()-1]=='\r')
+    if(!line.empty() && line[line.size() - 1] == '\r')
       line.resize(line.size()-1);
-      
-    if(line!="")
+
+    if(!line.empty())
       sequence.push_back(line);
   }
 
-  check_call_sequencet(goto_functions, sequence)();
+  check_call_sequencet(goto_model, sequence)();
 }
 
+static void list_calls_and_arguments(
+  const namespacet &ns,
+  const goto_programt &goto_program)
+{
+  for(const auto &instruction : goto_program.instructions)
+  {
+    if(!instruction.is_function_call())
+      continue;
+
+    const exprt &f = instruction.call_function();
+
+    if(f.id()!=ID_symbol)
+      continue;
+
+    const irep_idt &identifier=to_symbol_expr(f).get_identifier();
+    if(identifier == INITIALIZE_FUNCTION)
+      continue;
+
+    std::string name=from_expr(ns, identifier, f);
+    std::string::size_type java_type_suffix=name.find(":(");
+    if(java_type_suffix!=std::string::npos)
+      name.erase(java_type_suffix);
+
+    std::cout << "found call to " << name;
+
+    if(!instruction.call_arguments().empty())
+    {
+      std::cout << " with arguments ";
+      for(exprt::operandst::const_iterator it =
+            instruction.call_arguments().begin();
+          it != instruction.call_arguments().end();
+          ++it)
+      {
+        if(it != instruction.call_arguments().begin())
+          std::cout << ", ";
+        std::cout << from_expr(ns, identifier, simplify_expr(*it, ns));
+      }
+    }
+
+    std::cout << '\n';
+  }
+}
+
+void list_calls_and_arguments(const goto_modelt &goto_model)
+{
+  // do per function
+
+  const namespacet ns(goto_model.symbol_table);
+
+  for(const auto &gf_entry : goto_model.goto_functions.function_map)
+    list_calls_and_arguments(ns, gf_entry.second.body);
+}

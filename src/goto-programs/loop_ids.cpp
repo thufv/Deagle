@@ -6,25 +6,17 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <iostream>
-
-#include <util/xml.h>
-#include <util/xml_expr.h>
-#include <util/i2string.h>
+/// \file
+/// Loop IDs
 
 #include "loop_ids.h"
 
-/*******************************************************************\
+#include <iostream>
 
-Function: show_loop_ids
+#include <util/json_irep.h>
+#include <util/xml_irep.h>
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "goto_model.h"
 
 void show_loop_ids(
   ui_message_handlert::uit ui,
@@ -33,71 +25,93 @@ void show_loop_ids(
   show_loop_ids(ui, goto_model.goto_functions);
 }
 
-/*******************************************************************\
-
-Function: show_loop_ids
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void show_loop_ids(
   ui_message_handlert::uit ui,
+  const irep_idt &function_id,
   const goto_programt &goto_program)
 {
-  for(goto_programt::instructionst::const_iterator
-      it=goto_program.instructions.begin();
-      it!=goto_program.instructions.end();
-      it++)
+  switch(ui)
   {
-    if(it->is_backwards_goto())
+    case ui_message_handlert::uit::PLAIN:
     {
-      unsigned loop_id=it->loop_number;
-
-      if(ui==ui_message_handlert::XML_UI)
+      for(const auto &instruction : goto_program.instructions)
       {
-        std::string id=id2string(it->function)+"."+i2string(loop_id);
-      
-        xmlt xml_loop("loop");
-        xml_loop.set_attribute("name", id);
-        xml_loop.new_element("loop-id").data=id;
-        xml_loop.new_element()=xml(it->source_location);
-        std::cout << xml_loop << "\n";
-      }
-      else if(ui==ui_message_handlert::PLAIN)
-      {
-        std::cout << "Loop "
-                  << it->function << "." << loop_id << ":" << "\n";
+        if(instruction.is_backwards_goto())
+        {
+          std::cout << "Loop "
+                    << goto_programt::loop_id(function_id, instruction) << ":"
+                    << "\n";
 
-        std::cout << "  " << it->source_location << "\n";
-        std::cout << "\n";
+          std::cout << "  " << instruction.source_location() << "\n";
+          std::cout << "\n";
+        }
       }
-      else
-        assert(false);
+      break;
     }
+    case ui_message_handlert::uit::XML_UI:
+    {
+      for(const auto &instruction : goto_program.instructions)
+      {
+        if(instruction.is_backwards_goto())
+        {
+          std::string id =
+            id2string(goto_programt::loop_id(function_id, instruction));
+
+          xmlt xml_loop("loop", {{"name", id}}, {});
+          xml_loop.new_element("loop-id").data=id;
+          xml_loop.new_element() = xml(instruction.source_location());
+          std::cout << xml_loop << "\n";
+        }
+      }
+      break;
+    }
+    case ui_message_handlert::uit::JSON_UI:
+      UNREACHABLE; // use function below
   }
 }
 
-/*******************************************************************\
+void show_loop_ids_json(
+  ui_message_handlert::uit ui,
+  const irep_idt &function_id,
+  const goto_programt &goto_program,
+  json_arrayt &loops)
+{
+  PRECONDITION(ui == ui_message_handlert::uit::JSON_UI); // use function above
 
-Function: show_loop_ids
+  for(const auto &instruction : goto_program.instructions)
+  {
+    if(instruction.is_backwards_goto())
+    {
+      std::string id =
+        id2string(goto_programt::loop_id(function_id, instruction));
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+      loops.push_back(json_objectt(
+        {{"name", json_stringt(id)},
+         {"sourceLocation", json(instruction.source_location())}}));
+    }
+  }
+}
 
 void show_loop_ids(
   ui_message_handlert::uit ui,
   const goto_functionst &goto_functions)
 {
-  forall_goto_functions(it, goto_functions)
-    show_loop_ids(ui, it->second.body);
+  switch(ui)
+  {
+    case ui_message_handlert::uit::PLAIN:
+    case ui_message_handlert::uit::XML_UI:
+      for(const auto &f: goto_functions.function_map)
+        show_loop_ids(ui, f.first, f.second.body);
+      break;
+
+    case ui_message_handlert::uit::JSON_UI:
+      json_objectt json_result;
+      json_arrayt &loops=json_result["loops"].make_array();
+
+      for(const auto &f : goto_functions.function_map)
+        show_loop_ids_json(ui, f.first, f.second.body, loops);
+
+      std::cout << ",\n" << json_result;
+      break;
+  }
 }

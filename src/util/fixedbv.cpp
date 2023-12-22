@@ -6,22 +6,11 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include "std_types.h"
-#include "std_expr.h"
 #include "fixedbv.h"
+
 #include "arith_tools.h"
-
-/*******************************************************************\
-
-Function: fixedbv_spect::fixedbv_spect
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "bitvector_types.h"
+#include "std_expr.h"
 
 fixedbv_spect::fixedbv_spect(const fixedbv_typet &type)
 {
@@ -29,69 +18,21 @@ fixedbv_spect::fixedbv_spect(const fixedbv_typet &type)
   width=type.get_width();
 }
 
-/*******************************************************************\
-
-Function: fixedbvt::fixedbvt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 fixedbvt::fixedbvt(const constant_exprt &expr)
 {
   from_expr(expr);
 }
 
-/*******************************************************************\
-
-Function: fixedbvt::from_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void fixedbvt::from_expr(const constant_exprt &expr)
 {
-  spec=to_fixedbv_type(expr.type());
-  v=binary2integer(id2string(expr.get_value()), true);
+  spec=fixedbv_spect(to_fixedbv_type(expr.type()));
+  v = bvrep2integer(expr.get_value(), spec.width, true);
 }
-
-/*******************************************************************\
-
-Function: fixedbvt::from_integer
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void fixedbvt::from_integer(const mp_integer &i)
 {
   v=i*power(2, spec.get_fraction_bits());
 }
-
-/*******************************************************************\
-
-Function: fixedbvt::to_integer
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 mp_integer fixedbvt::to_integer() const
 {
@@ -99,45 +40,19 @@ mp_integer fixedbvt::to_integer() const
   return v/power(2, spec.get_fraction_bits());
 }
 
-/*******************************************************************\
-
-Function: fixedbvt::to_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 constant_exprt fixedbvt::to_expr() const
 {
   fixedbv_typet type;
   type.set_width(spec.width);
   type.set_integer_bits(spec.integer_bits);
-  constant_exprt expr(type);
-  assert(spec.width!=0);
-  expr.set_value(integer2binary(v, spec.width));
-  return expr;
+  PRECONDITION(spec.width != 0);
+  return constant_exprt(integer2bvrep(v, spec.width), type);
 }
-
-/*******************************************************************\
-
-Function: fixedbvt::round
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void fixedbvt::round(const fixedbv_spect &dest_spec)
 {
-  unsigned old_fraction_bits=spec.width-spec.integer_bits;
-  unsigned new_fraction_bits=dest_spec.width-dest_spec.integer_bits;
+  std::size_t old_fraction_bits=spec.width-spec.integer_bits;
+  std::size_t new_fraction_bits=dest_spec.width-dest_spec.integer_bits;
 
   mp_integer result;
 
@@ -149,48 +64,33 @@ void fixedbvt::round(const fixedbv_spect &dest_spec)
     mp_integer p=power(2, old_fraction_bits-new_fraction_bits);
     mp_integer div=v/p;
     mp_integer rem=v%p;
-    if(rem<0) rem=-rem;
+    if(rem<0)
+      rem=-rem;
 
     if(rem*2>=p)
     {
-      if(v<0) --div; else ++div;
+      if(v<0)
+        --div;
+      else
+        ++div;
     }
 
     result=div;
+  }
+  else // new_faction_bits==old_fraction_vits
+  {
+    // no change!
+    result=v;
   }
 
   v=result;
   spec=dest_spec;
 }
-  
-/*******************************************************************\
-
-Function: fixedbvt::negate
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void fixedbvt::negate()
 {
   v=-v;
 }
-
-/*******************************************************************\
-
-Function: fixedbvt::operator*
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 fixedbvt &fixedbvt::operator*=(const fixedbvt &o)
 {
@@ -206,17 +106,17 @@ fixedbvt &fixedbvt::operator*=(const fixedbvt &o)
   return *this;
 }
 
-/*******************************************************************\
+fixedbvt &fixedbvt::operator+=(const fixedbvt &o)
+{
+  v += o.v;
+  return *this;
+}
 
-Function: fixedbvt::operator/=
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+fixedbvt &fixedbvt::operator-=(const fixedbvt &o)
+{
+  v -= o.v;
+  return *this;
+}
 
 fixedbvt &fixedbvt::operator/=(const fixedbvt &o)
 {
@@ -226,40 +126,16 @@ fixedbvt &fixedbvt::operator/=(const fixedbvt &o)
   return *this;
 }
 
-/*******************************************************************\
-
-Function: fixedbvt::operator==
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool fixedbvt::operator==(int i) const
 {
   return v==power(2, spec.get_fraction_bits())*i;
 }
 
-/*******************************************************************\
-
-Function: fixedbvt::format
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 std::string fixedbvt::format(
   const format_spect &format_spec) const
 {
   std::string dest;
-  unsigned fraction_bits=spec.get_fraction_bits();
+  std::size_t fraction_bits=spec.get_fraction_bits();
 
   mp_integer int_value=v;
   mp_integer factor=power(2, fraction_bits);
@@ -291,7 +167,7 @@ std::string fixedbvt::format(
 
   if(!fraction_part.empty())
     dest+="."+fraction_part;
-  
+
   while(dest.size()<format_spec.min_width)
     dest=" "+dest;
 

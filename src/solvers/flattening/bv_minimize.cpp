@@ -6,23 +6,9 @@ Author: Georg Weissenbacher, georg.weissenbacher@inf.ethz.ch
 
 \*******************************************************************/
 
-#include <cassert>
-
-#include <solvers/prop/minimize.h>
-
 #include "bv_minimize.h"
 
-/*******************************************************************\
-
-Function: bv_minimizet::add_objective
-
-  Inputs: 
-
- Outputs:
-
- Purpose: 
-
-\*******************************************************************/
+#include <solvers/prop/prop_minimize.h>
 
 void bv_minimizet::add_objective(
   prop_minimizet &prop_minimize,
@@ -38,19 +24,19 @@ void bv_minimizet::add_objective(
      type.id()==ID_c_enum_tag ||
      type.id()==ID_signedbv ||
      type.id()==ID_fixedbv)
-  {    
+  {
     // convert it
     bvt bv=boolbv.convert_bv(objective);
-  
-    for(unsigned i=0; i<bv.size(); i++)
+
+    for(std::size_t i=0; i<bv.size(); i++)
     {
       literalt lit=bv[i];
-  
+
       if(lit.is_constant()) // fixed already, ignore
         continue;
 
       prop_minimizet::weightt weight=(1LL<<i);
-      
+
       if(type.id()==ID_signedbv ||
          type.id()==ID_fixedbv ||
          type.id()==ID_floatbv)
@@ -60,31 +46,18 @@ void bv_minimizet::add_objective(
         if(i==bv.size()-1)
           weight=-weight;
       }
-      
+
       prop_minimize.objective(lit, weight);
     }
   }
 }
 
-/*******************************************************************\
-
-Function: bv_minimizet::operator()
-
-  Inputs: 
-
- Outputs:
-
- Purpose: 
-
-\*******************************************************************/
-
 void bv_minimizet::operator()(const minimization_listt &symbols)
 {
   // build bit-wise objective function
 
-  prop_minimizet prop_minimize(boolbv);
-  prop_minimize.set_message_handler(get_message_handler());
-  
+  prop_minimizet prop_minimize(boolbv, log.get_message_handler());
+
   for(minimization_listt::const_iterator
       l_it=symbols.begin();
       l_it!=symbols.end();
@@ -92,7 +65,7 @@ void bv_minimizet::operator()(const minimization_listt &symbols)
   {
     add_objective(prop_minimize, *l_it);
   }
-  
+
   // now solve
   prop_minimize();
 }

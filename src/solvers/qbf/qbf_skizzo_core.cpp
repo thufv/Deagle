@@ -6,10 +6,10 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#include <cassert>
 #include <fstream>
 
-#include <util/i2string.h>
+#include <util/invariant.h>
+
 #include <util/string2int.h>
 
 #include <cuddObj.hh> // CUDD Library
@@ -17,11 +17,9 @@ Author: CM Wintersteiger
 /*! \cond */
 // FIX FOR THE CUDD LIBRARY
 
-inline DdNode *
-DD::getNode() const
+inline DdNode *DD::getNode() const
 {
     return node;
-
 } // DD::getNode
 /*! \endcond */
 
@@ -29,69 +27,22 @@ DD::getNode() const
 
 #include "qbf_skizzo_core.h"
 
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::qbf_skizzo_coret
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-qbf_skizzo_coret::qbf_skizzo_coret() : qbf_bdd_certificatet()
+qbf_skizzo_coret::qbf_skizzo_coret():
+  qbf_bdd_certificatet()
 {
   // skizzo crashes on broken lines
   break_lines=false;
   qbf_tmp_file="sKizzo.qdimacs";
 }
 
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::~qbf_skizzo_coret
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 qbf_skizzo_coret::~qbf_skizzo_coret()
 {
 }
-
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const std::string qbf_skizzo_coret::solver_text()
 {
   return "Skizzo/Core";
 }
-
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 propt::resultt qbf_skizzo_coret::prop_solve()
 {
@@ -102,9 +53,9 @@ propt::resultt qbf_skizzo_coret::prop_solve()
   {
     std::string msg=
       "Skizzo: "+
-      i2string(no_variables())+" variables, "+
-      i2string(no_clauses())+" clauses";
-    messaget::status(msg);
+      std::to_string(no_variables())+" variables, "+
+      std::to_string(no_clauses())+" clauses";
+    messaget::status() << msg << messaget::eom;
   }
 
   std::string result_tmp_file="sKizzo.out";
@@ -117,12 +68,11 @@ propt::resultt qbf_skizzo_coret::prop_solve()
     write_qdimacs_cnf(out);
   }
 
-  std::string options="";
+  std::string options;
 
   // solve it
-  system(("sKizzo -log "+qbf_tmp_file+
-         options+
-         " > "+result_tmp_file).c_str());
+  system((
+    "sKizzo -log "+qbf_tmp_file+options+" > "+result_tmp_file).c_str());
 
   bool result=false;
 
@@ -137,7 +87,7 @@ propt::resultt qbf_skizzo_coret::prop_solve()
 
       std::getline(in, line);
 
-      if(line!="" && line[line.size()-1]=='\r')
+      if(!line.empty() && line[line.size() - 1] == '\r')
         line.resize(line.size()-1);
 
       if(line=="The instance evaluates to TRUE.")
@@ -156,7 +106,7 @@ propt::resultt qbf_skizzo_coret::prop_solve()
 
     if(!result_found)
     {
-      messaget::error("Skizzo failed: unknown result");
+      messaget::error() << "Skizzo failed: unknown result" << messaget::eom;
       return P_ERROR;
     }
   }
@@ -166,7 +116,7 @@ propt::resultt qbf_skizzo_coret::prop_solve()
 
   if(result)
   {
-    messaget::status("Skizzo: TRUE");
+    messaget::status() << "Skizzo: TRUE" << messaget::eom;
 
     if(get_certificate())
       return P_ERROR;
@@ -175,65 +125,29 @@ propt::resultt qbf_skizzo_coret::prop_solve()
   }
   else
   {
-    messaget::status("Skizzo: FALSE");
+    messaget::status() << "Skizzo: FALSE" << messaget::eom;
     return P_UNSATISFIABLE;
   }
 }
 
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::is_in_core
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool qbf_skizzo_coret::is_in_core(literalt l) const
 {
-  throw ("NYI");
+  UNIMPLEMENTED;
 }
-
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::m_get
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 qdimacs_coret::modeltypet qbf_skizzo_coret::m_get(literalt a) const
 {
-  throw ("NYI");
+  UNIMPLEMENTED;
 }
-
-/*******************************************************************\
-
-Function: qbf_skizzo_coret::get_certificate
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bool qbf_skizzo_coret::get_certificate(void)
 {
   std::string result_tmp_file="ozziKs.out";
   std::string options="-dump qbm=bdd";
-  std::string log_file = qbf_tmp_file + ".sKizzo.log";
+  std::string log_file=qbf_tmp_file+".sKizzo.log";
 
-  system(("ozziKs " + options + " " + log_file +
-          " > "+result_tmp_file).c_str());
+  system((
+    "ozziKs "+options+" "+log_file+" > "+result_tmp_file).c_str());
 
   // read result
   bool result=false;
@@ -247,7 +161,7 @@ bool qbf_skizzo_coret::get_certificate(void)
 
       std::getline(in, line);
 
-      if(line!="" && line[line.size()-1]=='\r')
+      if(!line.empty() && line[line.size() - 1] == '\r')
         line.resize(line.size()-1);
 
       if(line.compare(0, key.size(), key)==0)
@@ -260,7 +174,7 @@ bool qbf_skizzo_coret::get_certificate(void)
 
   if(!result)
   {
-    messaget::error("Skizzo failed: unknown result");
+    messaget::error() << "Skizzo failed: unknown result" << messaget::eom;
     return true;
   }
 
@@ -282,13 +196,16 @@ bool qbf_skizzo_coret::get_certificate(void)
     std::string line;
     std::getline(in, line);
 
-    assert(line=="# QBM file, 1.3");
+    INVARIANT_WITH_DIAGNOSTICS(
+      line == "# QBM file, 1.3",
+      "QBM file has to start with this exact string: ",
+      "# QBM file, 1.3");
 
     while(in)
     {
       std::getline(in, line);
 
-      if(line!="" && line[line.size()-1]=='\r')
+      if(!line.empty() && line[line.size() - 1] == '\r')
         line.resize(line.size()-1);
 
       if(line.compare(0, key.size(), key)==0)
@@ -301,7 +218,7 @@ bool qbf_skizzo_coret::get_certificate(void)
     size_t ob=line.find('[');
     std::string n_es=line.substr(ob+1, line.find(']')-ob-1);
     n_e=unsafe_string2int(n_es);
-    assert(n_e!=0);
+    INVARIANT(n_e != 0, "there has to be at least one existential variable");
 
     e_list.resize(n_e);
     std::string e_lists=line.substr(line.find(':')+2);
@@ -311,21 +228,22 @@ bool qbf_skizzo_coret::get_certificate(void)
       size_t space=e_lists.find(' ');
 
       int cur=unsafe_string2int(e_lists.substr(0, space));
-      assert(cur!=0);
+      INVARIANT(cur != 0, "variable numbering starts with 1");
 
       e_list[i]=cur;
-      if(cur>e_max) e_max=cur;
+      if(cur>e_max)
+        e_max=cur;
 
-      e_lists = e_lists.substr(space+1);
+      e_lists=e_lists.substr(space+1);
     }
 
-    if(!result)
-      throw ("Existential mapping from sKizzo missing");
+    INVARIANT(result, "existential mapping from sKizzo missing");
 
     in.close();
 
     // workaround for long comments
-    system(("sed -e \"s/^#.*$/# no comment/\" -i "+qbf_tmp_file+".qbm").c_str());
+    system((
+      "sed -e \"s/^#.*$/# no comment/\" -i "+qbf_tmp_file+".qbm").c_str());
   }
 
 
@@ -334,31 +252,40 @@ bool qbf_skizzo_coret::get_certificate(void)
     std::string bdd_file=qbf_tmp_file+".qbm";
 
     // dddmp insists on a non-const string here...
-    char filename[bdd_file.size()+1];
-    strcpy(filename, bdd_file.c_str());
+    // The linter insists on compile time constant for arrays
+    char filename[bdd_file.size()+1]; // NOLINT(*)
+    snprintf(filename, bdd_file.size()+1, bdd_file.c_str());
 
     bdd_manager->AutodynEnable(CUDD_REORDER_SIFT);
 
-    int nroots =
-    Dddmp_cuddBddArrayLoad(bdd_manager->getManager(),
-                           DDDMP_ROOT_MATCHLIST, NULL,
-                           DDDMP_VAR_MATCHIDS, NULL, NULL, NULL,
-                           DDDMP_MODE_DEFAULT,
-                           filename,
-                           NULL,
-                           &bdds);
+    int nroots=
+      Dddmp_cuddBddArrayLoad(
+        bdd_manager->getManager(),
+        DDDMP_ROOT_MATCHLIST,
+        NULL,
+        DDDMP_VAR_MATCHIDS,
+        NULL,
+        NULL,
+        NULL,
+        DDDMP_MODE_DEFAULT,
+        filename,
+        NULL,
+        &bdds);
 
-    assert(nroots=2*n_e); // ozziKs documentation guarantees that.
+    INVARIANT(
+      nroots == 2 * n_e,
+      "valid QBM certificate should have twice as much roots as the "
+      "existential variables");
 
     model_bdds.resize(e_max+1, NULL);
 
     for(unsigned i=0; i<e_list.size(); i++)
     {
       int cur=e_list[i];
-      DdNode *posNode = bdds[2*i];
-      DdNode *negNode = bdds[2*i+1];
+      DdNode *posNode=bdds[2*i];
+      DdNode *negNode=bdds[2*i+1];
 
-      if(Cudd_DagSize(posNode) <= Cudd_DagSize(negNode))
+      if(Cudd_DagSize(posNode)<=Cudd_DagSize(negNode))
         model_bdds[cur]=new BDD(*bdd_manager, posNode);
       else
         model_bdds[cur]=new BDD(*bdd_manager, Cudd_Not(negNode));

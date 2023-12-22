@@ -6,24 +6,17 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <ostream>
+/// \file
+/// Literals
 
 #include "literal.h"
 
-/*******************************************************************\
+#include <ostream>
 
-Function: cover_goalst::~cover_goalst
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-std::ostream & operator << (std::ostream &out, literalt l)
+std::ostream &operator << (std::ostream &out, literalt l)
 {
-  return out << (l.sign()?"-":"") << l.var_no();
+  if(l.is_constant())
+    return out << (l.is_true()?"true":"false");
+  else
+    return out << (l.sign()?"-":"") << l.var_no();
 }
-

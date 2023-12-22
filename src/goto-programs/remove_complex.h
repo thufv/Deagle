@@ -8,13 +8,18 @@ Date:   September 2014
 
 \*******************************************************************/
 
-#ifndef CPROVER_COMPLEX_H
-#define CPROVER_COMPLEX_H
+/// \file
+/// Remove the 'complex' data type by compilation into structs
 
-#include <goto-programs/goto_model.h>
+#ifndef CPROVER_GOTO_PROGRAMS_REMOVE_COMPLEX_H
+#define CPROVER_GOTO_PROGRAMS_REMOVE_COMPLEX_H
+
+class goto_functionst;
+class goto_modelt;
+class symbol_tablet;
 
 void remove_complex(symbol_tablet &, goto_functionst &);
 
 void remove_complex(goto_modelt &);
 
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_REMOVE_COMPLEX_H

@@ -6,8 +6,9 @@ Author: Alex Groce
 
 \*******************************************************************/
 
-#ifndef CPROVER_PBS_DIMACS_CNF_H
-#define CPROVER_PBS_DIMACS_CNF_H
+
+#ifndef CPROVER_SOLVERS_SAT_PBS_DIMACS_CNF_H
+#define CPROVER_SOLVERS_SAT_PBS_DIMACS_CNF_H
 
 #include <set>
 #include <map>
@@ -17,20 +18,21 @@ Author: Alex Groce
 
 class pbs_dimacs_cnft:public dimacs_cnft
 {
- public:
-  pbs_dimacs_cnft():
-    optimize(false),
-    maximize(false),
-    binary_search(false),
-    goal(0),
-    opt_sum(0)
+public:
+  explicit pbs_dimacs_cnft(message_handlert &message_handler)
+    : dimacs_cnft(message_handler),
+      optimize(false),
+      maximize(false),
+      binary_search(false),
+      goal(0),
+      opt_sum(0)
   {
   }
 
   virtual ~pbs_dimacs_cnft()
   {
   }
- 
+
   virtual void write_dimacs_pb(std::ostream &out);
 
   bool optimize;
@@ -42,22 +44,23 @@ class pbs_dimacs_cnft:public dimacs_cnft
   int goal;
   int opt_sum;
 
-  std::map<literalt,unsigned> pb_constraintmap;
+  std::map<literalt, unsigned> pb_constraintmap;
 
   bool pbs_solve();
 
-  virtual resultt prop_solve();
-
-  virtual tvt l_get(literalt a) const;
+  tvt l_get(literalt a) const override;
 
   // dummy functions
-  
-  virtual const std::string solver_text()
-    { return "PBS - Pseudo Boolean/CNF Solver and Optimizer"; }
 
- protected:
+  const std::string solver_text() override
+  {
+    return "PBS - Pseudo Boolean/CNF Solver and Optimizer";
+  }
+
+protected:
+  resultt do_prop_solve() override;
 
   std::set<int> assigned;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_SAT_PBS_DIMACS_CNF_H

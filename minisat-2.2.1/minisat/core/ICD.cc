@@ -94,15 +94,15 @@ bool ICD::activate_edge(int u, int v, edge_kindt kind, ICD_reasont reason)
     return activate_directed_edge(edge);
 }
 
-bool ICD::activate_epo(int u, int v) //always before activating other edges
+bool ICD::activate_apo(int u, int v) //always before activating other edges
 {
     // if(union_check(u, v))
     //     std::cout << "WARNING: " << u << " and " << v << " are already together\n";
 
     union_join(u, v);
 
-    ICD_edget edge_forward(u, v, OCLT_PO);
-    ICD_edget edge_backward(u, v, OCLT_PO);
+    ICD_edget edge_forward(u, v, OC_PO);
+    ICD_edget edge_backward(u, v, OC_PO);
 
     return activate_directed_edge(edge_forward) || activate_directed_edge(edge_backward);
 }
@@ -158,7 +158,7 @@ decide_entryt ICD::get_decide_entry(Lit l)
 {
     if(lit_to_edge.find(l) != lit_to_edge.end())
         return lit_to_edge[l];
-    return std::make_pair(std::make_pair(-1, -1), OCLT_PO);
+    return std::make_pair(std::make_pair(-1, -1), OC_PO);
 }
 
 bool ICD::use_available_info()
@@ -216,14 +216,9 @@ bool ICD::remove_inactive_edges(int from, int to, Lit p)
     return true;
 }
 
-bool oclt_access(edge_kindt kind)
+bool oc_access(edge_kindt kind)
 {
-    return kind == OCLT_COE || kind == OCLT_RFE || kind == OCLT_FR;
-}
-
-bool oclt_can_be_ignored(edge_kindt kind)
-{
-    return kind == OCLT_RFI || kind == OCLT_COI;
+    return kind == OC_WS || kind == OC_RF || kind == OC_FR;
 }
 
 std::vector<ICD_nodet*> po_trace(ICD_nodet* n)
@@ -240,7 +235,7 @@ std::vector<ICD_nodet*> po_trace(ICD_nodet* n)
         bool is_terminal = true;
         for(auto father : curr->valid_out)
         {
-            if(!oclt_access(father.kind) && father.n != curr)
+            if(!oc_access(father.kind) && father.n != curr)
             {
                 is_terminal = false;
                 tovisit.push_back(father.n);
@@ -276,7 +271,7 @@ void ICD::more_fathers(ICD_nodet* child, ICD_fathert father)
 {
     bool should_add = false;
 
-    if(oclt_access(father.kind))
+    if(oc_access(father.kind))
         should_add = true;
     else
     {
@@ -302,7 +297,7 @@ void ICD::all_cycles_backward_search(bool* visited, ICD_nodet* v, ICD_nodet* w)
     tovisit.push_front(v);
 
     std::deque<ICD_fathert> tovisit_father;
-    tovisit_father.push_front(ICD_fathert(nullptr, ICD_reasont(), OCLT_PO));
+    tovisit_father.push_front(ICD_fathert(nullptr, ICD_reasont(), OC_PO));
 
     while(!tovisit.empty())
     {
@@ -313,7 +308,7 @@ void ICD::all_cycles_backward_search(bool* visited, ICD_nodet* v, ICD_nodet* w)
 
         int cost;
         if(father.n)
-            cost = oclt_access(father.kind) ? father.n->cost + 1 : father.n->cost;
+            cost = oc_access(father.kind) ? father.n->cost + 1 : father.n->cost;
         else
             cost = 0;
 
@@ -338,15 +333,15 @@ void ICD::all_cycles_backward_search(bool* visited, ICD_nodet* v, ICD_nodet* w)
             for (auto pred : curr->in)
             {
                 auto pred_node = pred.from + begin;
-                if(!oclt_access(pred.kind))
+                if(!oc_access(pred.kind))
                 {
                     tovisit.push_front(pred_node);
-                    tovisit_father.push_front(ICD_fathert(curr, oclt_can_be_ignored(pred.kind) ? ICD_reasont() : pred.reason, pred.kind));
+                    tovisit_father.push_front(ICD_fathert(curr, pred.reason, pred.kind));
                 }
                 else
                 {
                     tovisit.push_back(pred_node);
-                    tovisit_father.push_back(ICD_fathert(curr, oclt_can_be_ignored(pred.kind) ? ICD_reasont() : pred.reason, pred.kind));
+                    tovisit_father.push_back(ICD_fathert(curr, pred.reason, pred.kind));
                 }
             }
         }
@@ -502,8 +497,8 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
     auto u_node = u + begin;
     auto v_node = v + begin;
 
-    u_node->backward_father = ICD_fathert(u_node, ICD_reasont(), OCLT_PO);
-    v_node->forward_father = ICD_fathert(v_node, ICD_reasont(), OCLT_PO);
+    u_node->backward_father = ICD_fathert(u_node, ICD_reasont(), OC_PO);
+    v_node->forward_father = ICD_fathert(v_node, ICD_reasont(), OC_PO);
 
     //search backward
     static bool visited[MAX_NODES];
@@ -513,7 +508,7 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
     tovisit.push_front(u_node);
 
     std::deque<ICD_fathert> tovisit_father;
-    tovisit_father.push_front(ICD_fathert(u_node, ICD_reasont(), OCLT_PO));
+    tovisit_father.push_front(ICD_fathert(u_node, ICD_reasont(), OC_PO));
 
     while (!tovisit.empty())
     {
@@ -539,17 +534,17 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
                     break; //new
                 }
                 ICD_nodet* pred_node = begin + pred.from;
-                auto is_access = oclt_access(pred.kind);
+                auto is_access = oc_access(pred.kind);
 
                 if(SEARCH_METHOD == DFS || (SEARCH_METHOD == PFS && !is_access))
                 {
                     tovisit.push_front(pred_node);
-                    tovisit_father.push_front(ICD_fathert(curr, oclt_can_be_ignored(pred.kind) ? ICD_reasont() : pred.reason, pred.kind));
+                    tovisit_father.push_front(ICD_fathert(curr, pred.reason, pred.kind));
                 }
                 if(SEARCH_METHOD == BFS || (SEARCH_METHOD == PFS && is_access))
                 {
                     tovisit.push_back(pred_node);
-                    tovisit_father.push_back(ICD_fathert(curr, oclt_can_be_ignored(pred.kind) ? ICD_reasont() : pred.reason, pred.kind));
+                    tovisit_father.push_back(ICD_fathert(curr, pred.reason, pred.kind));
                 }
             }
 
@@ -560,7 +555,7 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
 
     if(cycle) //set conflict
     {
-        if(union_check(u, v) && (edge.kind == OCLT_PO || u_node->atomic_out.find(v) != u_node->atomic_out.end()))
+        if(union_check(u, v) && (edge.kind == OC_PO || u_node->atomic_out.find(v) != u_node->atomic_out.end()))
         {
             cycle = false;
         }
@@ -629,12 +624,9 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
             for(auto& l: related_reasons)
                 l = ~l;
 
-            if(!oclt_can_be_ignored(edge.kind))
-            {
-                ICD_reasont neg_reason = ~edge.reason;
-                for(auto& lv: literals_to_add)
-                    lv << neg_reason;
-            }
+            ICD_reasont neg_reason = ~edge.reason;
+            for(auto& lv: literals_to_add)
+                lv << neg_reason;
 
             related_reasons.push_back(~inactive_l);
 
@@ -658,10 +650,10 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
     {
         std::vector<std::pair<int, int>> from_reads;
         std::vector<ICD_reasont> from_reads_reason;
-        if(edge.kind == OCLT_RFI || edge.kind == OCLT_RFE)
+        if(edge.kind == OC_RF)
         {
             for(auto& succ: u_node->out)
-                if(succ.kind == OCLT_COI || succ.kind == OCLT_COE)
+                if(succ.kind == OC_WS)
                 {
                     from_reads.push_back(std::make_pair(v, succ.to));
                     from_reads_reason.push_back(ICD_reasont(edge.reason, succ.reason));
@@ -670,10 +662,10 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
                         std::cout << "found a fr, related reasons are " << edge.reason << " " << succ.reason << " its reason is " << ICD_reasont(edge.reason, succ.reason) << "\n";
                 }
         }
-        else if(edge.kind == OCLT_COI || edge.kind == OCLT_COE)
+        else if(edge.kind == OC_WS)
         {
             for(auto& succ: u_node->out)
-                if(succ.kind == OCLT_RFI || succ.kind == OCLT_RFE)
+                if(succ.kind == OC_RF)
                 {
                     from_reads.push_back(std::make_pair(succ.to, v));
                     from_reads_reason.push_back(ICD_reasont(edge.reason, succ.reason));
@@ -691,8 +683,8 @@ bool ICD::activate_directed_edge(ICD_edget edge) //true: cycle detected
             if(OC_VERBOSITY >= 1)
                 std::cout << "(" << from_read.first << ", " << from_read.second << ", " << from_read_reason << ") is a from read\n";
 
-            ICD_edget fr_edge(from_read.first, from_read.second, OCLT_FR, from_read_reason);
-            cycle = activate_directed_edge(edge);
+            ICD_edget fr_edge(from_read.first, from_read.second, OC_FR, from_read_reason);
+            cycle = activate_directed_edge(fr_edge);
 
             if(cycle)
             {

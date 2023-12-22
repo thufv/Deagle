@@ -150,7 +150,7 @@ struct ICD_edget
 	edge_kindt kind;
     ICD_reasont reason;
 
-	ICD_edget(int _from = -1, int _to = -1, edge_kindt _kind = OCLT_NA) : from(_from), to(_to), kind(_kind), reason(ICD_reasont()) {}
+	ICD_edget(int _from = -1, int _to = -1, edge_kindt _kind = OC_NA) : from(_from), to(_to), kind(_kind), reason(ICD_reasont()) {}
 	ICD_edget(int _from, int _to, edge_kindt _kind, ICD_reasont _reason) : from(_from), to(_to), kind(_kind), reason(_reason) {}
 	//bool operator<(const ICD_edget& right) const;
 	bool operator==(const ICD_edget& right) const;
@@ -162,7 +162,7 @@ struct ICD_fathert
 	ICD_nodet* n;
 	ICD_reasont reason;
 	edge_kindt kind;
-	ICD_fathert(): n(nullptr), reason(ICD_reasont()), kind(OCLT_PO) {}
+	ICD_fathert(): n(nullptr), reason(ICD_reasont()), kind(OC_PO) {}
 	ICD_fathert(ICD_nodet* _n, ICD_reasont _reason, edge_kindt _kind)
 		: n(_n), reason(_reason), kind(_kind) {}
 };

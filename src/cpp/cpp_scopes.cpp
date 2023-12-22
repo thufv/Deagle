@@ -6,43 +6,20 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <ostream>
-
-#include <util/i2string.h>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_scopes.h"
 
-/*******************************************************************\
+#include <util/symbol.h>
 
-Function: cpp_scopest::new_block_scope
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <ostream>
 
 cpp_scopet &cpp_scopest::new_block_scope()
 {
   unsigned prefix=++current_scope().compound_counter;
-  cpp_scopet &n=new_scope(i2string(prefix));
-  n.id_class=cpp_idt::BLOCK_SCOPE;
-  return n;
+  return new_scope(std::to_string(prefix), cpp_idt::id_classt::BLOCK_SCOPE);
 }
-
-/*******************************************************************\
-
-Function: cpp_scopest::put_into_scope
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 cpp_idt &cpp_scopest::put_into_scope(
   const symbolt &symbol,
@@ -58,9 +35,9 @@ cpp_idt &cpp_scopest::put_into_scope(
     cpp_scopest::id_mapt::iterator id_it = id_map.find(symbol.name);
     if(id_it == id_map.end())
     {
-      irep_idt block_base_name(std::string("$block:") + symbol.base_name.c_str());
+      irep_idt block_base_name(std::string("$block:")+symbol.base_name.c_str());
       cpp_idt &id = scope.insert(block_base_name);
-      id.id_class=cpp_idt::BLOCK_SCOPE;
+      id.id_class=cpp_idt::id_classt::BLOCK_SCOPE;
       id.identifier=symbol.name;
       id.is_scope=true;
       id.prefix = id2string(scope.prefix) + id2string(symbol.base_name) + "::";
@@ -73,11 +50,10 @@ cpp_idt &cpp_scopest::put_into_scope(
   {
     cpp_save_scopet saved_scope(*this);
     go_to(scope);
-    go_to_global_scope();
 
     cpp_idt &id=current_scope().insert(symbol.base_name);
     id.identifier=symbol.name;
-    id.id_class = cpp_idt::SYMBOL;
+    id.id_class = cpp_idt::id_classt::SYMBOL;
     if(id_map.find(symbol.name)==id_map.end())
       id_map[symbol.name]=&id;
     return id;
@@ -86,23 +62,12 @@ cpp_idt &cpp_scopest::put_into_scope(
   {
     cpp_idt &id=scope.insert(symbol.base_name);
     id.identifier=symbol.name;
-    id.id_class = cpp_idt::SYMBOL;
+    id.id_class = cpp_idt::id_classt::SYMBOL;
     if(id_map.find(symbol.name)==id_map.end())
       id_map[symbol.name]=&id;
     return id;
   }
 }
-
-/*******************************************************************\
-
-Function: cpp_scopest::print_current
-
-  Inputs:
-
- Outputs:
- Purpose:
-
-\*******************************************************************/
 
 void cpp_scopest::print_current(std::ostream &out) const
 {
@@ -111,7 +76,7 @@ void cpp_scopest::print_current(std::ostream &out) const
   do
   {
     scope->print_fields(out);
-    out << "\n";
+    out << '\n';
     scope=&scope->get_parent();
   }
   while(!scope->is_root_scope());

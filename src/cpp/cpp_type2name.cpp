@@ -6,144 +6,132 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
+/// \file
+/// C++ Language Module
+
+#include "cpp_type2name.h"
+
 #include <string>
 
+#include <util/cprover_prefix.h>
+#include <util/pointer_expr.h>
 #include <util/type.h>
-#include <util/std_types.h>
-#include <util/i2string.h>
-
-/*******************************************************************\
-
-Function: do_prefix
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 static std::string do_prefix(const std::string &s)
 {
-  if(s.find(',')!=std::string::npos ||
-     (s!="" && isdigit(s[0])))
-    return i2string(s.size())+"_"+s;
+  if(s.find(',') != std::string::npos || (!s.empty() && isdigit(s[0])))
+    return std::to_string(s.size())+"_"+s;
 
   return s;
 }
 
-/*******************************************************************\
-
-Function: irep2name
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-static void irep2name(const irept &irep, std::string &result)
+static std::string irep2name(const irept &irep)
 {
-  result="";
-  
+  std::string result;
+
   if(is_reference(static_cast<const typet&>(irep)))
     result+="reference";
 
-  if(irep.id()!="")
+  if(is_rvalue_reference(static_cast<const typet &>(irep)))
+    result += "rvalue_reference";
+
+  if(irep.id() == ID_frontend_pointer)
+  {
+    if(irep.get_bool(ID_C_reference))
+      result += "reference";
+
+    if(irep.get_bool(ID_C_rvalue_reference))
+      result += "rvalue_reference";
+  }
+  else if(!irep.id().empty())
     result+=do_prefix(irep.id_string());
 
-  if(irep.get_named_sub().empty() &&
-     irep.get_sub().empty() &&
-     irep.get_comments().empty())
-    return;
+  if(irep.get_named_sub().empty() && irep.get_sub().empty())
+    return result;
 
   result+='(';
   bool first=true;
 
-  forall_named_irep(it, irep.get_named_sub())
+  for(const auto &named_sub : irep.get_named_sub())
   {
-    if(first) first=false; else result+=',';
+    if(!irept::is_comment(named_sub.first))
+    {
+      if(first)
+        first = false;
+      else
+        result += ',';
 
-    result+=do_prefix(name2string(it->first));
+      result += do_prefix(id2string(named_sub.first));
 
-    result+='=';
-    std::string tmp;
-    irep2name(it->second, tmp);
-    result+=tmp;
+      result += '=';
+      result += irep2name(named_sub.second);
+    }
   }
 
-  forall_named_irep(it, irep.get_comments())
-    if(it->first==ID_C_constant ||
-       it->first==ID_C_volatile ||
-       it->first==ID_C_restricted)
-    {
-      if(first) first=false; else result+=',';
-      result+=do_prefix(name2string(it->first));
-      result+='=';
-      std::string tmp;
-      irep2name(it->second, tmp);
-      result+=tmp;
-    }
-
-  forall_irep(it, irep.get_sub())
+  for(const auto &named_sub : irep.get_named_sub())
   {
-    if(first) first=false; else result+=',';
-    std::string tmp;
-    irep2name(*it, tmp);
-    result+=tmp;
+    if(
+      named_sub.first == ID_C_constant || named_sub.first == ID_C_volatile ||
+      named_sub.first == ID_C_restricted)
+    {
+      if(first)
+        first=false;
+      else
+        result+=',';
+      result += do_prefix(id2string(named_sub.first));
+      result+='=';
+      result += irep2name(named_sub.second);
+    }
+  }
+
+  for(const auto &sub : irep.get_sub())
+  {
+    if(first)
+      first=false;
+    else
+      result+=',';
+    result += irep2name(sub);
   }
 
   result+=')';
+
+  return result;
 }
-
-/*******************************************************************\
-
-Function: cpp_type2name
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 std::string cpp_type2name(const typet &type)
 {
   std::string result;
 
-  if(type.get_bool(ID_C_constant) ||
-     type.get(ID_C_qualifier)==ID_const)
+  if(type.get_bool(ID_C_constant))
     result+="const_";
-  
+
   if(type.get_bool(ID_C_restricted))
     result+="restricted_";
-  
+
   if(type.get_bool(ID_C_volatile))
     result+="volatile_";
-    
+
   if(type.id()==ID_empty || type.id()==ID_void)
     result+="void";
-  else if(type.id()==ID_bool)
+  else if(type.id() == ID_c_bool)
     result+="bool";
+  else if(type.id() == ID_bool)
+    result += CPROVER_PREFIX "bool";
   else if(type.id()==ID_pointer)
   {
     if(is_reference(type))
-      result+="ref_"+cpp_type2name(type.subtype());
+      result += "ref_" + cpp_type2name(to_reference_type(type).base_type());
     else if(is_rvalue_reference(type))
-      result+="rref_"+cpp_type2name(type.subtype());
+      result += "rref_" + cpp_type2name(to_pointer_type(type).base_type());
     else
-      result+="ptr_"+cpp_type2name(type.subtype());
+      result += "ptr_" + cpp_type2name(to_pointer_type(type).base_type());
   }
   else if(type.id()==ID_signedbv || type.id()==ID_unsignedbv)
   {
     // we try to use #c_type
     const irep_idt c_type=type.get(ID_C_c_type);
-    
-    if(c_type!=irep_idt())
+
+    if(!c_type.empty())
       result+=id2string(c_type);
     else if(type.id()==ID_unsignedbv)
       result+="unsigned_int";
@@ -155,7 +143,7 @@ std::string cpp_type2name(const typet &type)
     // we try to use #c_type
     const irep_idt c_type=type.get(ID_C_c_type);
 
-    if(c_type!=irep_idt())
+    if(!c_type.empty())
       result+=id2string(c_type);
     else
       result+="double";
@@ -165,7 +153,7 @@ std::string cpp_type2name(const typet &type)
     // we do (args)->(return_type)
     const code_typet::parameterst &parameters=to_code_type(type).parameters();
     const typet &return_type=to_code_type(type).return_type();
-    
+
     result+='(';
 
     for(code_typet::parameterst::const_iterator
@@ -173,10 +161,11 @@ std::string cpp_type2name(const typet &type)
         arg_it!=parameters.end();
         arg_it++)
     {
-      if(arg_it!=parameters.begin()) result+=',';
+      if(arg_it!=parameters.begin())
+        result+=',';
       result+=cpp_type2name(arg_it->type());
     }
-        
+
     result+=')';
     result+="->(";
     result+=cpp_type2name(return_type);
@@ -185,30 +174,13 @@ std::string cpp_type2name(const typet &type)
   else
   {
     // give up
-    std::string tmp;
-    irep2name(type, tmp);
-    return tmp;
+    return irep2name(type);
   }
-  
+
   return result;
 }
 
-/*******************************************************************\
-
-Function: cpp_expr2name
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 std::string cpp_expr2name(const exprt &expr)
 {
-  std::string tmp;
-  irep2name(expr, tmp);
-  return tmp;
+  return irep2name(expr);
 }
-

@@ -6,14 +6,16 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// Subgoal Documentation
+
+#include "document_properties.h"
+
 #include <fstream>
 
 #include <util/string2int.h>
-#include <util/i2string.h>
 
-#include <ansi-c/expr2c.h>
-
-#include "document_properties.h"
+#include <goto-programs/goto_model.h>
 
 #define MAXWIDTH 62
 
@@ -24,10 +26,11 @@ public:
     const goto_functionst &_goto_functions,
     std::ostream &_out):
     goto_functions(_goto_functions),
-    out(_out)
+    out(_out),
+    format(HTML)
   {
   }
-  
+
   void html()
   {
     format=HTML;
@@ -43,7 +46,7 @@ public:
 private:
   const goto_functionst &goto_functions;
   std::ostream &out;
-    
+
   struct linet
   {
     std::string text;
@@ -52,31 +55,17 @@ private:
 
   static void strip_space(std::list<linet> &lines);
 
-  void get_code(
-    const source_locationt &source_location,
-    std::string &dest);
-    
+  std::string get_code(const source_locationt &source_location);
+
   struct doc_claimt
   {
     std::set<irep_idt> comment_set;
   };
 
   enum { HTML, LATEX } format;
-  
+
   void doit();
 };
-
-/*******************************************************************\
-
-Function: document_propertiest::strip_space
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void document_propertiest::strip_space(std::list<linet> &lines)
 {
@@ -85,7 +74,7 @@ void document_propertiest::strip_space(std::list<linet> &lines)
   for(std::list<linet>::const_iterator it=lines.begin();
       it!=lines.end(); it++)
   {
-    for(unsigned j=0; j<strip && j<it->text.size(); j++)
+    for(std::size_t j=0; j<strip && j<it->text.size(); j++)
       if(it->text[j]!=' ')
       {
         strip=j;
@@ -107,28 +96,16 @@ void document_propertiest::strip_space(std::list<linet> &lines)
   }
 }
 
-/*******************************************************************\
-
-Function: escape_latex
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 std::string escape_latex(const std::string &s, bool alltt)
 {
   std::string dest;
 
-  for(unsigned i=0; i<s.size(); i++)
+  for(std::size_t i=0; i<s.size(); i++)
   {
     if(s[i]=='\\' || s[i]=='{' || s[i]=='}')
       dest+="\\";
 
-    if(!alltt && 
+    if(!alltt &&
        (s[i]=='_' || s[i]=='$' || s[i]=='~' ||
         s[i]=='^' || s[i]=='%' || s[i]=='#' ||
         s[i]=='&'))
@@ -140,23 +117,11 @@ std::string escape_latex(const std::string &s, bool alltt)
   return dest;
 }
 
-/*******************************************************************\
-
-Function: escape_html
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 std::string escape_html(const std::string &s)
 {
   std::string dest;
 
-  for(unsigned i=0; i<s.size(); i++)
+  for(std::size_t i=0; i<s.size(); i++)
   {
     switch(s[i])
     {
@@ -170,66 +135,43 @@ std::string escape_html(const std::string &s)
   return dest;
 }
 
-/*******************************************************************\
-
-Function: is_empty
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool is_empty(const std::string &s)
 {
-  for(unsigned i=0; i<s.size(); i++)
+  for(std::size_t i=0; i<s.size(); i++)
     if(isgraph(s[i]))
       return false;
 
   return true;
 }
 
-/*******************************************************************\
-
-Function: document_propertiest::get_code
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void document_propertiest::get_code(
-  const source_locationt &source_location,
-  std::string &dest)
+std::string
+document_propertiest::get_code(const source_locationt &source_location)
 {
-  dest="";
-
   const irep_idt &file=source_location.get_file();
-  const irep_idt &line=source_location.get_line();
+  const irep_idt &source_line = source_location.get_line();
 
-  if(file=="" || line=="") return;
+  if(file.empty() || source_line.empty())
+    return "";
 
-  std::ifstream in(file.c_str());
+  std::ifstream in(id2string(file));
+
+  std::string dest;
 
   if(!in)
   {
     dest+="ERROR: unable to open ";
     dest+=id2string(file);
     dest+="\n";
-    return;
+    return dest;
   }
 
-  int line_int=unsafe_string2int(id2string(line));
+  int line_int = unsafe_string2int(id2string(source_line));
 
   int line_start=line_int-3,
       line_end=line_int+3;
 
-  if(line_start<=1) line_start=1;
+  if(line_start<=1)
+    line_start=1;
 
   // skip line_start-1 lines
 
@@ -265,7 +207,7 @@ void document_propertiest::get_code(
       it=lines.erase(it);
     else
       break;
-  }    
+  }
 
   for(std::list<linet>::iterator it=lines.end();
       it!=lines.begin();)
@@ -286,7 +228,7 @@ void document_propertiest::get_code(
   for(std::list<linet>::iterator it=lines.begin();
       it!=lines.end(); it++)
   {
-    std::string line_no=i2string(it->line_number);
+    std::string line_no=std::to_string(it->line_number);
 
     std::string tmp;
 
@@ -295,67 +237,58 @@ void document_propertiest::get_code(
     case LATEX:
       while(line_no.size()<4)
         line_no=" "+line_no;
-    
+
       line_no+"  ";
-    
+
       tmp+=escape_latex(it->text, true);
 
       if(it->line_number==line_int)
         tmp="{\\ttb{}"+tmp+"}";
-        
+
       break;
-      
+
     case HTML:
       while(line_no.size()<4)
         line_no="&nbsp;"+line_no;
-    
+
       line_no+"&nbsp;&nbsp;";
-    
+
       tmp+=escape_html(it->text);
 
       if(it->line_number==line_int)
         tmp="<em>"+tmp+"</em>";
-        
+
       break;
     }
 
     dest+=tmp+"\n";
   }
+
+  return dest;
 }
-
-/*******************************************************************\
-
-Function: document_propertiest::doit
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void document_propertiest::doit()
 {
   typedef std::map<source_locationt, doc_claimt> claim_sett;
   claim_sett claim_set;
 
-  forall_goto_functions(f_it, goto_functions)
+  for(const auto &gf_entry : goto_functions.function_map)
   {
-    const goto_programt &goto_program=f_it->second.body;
+    const goto_programt &goto_program = gf_entry.second.body;
 
-    forall_goto_program_instructions(i_it, goto_program)
+    for(const auto &instruction : goto_program.instructions)
     {
-      if(i_it->is_assert())
+      if(instruction.is_assert())
       {
+        const auto &source_location = instruction.source_location();
         source_locationt new_source_location;
 
-        new_source_location.set_file(i_it->source_location.get_file());
-        new_source_location.set_line(i_it->source_location.get_line());
-        new_source_location.set_function(i_it->source_location.get_function());
+        new_source_location.set_file(source_location.get_file());
+        new_source_location.set_line(source_location.get_line());
+        new_source_location.set_function(source_location.get_function());
 
-        claim_set[new_source_location].comment_set.
-          insert(i_it->source_location.get_comment());
+        claim_set[new_source_location].comment_set.insert(
+          source_location.get_comment());
       }
     }
   }
@@ -363,10 +296,9 @@ void document_propertiest::doit()
   for(claim_sett::const_iterator it=claim_set.begin();
       it!=claim_set.end(); it++)
   {
-    std::string code;
     const source_locationt &source_location=it->first;
 
-    get_code(source_location, code);
+    std::string code = get_code(source_location);
 
     switch(format)
     {
@@ -375,93 +307,68 @@ void document_propertiest::doit()
           << escape_latex(source_location.get_string("file"), false)
           << " function "
           << escape_latex(source_location.get_string("function"), false)
-          << "}" << std::endl;
+          << "}\n";
 
-      out << std::endl;
+      out << '\n';
 
       for(std::set<irep_idt>::const_iterator
           s_it=it->second.comment_set.begin();
           s_it!=it->second.comment_set.end();
           s_it++)
         out << "\\claim{" << escape_latex(id2string(*s_it), false)
-            << "}" << std::endl;
+            << "}\n";
 
-      out << std::endl;
+      out << '\n';
 
       out << "\\begin{alltt}\\claimcode\n"
           << code
           << "\\end{alltt}\n";
 
-      out << std::endl;
-      out << std::endl;
+      out << '\n';
+      out << '\n';
       break;
-    
+
     case HTML:
-      out << "<div class=\"claim\">" << std::endl
+      out << "<div class=\"claim\">\n"
           << "<div class=\"location\">File "
           << escape_html(source_location.get_string("file"))
           << " function "
           << escape_html(source_location.get_string("function"))
-          << "</div>" << std::endl;
+          << "</div>\n";
 
-      out << std::endl;
+      out << '\n';
 
       for(std::set<irep_idt>::const_iterator
           s_it=it->second.comment_set.begin();
           s_it!=it->second.comment_set.end();
           s_it++)
-        out << "<div class=\"description\">" << std::endl
-            << escape_html(id2string(*s_it)) << std::endl
-            << "</div>" << std::endl;
+        out << "<div class=\"description\">\n"
+            << escape_html(id2string(*s_it)) << '\n'
+            << "</div>\n";
 
-      out << std::endl;
+      out << '\n';
 
       out << "<div class=\"code\">\n"
           << code
-          << "</div> <!-- code -->" << std::endl;
+          << "</div> <!-- code -->\n";
 
-      out << "</div> <!-- claim -->" << std::endl;
-      out << std::endl;
+      out << "</div> <!-- claim -->\n";
+      out << '\n';
       break;
     }
   }
 }
 
-/*******************************************************************\
-
-Function: document_properties_html
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void document_properties_html(
-  const goto_functionst &goto_functions,
+  const goto_modelt &goto_model,
   std::ostream &out)
 {
-  document_propertiest(goto_functions, out).html();
+  document_propertiest(goto_model.goto_functions, out).html();
 }
-
-/*******************************************************************\
-
-Function: document_properties_latex
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void document_properties_latex(
-  const goto_functionst &goto_functions,
+  const goto_modelt &goto_model,
   std::ostream &out)
 {
-  document_propertiest(goto_functions, out).latex();
+  document_propertiest(goto_model.goto_functions, out).latex();
 }
-

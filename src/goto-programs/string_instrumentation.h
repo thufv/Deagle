@@ -6,23 +6,30 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// String Abstraction
+
 #ifndef CPROVER_GOTO_PROGRAMS_STRING_INSTRUMENTATION_H
 #define CPROVER_GOTO_PROGRAMS_STRING_INSTRUMENTATION_H
 
-#include "goto_functions.h"
+class exprt;
+class goto_functionst;
+class goto_modelt;
+class goto_programt;
+class symbol_tablet;
 
 void string_instrumentation(
-  symbol_tablet &symbol_table,
-  message_handlert &message_handler,
-  goto_programt &dest);
+  symbol_tablet &,
+  goto_programt &);
 
 void string_instrumentation(
-  symbol_tablet &symbol_table,
-  message_handlert &message_handler,
-  goto_functionst &dest);
+  symbol_tablet &,
+  goto_functionst &);
 
-exprt is_zero_string(const exprt &what, bool write=false);
+void string_instrumentation(goto_modelt &);
+
+exprt is_zero_string(const exprt &what, bool write = false);
 exprt zero_string_length(const exprt &what, bool write=false);
 exprt buffer_size(const exprt &what);
 
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_STRING_INSTRUMENTATION_H

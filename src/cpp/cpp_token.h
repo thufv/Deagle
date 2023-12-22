@@ -6,8 +6,11 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_TOKEN_H
-#define CPROVER_CPP_TOKEN_H
+/// \file
+/// C++ Parser: Token
+
+#ifndef CPROVER_CPP_CPP_TOKEN_H
+#define CPROVER_CPP_CPP_TOKEN_H
 
 #include <algorithm>
 
@@ -21,18 +24,16 @@ public:
   std::string text;
   unsigned line_no;
   irep_idt filename;
-  unsigned pos;
-  
+
   void clear()
   {
     kind=0;
     data.clear();
-    text="";
+    text.clear();
     line_no=0;
-    filename="";
-    pos=0;
+    filename.clear();
   }
-  
+
   void swap(cpp_tokent &token)
   {
     std::swap(kind, token.kind);
@@ -40,8 +41,7 @@ public:
     text.swap(token.text);
     std::swap(line_no, token.line_no);
     filename.swap(token.filename);
-    std::swap(pos, token.pos);    
   }
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_TOKEN_H

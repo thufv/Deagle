@@ -1,5 +1,11 @@
-SRC = xml_parser.cpp xml_y.tab.cpp xml_lex.yy.cpp xml_parse_tree.cpp graphml.cpp
-
+SRC = graphml.cpp \
+      xml_interface.cpp \
+      xml_lex.yy.cpp \
+      xml_parse_tree.cpp \
+      xml_parser.cpp \
+      xml_y.tab.cpp \
+      sha256.cpp \
+      # Empty last line
 INCLUDES= -I ..
 
 include ../config.inc
@@ -13,13 +19,12 @@ all: xmllang$(LIBEXT)
 ###############################################################################
 
 xmllang$(LIBEXT): $(OBJ)
-	$(LINKLIB) ../libc/libhl++.a
+	$(LINKLIB)
 
 xml_y.tab.cpp: parser.y
-	$(YACC) $(YFLAGS) $$flags -pyyxml -d parser.y -o $@
+	$(YACC) $(YFLAGS) -pyyxml parser.y --defines=xml_y.tab.h -o $@
 
 xml_y.tab.h: xml_y.tab.cpp
-	if [ -e xml_y.tab.hpp ] ; then cp xml_y.tab.hpp $@ ; elif [ -e xml_y.tab.cpp.h ] ; then cp xml_y.tab.cpp.h $@ ; fi
 
 xml_lex.yy.cpp: scanner.l
 	$(LEX) -Pyyxml -o$@ scanner.l
@@ -29,4 +34,3 @@ generated_files: xml_lex.yy.cpp xml_y.tab.cpp xml_y.tab.h
 # extra dependencies
 xml_y.tab$(OBJEXT): xml_y.tab.cpp xml_y.tab.h
 xml_lex.yy$(OBJEXT): xml_y.tab.cpp xml_lex.yy.cpp xml_y.tab.h
-

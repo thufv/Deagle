@@ -6,15 +6,18 @@ Author:
 
 \*******************************************************************/
 
-#ifndef CPROVER_ALIGNMENT_CHECKS_H
-#define CPROVER_ALIGNMENT_CHECKS_H
+/// \file
+/// Alignment Checks
+
+#ifndef CPROVER_GOTO_INSTRUMENT_ALIGNMENT_CHECKS_H
+#define CPROVER_GOTO_INSTRUMENT_ALIGNMENT_CHECKS_H
 
 #include <iosfwd>
 
-#include <goto-programs/goto_functions.h>
+class symbol_tablet;
 
 void print_struct_alignment_problems(
-  symbol_tablet &symbol_table,
+  const symbol_tablet &symbol_table,
   std::ostream &out);
 
-#endif
+#endif // CPROVER_GOTO_INSTRUMENT_ALIGNMENT_CHECKS_H

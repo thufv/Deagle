@@ -6,79 +6,82 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+#include "cout_message.h"
+
 #include <iostream>
 
+// clang-format off
+// clang-format must not re-order includes here to avoid pragma_push/pragma_pop
+// being moved around
 #ifdef _WIN32
+#include <util/pragma_push.def>
+#ifdef _MSC_VER
+#pragma warning(disable:4668)
+  // using #if/#elif on undefined macro
+#pragma warning(disable : 5039)
+// pointer or reference to potentially throwing function passed to extern C
+#endif
 #include <windows.h>
 #include <fcntl.h>
 #include <io.h>
 #include <cstdio>
-#endif 
-
+#include <util/pragma_pop.def>
 #include "unicode.h"
-#include "cout_message.h"
+// clang-format on
+#else
+#include <unistd.h>
+#endif
 
-/*******************************************************************\
-
-Function: cout_message_handlert::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void cout_message_handlert::print(
-  unsigned level,
-  const std::string &message)
+cout_message_handlert::cout_message_handlert():
+  stream_message_handlert(std::cout)
 {
-  if(verbosity>=level)
+}
+
+cerr_message_handlert::cerr_message_handlert():
+  stream_message_handlert(std::cerr)
+{
+}
+
+console_message_handlert::console_message_handlert(bool _always_flush)
+  : always_flush(_always_flush), is_a_tty(false), use_SGR(false)
+{
+#ifdef _WIN32
+  HANDLE out_handle=GetStdHandle(STD_OUTPUT_HANDLE);
+
+  DWORD consoleMode;
+  if(GetConsoleMode(out_handle, &consoleMode))
   {
-    std::cout << message << '\n';
+    is_a_tty = true;
 
-    // We flush for level 6 or below.
-    if(level<=6) std::cout << std::flush;
+#ifdef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    consoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if(SetConsoleMode(out_handle, consoleMode))
+      use_SGR = true;
+#endif
   }
+#else
+  is_a_tty = isatty(STDOUT_FILENO);
+  use_SGR = is_a_tty;
+#endif
 }
- 
-/*******************************************************************\
 
-Function: cerr_message_handlert::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void cerr_message_handlert::print(
-  unsigned level,
-  const std::string &message)
+/// Create an ECMA-48 SGR (Select Graphic Rendition) command with
+/// given code.
+/// \param c: ECMA-48 command code
+std::string console_message_handlert::command(unsigned c) const
 {
-  if(verbosity>=level)
-    std::cerr << message << '\n' << std::flush;
+  if(!use_SGR)
+    return std::string();
+
+  return "\x1b[" + std::to_string(c) + 'm';
 }
-
-/*******************************************************************\
-
-Function: consolte_message_handlert::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void console_message_handlert::print(
   unsigned level,
   const std::string &message)
-{ 
+{
+  message_handlert::print(level, message);
+
   if(verbosity<level)
     return;
 
@@ -89,7 +92,7 @@ void console_message_handlert::print(
   // We use UTF16 when we write to the console,
   // but we write UTF8 otherwise.
 
-  DWORD consoleMode;    
+  DWORD consoleMode;
   if(GetConsoleMode(out_handle, &consoleMode))
   {
     // writing to the console
@@ -110,28 +113,33 @@ void console_message_handlert::print(
     if(level>=4)
     {
       std::cout << message << '\n';
-
-      if(level<=6)
-        std::cout << std::flush;
     }
     else
-      std::cerr << message << '\n' << std::flush;
+      std::cerr << message << '\n';
   }
   #else
-  // We flush after messages of level 6 or lower.
-  // We don't for messages of level 7 or higher to improve performance,
-  // in particular when writing to NFS.
   // Messages level 3 or lower go to cerr, messages level 4 or
   // above go to cout.
 
   if(level>=4)
   {
     std::cout << message << '\n';
+  }
+  else
+    std::cerr << message << '\n';
+  #endif
+}
 
-    if(level<=6)
+void console_message_handlert::flush(unsigned level)
+{
+  // We flush after messages of level 6 or lower.
+  // We don't for messages of level 7 or higher to improve performance,
+  // in particular when writing to NFS.
+  if(level>=4)
+  {
+    if(level <= 6 || always_flush)
       std::cout << std::flush;
   }
   else
-    std::cerr << message << '\n' << std::flush;
-  #endif
+    std::cerr << std::flush;
 }

@@ -6,6 +6,9 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
+/// \file
+/// C++ Language Type Checking
+
 #ifndef CPROVER_CPP_TEMPLATE_MAP_H
 #define CPROVER_CPP_TEMPLATE_MAP_H
 
@@ -14,8 +17,10 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 #include <util/expr.h>
 
-#include "cpp_template_type.h"
 #include "cpp_template_args.h"
+
+struct template_parametert;
+class template_typet;
 
 class template_mapt
 {
@@ -46,11 +51,11 @@ public:
     type_map.clear();
     expr_map.clear();
   }
-  
+
   void set(
     const template_parametert &parameter,
     const exprt &value);
-  
+
   void build(
     const template_typet &template_type,
     const cpp_template_args_tct &template_args);
@@ -65,7 +70,7 @@ public:
 class cpp_saved_template_mapt
 {
 public:
-  cpp_saved_template_mapt(template_mapt &map):
+  explicit cpp_saved_template_mapt(template_mapt &map):
     old_map(map), map(map)
   {
   }
@@ -83,4 +88,4 @@ private:
   template_mapt &map;
 };
 
-#endif
+#endif // CPROVER_CPP_TEMPLATE_MAP_H

@@ -6,23 +6,22 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <ostream>
-
 #include "source_location.h"
 
-/*******************************************************************\
+#include <ostream>
 
-Function: source_locationt::as_string
+#include "file_util.h"
+#include "prefix.h"
 
-  Inputs:
+bool source_locationt::is_built_in(const std::string &s)
+{
+  std::string built_in1 = "<built-in-"; // "<built-in-additions>";
+  std::string built_in2 = "<builtin-";  // "<builtin-architecture-strings>";
+  return has_prefix(s, built_in1) || has_prefix(s, built_in2);
+}
 
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-std::string source_locationt::as_string() const
+/// \par parameters: print_cwd, print the absolute path to the file
+std::string source_locationt::as_string(bool print_cwd) const
 {
   std::string dest;
 
@@ -30,35 +29,75 @@ std::string source_locationt::as_string() const
   const irep_idt &line=get_line();
   const irep_idt &column=get_column();
   const irep_idt &function=get_function();
+  const irep_idt &bytecode=get_java_bytecode_index();
 
-  if(file!="") { if(dest!="") dest+=' '; dest+="file "+id2string(file); }
-  if(line!="") { if(dest!="") dest+=' '; dest+="line "+id2string(line); }
-  if(column!="") { if(dest!="") dest+=' '; dest+="column "+id2string(column); }
-  if(function!="") { if(dest!="") dest+=' '; dest+="function "+id2string(function); }
+  if(!file.empty())
+  {
+    if(!dest.empty())
+      dest+=' ';
+    dest+="file ";
+    if(print_cwd)
+      dest+=
+        concat_dir_file(id2string(get_working_directory()), id2string(file));
+    else
+      dest+=id2string(file);
+  }
+  if(!line.empty())
+  {
+    if(!dest.empty())
+      dest+=' ';
+    dest+="line "+id2string(line);
+  }
+  if(!column.empty())
+  {
+    if(!dest.empty())
+      dest+=' ';
+    dest+="column "+id2string(column);
+  }
+  if(!function.empty())
+  {
+    if(!dest.empty())
+      dest+=' ';
+    dest+="function "+id2string(function);
+  }
+  if(!bytecode.empty())
+  {
+    if(!dest.empty())
+      dest+=' ';
+    dest+="bytecode-index "+id2string(bytecode);
+  }
 
   return dest;
 }
 
-/*******************************************************************\
+void source_locationt::merge(const source_locationt &from)
+{
+  for(const auto &irep_entry : from.get_named_sub())
+  {
+    if(get(irep_entry.first).empty())
+      set(irep_entry.first, irep_entry.second);
+  }
+}
 
-Function: operator<<
+/// Get a path to the file, including working directory.
+/// \return Full path unless the file name is empty or refers
+///   to a built-in, in which case {} is returned.
+optionalt<std::string> source_locationt::full_path() const
+{
+  const auto file = id2string(get_file());
 
-  Inputs:
+  if(file.empty() || is_built_in(file))
+    return {};
 
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+  return concat_dir_file(id2string(get_working_directory()), file);
+}
 
 std::ostream &operator << (
   std::ostream &out,
   const source_locationt &source_location)
 {
-  if(source_location.is_nil()) return out;
-
+  if(source_location.is_nil())
+    return out;
   out << source_location.as_string();
-  
   return out;
 }
-

@@ -6,53 +6,38 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/arith_tools.h>
-
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/arith_tools.h>
+#include <util/bitvector_expr.h>
 
-Function: boolbvt::convert_replication
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_replication(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_replication(const replication_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
+  std::size_t width=boolbv_width(expr.type());
 
-  if(expr.operands().size()!=2)
-    throw "replication takes two operands";
+  mp_integer times = numeric_cast_v<mp_integer>(expr.times());
 
-  mp_integer times;
-  if(to_integer(expr.op0(), times))
-    throw "replication takes constant as first parameter";
-  const unsigned u_times=integer2unsigned(times);
-
-  const bvt &op=convert_bv(expr.op1());
-
-  unsigned offset=0;
+  bvt bv;
   bv.resize(width);
 
-  for(unsigned i=0; i<u_times; i++)
+  const std::size_t u_times = numeric_cast_v<std::size_t>(times);
+  const bvt &op = convert_bv(expr.op());
+
+  INVARIANT(
+    op.size() * u_times == bv.size(),
+    "result bitvector width shall be equal to the operand bitvector width times"
+    "the number of replications");
+
+  std::size_t bit_idx = 0;
+
+  for(std::size_t i = 0; i < u_times; i++)
   {
-    if(op.size()+offset>width)
-      throw "replication operand width too big";
+    for(const auto &bit : op)
+    {
+      bv[bit_idx] = bit;
+      bit_idx++;
+    }
+  }
 
-    for(unsigned i=0; i<op.size(); i++)
-      bv[i+offset]=op[i];
-
-    offset+=op.size();
-  }    
-
-  if(offset!=bv.size())
-    throw "replication operand width too small";
+  return bv;
 }

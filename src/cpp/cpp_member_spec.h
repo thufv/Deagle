@@ -6,6 +6,7 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
+
 #ifndef CPROVER_CPP_CPP_MEMBER_SPEC_H
 #define CPROVER_CPP_CPP_MEMBER_SPEC_H
 
@@ -28,7 +29,7 @@ public:
   void set_inline(bool value)   { set(ID_inline, value); }
   void set_friend(bool value)   { set(ID_friend, value); }
   void set_explicit(bool value) { set(ID_explicit, value); }
-  
+
   bool is_empty() const
   {
     return !is_virtual() &&
@@ -38,4 +39,4 @@ public:
   }
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_MEMBER_SPEC_H

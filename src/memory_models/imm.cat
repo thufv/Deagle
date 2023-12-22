@@ -1,0 +1,27 @@
+let fr = rf^-1 ; co
+let rfe = ext(rf)
+let coe = ext(co)
+let fre = ext(fr)
+let poloc = po & loc
+let rfi = int(rf)
+let coi = int(co)
+let fri = int(fr)
+
+let rs = [W];poloc;[W] | [W];(poloc?;rf;rmw)*
+let release = ([W & REL] | [(F & REL) | (F & ACQ_REL) | (F & SC)];po);rs
+let sw = release;(rfi | poloc?;rfe);([R & ACQ] | po;[(F & ACQ) | (F & ACQ_REL) | (F & SC)])
+let hb = (po | sw)+
+let eco = rf | co;(rf?) | fr;(rf?)
+
+irreflexive hb;(eco?)
+
+empty rmw & (fre;coe)
+
+let bob = po;[W & REL] | [R & ACQ];po | po;[F] | [F];po | [W & REL];poloc;[W]
+let deps = data | ctrl | addr;(po?) | casdep
+let ppo = [R];(deps | rfi)+;[W]
+let detour = (coe;rfe) & po
+let psc = [F & SC];hb;eco;hb;[F & SC]
+
+let ar = rfe | bob | ppo | detour | psc | [W & STRONG];po;[W]
+irreflexive ar+

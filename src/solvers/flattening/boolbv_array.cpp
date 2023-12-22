@@ -8,56 +8,39 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/invariant.h>
 
-Function: boolbvt::convert_array
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_array(const exprt &expr, bvt &bv)
+/// Flatten array. Loop over each element and convert them in turn, limiting
+/// each result's width to initial array bit size divided by number of elements.
+/// Return an empty vector if the width is zero or the array has no elements.
+bvt boolbvt::convert_array(const exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
+  const std::size_t width = boolbv_width(expr.type());
+  const exprt::operandst &operands = expr.operands();
 
-  if(width==0)
-    return conversion_failed(expr, bv);
-    
-  bv.reserve(width);
+  if(operands.empty() && width == 0)
+    return bvt();
 
   if(expr.type().id()==ID_array)
   {
-    assert(expr.has_operands());
-    const exprt::operandst &operands=expr.operands();
-    assert(!operands.empty());
-    std::size_t op_width=width/operands.size();
-    
-    bool pthread_mutex = false;
-    //__SZH_REMOVE_BEGIN__
-    //if (width == 320)
-    //	pthread_mutex = true;
-    //__SZH_REMOVE_END__
-    int m = 0;
-    forall_expr(it, operands)
+    DATA_INVARIANT(
+      expr.has_operands(),
+      "the bit width being nonzero implies that the array has a nonzero size "
+      "in which case the array shall have operands");
+    const std::size_t op_width = width / operands.size();
+
+    bvt bv;
+    bv.reserve(width);
+
+    for(const auto &op : operands)
     {
-      const bvt &tmp=convert_bv(*it);
+      const bvt &tmp = convert_bv(op, op_width);
 
-      if(tmp.size()!=op_width)
-        throw "convert_array: unexpected operand width";
+      bv.insert(bv.end(), tmp.begin(), tmp.end());
+    }
 
-      forall_literals(it2, tmp)
-        bv.push_back(*it2);
-      if (pthread_mutex && ++m == 4)
-    	  break;
-    }   
-
-    return;
+    return bv;
   }
-  
-  conversion_failed(expr, bv);
-}
 
+  return conversion_failed(expr);
+}

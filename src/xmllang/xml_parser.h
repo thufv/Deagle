@@ -6,8 +6,9 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef XML_PARSER_H
-#define XML_PARSER_H
+
+#ifndef CPROVER_XMLLANG_XML_PARSER_H
+#define CPROVER_XMLLANG_XML_PARSER_H
 
 #include <util/parser.h>
 
@@ -21,17 +22,17 @@ public:
   xml_parse_treet parse_tree;
 
   std::list<xmlt *> stack;
-  
+
   xmlt &current()
   {
     return *stack.back();
   }
-   
+
   virtual bool parse()
   {
     return yyxmlparse()!=0;
   }
-  
+
   void new_level()
   {
     current().elements.push_back(xmlt());
@@ -63,4 +64,4 @@ bool parse_xml(
   message_handlert &message_handler,
   xmlt &dest);
 
-#endif
+#endif // CPROVER_XMLLANG_XML_PARSER_H

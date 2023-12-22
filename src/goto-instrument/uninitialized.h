@@ -8,20 +8,26 @@ Date: January 2010
 
 \*******************************************************************/
 
-#ifndef CPROVER_UNINITALIZED_H
-#define CPROVER_UNINITALIZED_H
+/// \file
+/// Detection for Uninitialized Local Variables
+
+#ifndef CPROVER_GOTO_INSTRUMENT_UNINITIALIZED_H
+#define CPROVER_GOTO_INSTRUMENT_UNINITIALIZED_H
 
 #include <iosfwd>
 
-#include <goto-programs/goto_functions.h>
+class goto_modelt;
 
-void add_uninitialized_locals_assertions(
-  class symbol_tablet &symbol_table,
-  goto_functionst &goto_functions);
+void add_uninitialized_locals_assertions(goto_modelt &);
 
 void show_uninitialized(
-  class symbol_tablet &symbol_table,
-  const goto_functionst &goto_functions,
+  const goto_modelt &,
   std::ostream &out);
 
-#endif
+#define OPT_UNINITIALIZED_CHECK "(uninitialized-check)"
+
+#define HELP_UNINITIALIZED_CHECK                                               \
+  " --uninitialized-check        add checks for uninitialized locals "         \
+  "(experimental)\n" // NOLINT(whitespace/line_length)
+
+#endif // CPROVER_GOTO_INSTRUMENT_UNINITIALIZED_H

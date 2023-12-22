@@ -6,32 +6,20 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
+/// \file
+/// C/C++ Language Conversion
 
-#include <util/arith_tools.h>
-#include <util/unicode.h>
-
-#include "../string_constant.h"
-#include "../c_types.h"
-
-#include "unescape_string.h"
 #include "convert_string_literal.h"
 
-/*******************************************************************\
+#include <util/arith_tools.h>
+#include <util/c_types.h>
+#include <util/unicode.h>
+#include <util/string_constant.h>
 
-Function: convert_one_string_literal
+#include "unescape_string.h"
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void convert_one_string_literal(
-  const std::string &src,
-  std::basic_string<unsigned int> &value)
+std::basic_string<unsigned int> convert_one_string_literal(
+  const std::string &src)
 {
   assert(src.size()>=2);
 
@@ -40,43 +28,43 @@ void convert_one_string_literal(
     assert(src[src.size()-1]=='"');
     assert(src[2]=='"');
 
-    unescape_wide_string(std::string(src, 3, src.size()-4), value);
-    
+    std::basic_string<unsigned int> value=
+      unescape_wide_string(std::string(src, 3, src.size()-4));
+
     // turn into utf-8
-    std::string utf8_value=utf32_to_utf8(value);
+    const std::string utf8_value = utf32_native_endian_to_utf8(value);
 
     // pad into wide string
     value.resize(utf8_value.size());
-    for(unsigned i=0; i<utf8_value.size(); i++)
+    for(std::size_t i=0; i<utf8_value.size(); i++)
       value[i]=utf8_value[i];
+
+    return value;
   }
   else if(src[0]=='L' || src[0]=='u' || src[0]=='U')
   {
     assert(src[src.size()-1]=='"');
     assert(src[1]=='"');
-    
-    unescape_wide_string(std::string(src, 2, src.size()-3), value);
+
+    return unescape_wide_string(std::string(src, 2, src.size()-3));
   }
   else
   {
     assert(src[0]=='"');
     assert(src[src.size()-1]=='"');
 
-    unescape_wide_string(std::string(src, 1, src.size()-2), value);
+    std::string char_value=
+      unescape_string(std::string(src, 1, src.size()-2));
+
+    // pad into wide string
+    std::basic_string<unsigned int> value;
+    value.resize(char_value.size());
+    for(std::size_t i=0; i<char_value.size(); i++)
+      value[i]=char_value[i];
+
+    return value;
   }
 }
-
-/*******************************************************************\
-
-Function: convert_string_literal
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 exprt convert_string_literal(const std::string &src)
 {
@@ -85,10 +73,10 @@ exprt convert_string_literal(const std::string &src)
   // GCC allows "asd" L"xyz"!
 
   std::basic_string<unsigned int> value;
-  
+
   char wide=0;
-  
-  for(unsigned i=0; i<src.size(); i++)
+
+  for(std::size_t i=0; i<src.size(); i++)
   {
     char ch=src[i];
 
@@ -96,41 +84,37 @@ exprt convert_string_literal(const std::string &src)
     if(ch!='L' && ch!='u' && ch!='U' && ch!='"')
       continue;
 
-    if(ch=='L') wide=ch;
-    if((ch=='u' || ch=='U') && i+1<src.size() && src[i+1]=='"') wide=ch;
+    if(ch=='L')
+      wide=ch;
+    if((ch=='u' || ch=='U') && i+1<src.size() && src[i+1]=='"')
+      wide=ch;
 
     // find start of sequence
-    unsigned j=i;
-    while(j<src.size() && src[j]!='"') j++;
+    std::size_t j=src.find('"', i);
+    CHECK_RETURN(j != std::string::npos);
 
     // find end of sequence, considering escaping
-    j++;
-    while(j<src.size() && src[j]!='"')
-    {
-      if(src[j]=='\\')
-        j+=2;
-      else
-        j++;
-    }
+    for(++j; j<src.size() && src[j]!='"'; ++j)
+      if(src[j]=='\\') // skip next character
+        ++j;
 
-    if(j<src.size())
-    {
-      std::string tmp_src=std::string(src, i, j-i+1);
-      std::basic_string<unsigned int> tmp_value;
-      convert_one_string_literal(tmp_src, tmp_value);
-      value.append(tmp_value);
-      i=j;
-    }
+    INVARIANT(j < src.size(), "non-terminated string constant '" + src + "'");
+
+    std::string tmp_src=std::string(src, i, j-i+1);
+    std::basic_string<unsigned int> tmp_value=
+      convert_one_string_literal(tmp_src);
+    value.append(tmp_value);
+    i=j;
   }
-  
+
   if(wide!=0)
-  {   
+  {
     // add implicit trailing zero
     value.push_back(0);
-    
+
     // L is wchar_t, u is char16_t, U is char32_t.
     typet subtype;
-    
+
     switch(wide)
     {
     case 'L': subtype=wchar_t_type(); break;
@@ -141,32 +125,28 @@ exprt convert_string_literal(const std::string &src)
 
     exprt result=exprt(ID_array);
     result.set(ID_C_string_constant, true);
-    result.type()=typet(ID_array);
-    result.type().subtype()=subtype;
-    result.type().set(ID_size, from_integer(value.size(), index_type()));
+    result.type() =
+      array_typet(subtype, from_integer(value.size(), c_index_type()));
 
     result.operands().resize(value.size());
-    for(unsigned i=0; i<value.size(); i++)
+    for(std::size_t i=0; i<value.size(); i++)
       result.operands()[i]=from_integer(value[i], subtype);
-    
+
     return result;
   }
   else
   {
     std::string char_value;
-    
+
     char_value.resize(value.size());
-    
-    for(unsigned i=0; i<value.size(); i++)
+
+    for(std::size_t i=0; i<value.size(); i++)
     {
       // Loss of data here if value[i]>255.
       // gcc issues a warning in this case.
       char_value[i]=value[i];
     }
-    
-    string_constantt result;
-    result.set_value(char_value);
-    
-    return result;
+
+    return string_constantt(char_value);
   }
 }

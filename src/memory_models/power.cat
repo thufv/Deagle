@@ -1,0 +1,41 @@
+let fr = rf^-1 ; co
+let rfe = ext(rf)
+let coe = ext(co)
+let fre = ext(fr)
+let rfi = int(rf)
+let poloc = po & loc
+
+let sync = [M]; po; [Fsync]; po; [M]
+let lwsync = ([R]; po; [Flwsync]; po; [M]) | ([M]; po; [Flwsync]; po; [W])
+let ctrlisync = [R]; ctrl; [Fisync]; po
+
+let com = rf | fr | co
+irreflexive (poloc | com)+ as uniproc
+
+let dp = addr | data
+let rdw = poloc & (fre;rfe)
+let detour = poloc & (coe;rfe)
+
+let ii0 = dp | rfi | rdw
+let ci0 = ctrlisync | detour
+let cc0 = dp | poloc | ctrl | (addr;po)
+
+let ii = ii0 | ci | (ic;ci) | (ii;ii)
+let ic = ii | cc | (ic;cc) | (ii;ic)
+let ci = ci0 | (ci;ii) | (cc;ci)
+let cc = cc0 | ci | (ci;ic) | (cc;cc)
+
+let ppo = (R*W & ic) | (R*R & ii)
+
+let fence = (R*M & lwsync) | (W*W & lwsync) | sync
+
+let hb = ppo | fence | rfe
+irreflexive hb+
+
+let propbase = (fence | (rfe;fence));hb*
+let prop = (W*W & propbase)| (com*;propbase*;sync;hb*)
+
+irreflexive (co | prop)+
+irreflexive fre;prop;hb*
+
+empty rmw & (fre; coe) as atomic

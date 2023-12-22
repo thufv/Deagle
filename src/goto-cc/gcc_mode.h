@@ -8,40 +8,64 @@ Date: June 2006
 
 \*******************************************************************/
 
-#ifndef GOTO_CC_GCC_MODE_H
-#define GOTO_CC_GCC_MODE_H
+/// \file
+/// Base class for command line interpretation
 
+#ifndef CPROVER_GOTO_CC_GCC_MODE_H
+#define CPROVER_GOTO_CC_GCC_MODE_H
+
+#include "gcc_message_handler.h"
 #include "goto_cc_mode.h"
-#include "gcc_cmdline.h"
+
+#include <ansi-c/gcc_version.h>
+
+#include <map>
+#include <set>
+
+class compilet;
 
 class gcc_modet:public goto_cc_modet
 {
 public:
-  virtual bool doit();
-  virtual void help_mode();
+  int doit() final;
+  void help_mode() final;
 
-  explicit gcc_modet(goto_cc_cmdlinet &_cmdline):
-    goto_cc_modet(_cmdline),
-    produce_hybrid_binary(false),
-    act_as_ld(false)
-  {
-  }
+  gcc_modet(
+    goto_cc_cmdlinet &_cmdline,
+    const std::string &_base_name,
+    bool _produce_hybrid_binary);
 
-  bool produce_hybrid_binary;
-  
 protected:
-  bool act_as_ld;
-  
+  gcc_message_handlert gcc_message_handler;
+
+  const bool produce_hybrid_binary;
+
+  std::string native_tool_name;
+
+  const std::string goto_binary_tmp_suffix;
+
+  /// \brief Associate CBMC architectures with processor names
+  const std::map<std::string, std::set<std::string>> arch_map;
+
   int preprocess(
     const std::string &language,
     const std::string &src,
-    const std::string &dest);
+    const std::string &dest,
+    bool act_as_bcc);
 
-  int run_gcc(); // call gcc with original command line
-  
-  int gcc_hybrid_binary();
-  
+  /// \brief call gcc with original command line
+  int run_gcc(const compilet &compiler);
+
+  int gcc_hybrid_binary(compilet &compiler);
+
+  int asm_output(
+    bool act_as_bcc,
+    const std::list<std::string> &preprocessed_source_files,
+    const compilet &compiler);
+
   static bool needs_preprocessing(const std::string &);
+
+  gcc_versiont gcc_version;
 };
 
-#endif /* GOTO_CC_GCC_MODE_H */
+#endif // CPROVER_GOTO_CC_GCC_MODE_H

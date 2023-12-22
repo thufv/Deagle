@@ -1,28 +1,97 @@
-SRC = goto_instrument_main.cpp goto_instrument_parseoptions.cpp \
-      document_properties.cpp goto_instrument_languages.cpp \
-      uninitialized.cpp full_slicer.cpp k_induction.cpp \
-      object_id.cpp show_locations.cpp points_to.cpp \
-      alignment_checks.cpp race_check.cpp rw_set.cpp \
-      nondet_volatile.cpp interrupt.cpp function.cpp branch.cpp \
-      mmio.cpp stack_depth.cpp nondet_static.cpp \
-      concurrency.cpp dump_c.cpp dot.cpp havoc_loops.cpp \
-      wmm/weak_memory.cpp wmm/fence.cpp wmm/event_graph.cpp \
-      wmm/goto2graph.cpp wmm/data_dp.cpp wmm/abstract_event.cpp \
-      wmm/instrumenter_strategies.cpp wmm/cycle_collection.cpp \
-      wmm/shared_buffers.cpp \
-      call_sequences.cpp unwind.cpp function_modifies.cpp \
-      accelerate/accelerate.cpp accelerate/polynomial.cpp \
-      accelerate/scratch_program.cpp accelerate/polynomial_accelerator.cpp \
-      accelerate/util.cpp accelerate/trace_automaton.cpp \
-      accelerate/enumerating_loop_acceleration.cpp \
+SRC = accelerate/accelerate.cpp \
+      accelerate/acceleration_utils.cpp \
       accelerate/all_paths_enumerator.cpp \
-      accelerate/sat_path_enumerator.cpp \
+      accelerate/cone_of_influence.cpp \
       accelerate/disjunctive_polynomial_acceleration.cpp \
-      accelerate/cone_of_influence.cpp accelerate/overflow_instrumenter.cpp\
-      accelerate/path.cpp accelerate/acceleration_utils.cpp \
-      count_eloc.cpp reachability_slicer.cpp goto_program2code.cpp
+      accelerate/enumerating_loop_acceleration.cpp \
+      accelerate/overflow_instrumenter.cpp \
+      accelerate/path.cpp \
+      accelerate/polynomial.cpp \
+      accelerate/polynomial_accelerator.cpp \
+      accelerate/sat_path_enumerator.cpp \
+      accelerate/scratch_program.cpp \
+      accelerate/trace_automaton.cpp \
+      accelerate/util.cpp \
+      aggressive_slicer.cpp \
+      alignment_checks.cpp \
+      branch.cpp \
+      call_sequences.cpp \
+      contracts/contracts.cpp \
+      contracts/havoc_assigns_clause_targets.cpp \
+      contracts/instrument_spec_assigns.cpp \
+      contracts/memory_predicates.cpp \
+      contracts/utils.cpp \
+      contracts/inlining_decorator.cpp \
+      concurrency.cpp \
+      count_eloc.cpp \
+      cover.cpp \
+      cover_basic_blocks.cpp \
+      cover_filter.cpp \
+      cover_instrument_assume.cpp \
+      cover_instrument_branch.cpp \
+      cover_instrument_condition.cpp \
+      cover_instrument_decision.cpp \
+      cover_instrument_location.cpp \
+      cover_instrument_mcdc.cpp \
+      cover_instrument_other.cpp \
+      cover_util.cpp \
+      document_properties.cpp \
+      dot.cpp \
+      dump_c.cpp \
+      full_slicer.cpp \
+      function.cpp \
+      function_assigns.cpp \
+      generate_function_bodies.cpp \
+      goto_instrument_languages.cpp \
+      goto_instrument_main.cpp \
+      goto_instrument_parse_options.cpp \
+      goto_program2code.cpp \
+      havoc_loops.cpp \
+      havoc_utils.cpp \
+      horn_encoding.cpp \
+      insert_final_assert_false.cpp \
+      interrupt.cpp \
+      k_induction.cpp \
+      loop_utils.cpp \
+      mmio.cpp \
+      model_argc_argv.cpp \
+      nondet_static.cpp \
+      nondet_volatile.cpp \
+      object_id.cpp \
+      points_to.cpp \
+      race_check.cpp \
+      reachability_slicer.cpp \
+      remove_function.cpp \
+      replace_calls.cpp \
+      rw_set.cpp \
+      show_locations.cpp \
+      skip_loops.cpp \
+      source_lines.cpp \
+      splice_call.cpp \
+      stack_depth.cpp \
+      synthesizer/enumerative_loop_invariant_synthesizer.cpp \
+      synthesizer/expr_enumerator.cpp \
+      synthesizer/synthesizer_utils.cpp \
+      thread_instrumentation.cpp \
+      undefined_functions.cpp \
+      uninitialized.cpp \
+      unwind.cpp \
+      unwindset.cpp \
+      value_set_fi_fp_removal.cpp \
+      wmm/abstract_event.cpp \
+      wmm/cycle_collection.cpp \
+      wmm/data_dp.cpp \
+      wmm/event_graph.cpp \
+      wmm/fence.cpp \
+      wmm/goto2graph.cpp \
+      wmm/instrumenter_strategies.cpp \
+      wmm/pair_collection.cpp \
+      wmm/shared_buffers.cpp \
+      wmm/weak_memory.cpp \
+      # Empty last line
 
 OBJ += ../ansi-c/ansi-c$(LIBEXT) \
+      ../cpp/cpp$(LIBEXT) \
       ../linking/linking$(LIBEXT) \
       ../big-int/big-int$(LIBEXT) \
       ../goto-programs/goto-programs$(LIBEXT) \
@@ -33,38 +102,20 @@ OBJ += ../ansi-c/ansi-c$(LIBEXT) \
       ../langapi/langapi$(LIBEXT) \
       ../xmllang/xmllang$(LIBEXT) \
       ../util/util$(LIBEXT) \
-      ../solvers/solvers$(LIBEXT)
+      ../solvers/solvers$(LIBEXT) \
+      ../json/json$(LIBEXT) \
+      # Empty last line
 
 INCLUDES= -I ..
 
-LIBS = 
+LIBS =
 
-CLEANFILES = goto-instrument$(EXEEXT)
+CLEANFILES = goto-instrument$(EXEEXT) goto-instrument$(LIBEXT)
 
 include ../config.inc
 include ../common
 
 all: goto-instrument$(EXEEXT)
-
-ifneq ($(wildcard ../cpp/Makefile),)
-  OBJ += ../cpp/cpp$(LIBEXT)
-  CP_CXXFLAGS += -DHAVE_CPP $(FLAG_GLPK)
-endif
-
-ifneq ($(wildcard ../java/Makefile),)
-  OBJ += ../java/java$(LIBEXT)
-  CP_CXXFLAGS += -DHAVE_JAVA
-endif
-
-ifneq ($(wildcard ../specc/Makefile),)
-  OBJ += ../specc/specc$(LIBEXT)
-  CP_CXXFLAGS += -DHAVE_SPECC
-endif
-
-ifneq ($(wildcard ../php/Makefile),)
-  OBJ += ../php/php$(LIBEXT)
-  CP_CXXFLAGS += -DHAVE_PHP
-endif
 
 ifneq ($(LIB_GLPK),)
   LIBS += $(LIB_GLPK)
@@ -80,4 +131,3 @@ goto-instrument$(EXEEXT): $(OBJ)
 
 goto-instrument-mac-signed: goto-instrument$(EXEEXT)
 	codesign -v -s $(OSX_IDENTITY) goto-instrument$(EXEEXT)
-

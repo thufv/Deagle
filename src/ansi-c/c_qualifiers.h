@@ -6,28 +6,78 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+
 #ifndef CPROVER_ANSI_C_C_QUALIFIERS_H
 #define CPROVER_ANSI_C_C_QUALIFIERS_H
 
 #include <iosfwd>
+#include <memory>
+#include <string>
 
-#include <util/expr.h>
+class typet;
 
-class c_qualifierst
+class qualifierst
+{
+protected:
+  // Only derived classes can construct
+  qualifierst() = default;
+
+public:
+  // Copy/move construction/assignment is deleted here and in derived classes
+  qualifierst(const qualifierst &) = delete;
+  qualifierst(qualifierst &&) = delete;
+  qualifierst &operator=(const qualifierst &) = delete;
+  qualifierst &operator=(qualifierst &&) = delete;
+
+  // Destruction is virtual
+  virtual ~qualifierst() = default;
+
+public:
+  virtual std::unique_ptr<qualifierst> clone() const = 0;
+
+  virtual qualifierst &operator+=(const qualifierst &b) = 0;
+
+  virtual std::size_t count() const = 0;
+
+  virtual void clear() = 0;
+
+  virtual void read(const typet &src) = 0;
+  virtual void write(typet &src) const = 0;
+
+  // Comparisons
+  virtual bool is_subset_of(const qualifierst &q) const = 0;
+  virtual bool operator==(const qualifierst &other) const = 0;
+  bool operator!=(const qualifierst &other) const
+  {
+    return !(*this == other);
+  }
+
+  // String conversion
+  virtual std::string as_string() const = 0;
+  friend std::ostream &operator<<(std::ostream &, const qualifierst &);
+};
+
+
+class c_qualifierst : public qualifierst
 {
 public:
   c_qualifierst()
   {
     clear();
   }
-  
+
   explicit c_qualifierst(const typet &src)
   {
     clear();
     read(src);
   }
-  
-  void clear()
+
+protected:
+  c_qualifierst &operator=(const c_qualifierst &other);
+public:
+  virtual std::unique_ptr<qualifierst> clone() const override;
+
+  virtual void clear() override
   {
     is_constant=false;
     is_volatile=false;
@@ -35,77 +85,74 @@ public:
     is_atomic=false;
     is_ptr32=is_ptr64=false;
     is_transparent_union=false;
+    is_noreturn=false;
   }
 
   // standard ones
-  bool is_constant, is_volatile, is_restricted, is_atomic;
-  
+  bool is_constant, is_volatile, is_restricted, is_atomic, is_noreturn;
+
   // MS Visual Studio extension
   bool is_ptr32, is_ptr64;
-  
+
   // gcc extension
   bool is_transparent_union;
-  
+
   // will likely add alignment here as well
-  
-  std::string as_string() const;
-  void read(const typet &src);
-  void write(typet &src) const;
-  
+
+  virtual std::string as_string() const override;
+  virtual void read(const typet &src) override;
+  virtual void write(typet &src) const override;
+
   static void clear(typet &dest);
-  
-  bool is_subset_of(const c_qualifierst &q) const
+
+  virtual bool is_subset_of(const qualifierst &other) const override
   {
-    return (!is_constant || q.is_constant) &&
-           (!is_volatile || q.is_volatile) &&
-           (!is_restricted || q.is_restricted) &&
-           (!is_atomic || q.is_atomic) &&
-           (!is_ptr32 || q.is_ptr32) &&
-           (!is_ptr64 || q.is_ptr64);
+    const c_qualifierst *cq = dynamic_cast<const c_qualifierst *>(&other);
+    return
+      (!is_constant || cq->is_constant) &&
+      (!is_volatile || cq->is_volatile) &&
+      (!is_restricted || cq->is_restricted) &&
+      (!is_atomic || cq->is_atomic) &&
+      (!is_ptr32 || cq->is_ptr32) &&
+      (!is_ptr64 || cq->is_ptr64) &&
+      (!is_noreturn || cq->is_noreturn);
 
     // is_transparent_union isn't checked
   }
-  
-  friend bool operator == (
-    const c_qualifierst &a,
-    const c_qualifierst &b)
+
+  virtual bool operator==(const qualifierst &other) const override
   {
-    return a.is_constant==b.is_constant &&
-           a.is_volatile==b.is_volatile &&
-           a.is_restricted==b.is_restricted &&
-           a.is_atomic==b.is_atomic &&
-           a.is_ptr32==b.is_ptr32 &&
-           a.is_ptr64==b.is_ptr64 &&
-           a.is_transparent_union==b.is_transparent_union;
+    const c_qualifierst *cq = dynamic_cast<const c_qualifierst *>(&other);
+    return
+      is_constant == cq->is_constant &&
+      is_volatile == cq->is_volatile &&
+      is_restricted == cq->is_restricted &&
+      is_atomic == cq->is_atomic &&
+      is_ptr32 == cq->is_ptr32 &&
+      is_ptr64 == cq->is_ptr64 &&
+      is_transparent_union == cq->is_transparent_union &&
+      is_noreturn == cq->is_noreturn;
   }
 
-  friend bool operator != (
-    const c_qualifierst &a,
-    const c_qualifierst &b)
+  virtual qualifierst &operator+=(const qualifierst &other) override
   {
-    return !(a==b);
-  }
-  
-  c_qualifierst &operator += (
-    const c_qualifierst &b)
-  {
-    is_constant|=b.is_constant;
-    is_volatile|=b.is_volatile;
-    is_restricted|=b.is_restricted;
-    is_atomic|=b.is_atomic;
-    is_ptr32|=b.is_ptr32;
-    is_ptr64|=b.is_ptr64;
-    is_transparent_union|=b.is_transparent_union;
+    const c_qualifierst *cq = dynamic_cast<const c_qualifierst *>(&other);
+    is_constant |= cq->is_constant;
+    is_volatile |= cq->is_volatile;
+    is_restricted |= cq->is_restricted;
+    is_atomic |= cq->is_atomic;
+    is_ptr32 |= cq->is_ptr32;
+    is_ptr64 |= cq->is_ptr64;
+    is_transparent_union |= cq->is_transparent_union;
+    is_noreturn |= cq->is_noreturn;
     return *this;
   }
-  
-  friend unsigned count(const c_qualifierst &q)
+
+  virtual std::size_t count() const override
   {
-    return q.is_constant+q.is_volatile+q.is_restricted+q.is_atomic+
-           q.is_ptr32+q.is_ptr64;
+    return is_constant+is_volatile+is_restricted+is_atomic+
+           is_ptr32+is_ptr64+is_noreturn;
   }
 };
 
-std::ostream &operator << (std::ostream &, const c_qualifierst &);
-
-#endif
+#endif // CPROVER_ANSI_C_C_QUALIFIERS_H

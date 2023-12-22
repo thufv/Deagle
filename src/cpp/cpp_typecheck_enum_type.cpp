@@ -6,105 +6,96 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/i2string.h>
-#include <util/arith_tools.h>
-
-#include <ansi-c/c_qualifiers.h>
-#include <ansi-c/c_types.h>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_typecheck.h"
+
+#include <util/arith_tools.h>
+#include <util/c_types.h>
+#include <util/config.h>
+
+#include <ansi-c/c_qualifiers.h>
+
 #include "cpp_enum_type.h"
-
-/*******************************************************************\
-
-Function: cpp_typecheckt::typecheck_enum_body
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_typecheckt::typecheck_enum_body(symbolt &enum_symbol)
 {
-  typet &type=enum_symbol.type;
-  
-  exprt &body=static_cast<exprt &>(type.add(ID_body));
+  c_enum_typet &c_enum_type=to_c_enum_type(enum_symbol.type);
+
+  exprt &body=static_cast<exprt &>(c_enum_type.add(ID_body));
   irept::subt &components=body.get_sub();
-  
-  typet enum_type(ID_symbol);
-  enum_type.set(ID_identifier, enum_symbol.name);
-  
+
+  c_enum_tag_typet enum_tag_type(enum_symbol.name);
+
   mp_integer i=0;
-  
-  Forall_irep(it, components)
+
+  for(auto &component : components)
   {
-    const irep_idt &name=it->get(ID_name);
-    
-    if(it->find(ID_value).is_not_nil())
+    const irep_idt &name = component.get(ID_name);
+
+    if(component.find(ID_value).is_not_nil())
     {
-      exprt &value=static_cast<exprt &>(it->add(ID_value));
+      exprt &value = static_cast<exprt &>(component.add(ID_value));
       typecheck_expr(value);
-      make_constant_index(value);
-      if(to_integer(value, i))
-        throw "failed to produce integer for enum";
+      implicit_typecast(value, c_enum_type.underlying_type());
+      make_constant(value);
+      if(to_integer(to_constant_expr(value), i))
+      {
+        error().source_location=value.find_source_location();
+        error() << "failed to produce integer for enum constant" << eom;
+        throw 0;
+      }
     }
-    
-    exprt final_value(ID_constant, enum_type);
-    final_value.set(ID_value, integer2string(i));
-    
+
+    exprt value_expr = from_integer(i, c_enum_type.underlying_type());
+    value_expr.type()=enum_tag_type; // override type
+
     symbolt symbol;
 
     symbol.name=id2string(enum_symbol.name)+"::"+id2string(name);
     symbol.base_name=name;
-    symbol.value.swap(final_value);
-    symbol.location=static_cast<const source_locationt &>(it->find(ID_C_source_location));
-    symbol.mode=ID_cpp;
+    symbol.value=value_expr;
+    symbol.location = static_cast<const source_locationt &>(
+      component.find(ID_C_source_location));
+    symbol.mode = enum_symbol.mode;
     symbol.module=module;
-    symbol.type=enum_type;
+    symbol.type=enum_tag_type;
     symbol.is_type=false;
     symbol.is_macro=true;
-    
+    symbol.is_file_local = true;
+    symbol.is_thread_local = true;
+
     symbolt *new_symbol;
     if(symbol_table.move(symbol, new_symbol))
-      throw "cpp_typecheckt::typecheck_enum_body: symbol_table.move() failed";
+    {
+      error().source_location=symbol.location;
+      error() << "cpp_typecheckt::typecheck_enum_body: "
+              << "symbol_table.move() failed" << eom;
+      throw 0;
+    }
 
     cpp_idt &scope_identifier=
       cpp_scopes.put_into_scope(*new_symbol);
-    
-    scope_identifier.id_class=cpp_idt::SYMBOL;
-    
+
+    scope_identifier.id_class=cpp_idt::id_classt::SYMBOL;
+
     ++i;
   }
 }
-
-/*******************************************************************\
-
-Function: cpp_typecheckt::typecheck_enum_type
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_typecheckt::typecheck_enum_type(typet &type)
 {
   // first save qualifiers
   c_qualifierst qualifiers;
   qualifiers.read(type);
-  
-  // These behave like special struct types.
-  // replace by type symbol
-  
+
   cpp_enum_typet &enum_type=to_cpp_enum_type(type);
   bool anonymous=!enum_type.has_tag();
   irep_idt base_name;
-  
+
+  cpp_save_scopet save_scope(cpp_scopes);
+
   if(anonymous)
   {
     // we fabricate a tag based on the enum constants contained
@@ -113,14 +104,12 @@ void cpp_typecheckt::typecheck_enum_type(typet &type)
   else
   {
     const cpp_namet &tag=enum_type.tag();
-    
-    if(tag.is_simple_name())
-      base_name=tag.get_base_name();
-    else
-    {
-      err_location(type);
-      throw "enum tag is expected to be a simple name";
-    }
+
+    cpp_template_args_non_tct template_args;
+    template_args.make_nil();
+
+    cpp_typecheck_resolvet resolver(*this);
+    resolver.resolve_scope(tag, base_name, template_args);
   }
 
   bool has_body=enum_type.has_body();
@@ -130,36 +119,53 @@ void cpp_typecheckt::typecheck_enum_type(typet &type)
     tag_scope(base_name, has_body, tag_only_declaration);
 
   const irep_idt symbol_name=
-    dest_scope.prefix+"tag."+id2string(base_name);
+    dest_scope.prefix+"tag-"+id2string(base_name);
 
   // check if we have it
-  
-  symbol_tablet::symbolst::iterator previous_symbol=
+
+  symbol_tablet::symbolst::const_iterator previous_symbol=
     symbol_table.symbols.find(symbol_name);
-    
+
   if(previous_symbol!=symbol_table.symbols.end())
   {
     // we do!
 
-    symbolt &symbol=previous_symbol->second;
+    const symbolt &symbol=previous_symbol->second;
 
     if(has_body)
     {
-      err_location(type);
-      str << "error: enum symbol `" << base_name
-          << "' declared previously" << std::endl;
-      str << "location of previous definition: "
-          << symbol.location << std::endl;
+      error().source_location=type.source_location();
+      error() << "error: enum symbol '" << base_name
+              << "' declared previously\n"
+              << "location of previous definition: " << symbol.location << eom;
       throw 0;
     }
   }
-  else if(has_body)
+  else if(
+    has_body ||
+    config.ansi_c.mode == configt::ansi_ct::flavourt::VISUAL_STUDIO)
   {
     std::string pretty_name=
       cpp_scopes.current_scope().prefix+id2string(base_name);
-      
-    // these have a subtype
-    type.subtype()=int_type();
+
+    // C++11 enumerations have an underlying type,
+    // which defaults to int.
+    // enums without underlying type may be 'packed'.
+    if(type.add_subtype().is_nil())
+      type.add_subtype() = signed_int_type();
+    else
+    {
+      typecheck_type(to_type_with_subtype(type).subtype());
+      if(
+        to_type_with_subtype(type).subtype().id() != ID_signedbv &&
+        to_type_with_subtype(type).subtype().id() != ID_unsignedbv &&
+        to_type_with_subtype(type).subtype().id() != ID_c_bool)
+      {
+        error().source_location=type.source_location();
+        error() << "underlying type must be integral" << eom;
+        throw 0;
+      }
+    }
 
     symbolt symbol;
 
@@ -173,30 +179,41 @@ void cpp_typecheckt::typecheck_enum_type(typet &type)
     symbol.is_type=true;
     symbol.is_macro=false;
     symbol.pretty_name=pretty_name;
-    
+
     // move early, must be visible before doing body
     symbolt *new_symbol;
     if(symbol_table.move(symbol, new_symbol))
-      throw "cpp_typecheckt::typecheck_enum_type: symbol_table.move() failed";    
+    {
+      error().source_location=symbol.location;
+      error() << "cpp_typecheckt::typecheck_enum_type: "
+              << "symbol_table.move() failed" << eom;
+      throw 0;
+    }
 
     // put into scope
     cpp_idt &scope_identifier=
       cpp_scopes.put_into_scope(*new_symbol, dest_scope);
-    
-    scope_identifier.id_class=cpp_idt::CLASS;
 
-    typecheck_enum_body(*new_symbol);
+    scope_identifier.id_class=cpp_idt::id_classt::CLASS;
+    scope_identifier.is_scope = true;
+
+    cpp_save_scopet save_scope_before_enum_typecheck(cpp_scopes);
+
+    if(new_symbol->type.get_bool(ID_C_class))
+      cpp_scopes.go_to(scope_identifier);
+
+    if(has_body)
+      typecheck_enum_body(*new_symbol);
   }
   else
   {
-    err_location(type);
-    str << "use of enum `" << base_name
-        << "' without previous declaration";
+    error().source_location=type.source_location();
+    error() << "use of enum '" << base_name << "' without previous declaration"
+            << eom;
     throw 0;
   }
 
-  // create type symbol
-  type=typet(ID_symbol);
-  type.set(ID_identifier, symbol_name);
+  // create enum tag expression, and add the qualifiers
+  type=c_enum_tag_typet(symbol_name);
   qualifiers.write(type);
 }

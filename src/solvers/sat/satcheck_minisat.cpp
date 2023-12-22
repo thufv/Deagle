@@ -6,13 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
+#include "satcheck_minisat.h"
+
+#include <algorithm>
 #include <stack>
 
-#include <util/i2string.h>
+#include <util/invariant.h>
 #include <util/threeval.h>
-
-#include "satcheck_minisat.h"
 
 #include <Solver.h>
 #include <Proof.h>
@@ -21,33 +21,13 @@ Author: Daniel Kroening, kroening@kroening.com
 #error "Expected HAVE_MINISAT"
 #endif
 
-/*******************************************************************\
-
-Function: convert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void convert(const bvt &bv, vec<Lit> &dest)
 {
   dest.growTo(bv.size());
-  
+
   for(unsigned i=0; i<bv.size(); i++)
     dest[i]=Lit(bv[i].var_no(), bv[i].sign());
 }
-
-/*******************************************************************\
-
-   Class: minisat_prooft
-
- Purpose:
-
-\*******************************************************************/
 
 class minisat_prooft:public ProofTraverser
 {
@@ -67,31 +47,19 @@ public:
 //      resolution_proof.no_vars = var(c[i]);
     }
   }
-  
+
   virtual void chain(const vec<ClauseId> &cs, const vec<Var> &xs);
 
   virtual void deleted(ClauseId c) { }
   virtual void done() { }
   virtual ~minisat_prooft() { }
-  
+
   simple_prooft resolution_proof;
 };
 
-/*******************************************************************\
-
-Function: minisat_prooft::chain
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void minisat_prooft::chain(const vec<ClauseId> &cs, const vec<Var> &xs)
 {
-  assert(cs.size()==xs.size()+1);
+  PRECONDITION(cs.size() == xs.size() + 1);
 
   resolution_proof.clauses.push_back(clauset());
   clauset &c=resolution_proof.clauses.back();
@@ -107,23 +75,11 @@ void minisat_prooft::chain(const vec<ClauseId> &cs, const vec<Var> &xs)
   for(int i=0; i<xs.size(); i++)
   {
     // must be decreasing
-    assert(cs[i]<c_id);
+    INVARIANT(cs[i] < c_id, "clause ID should be within bounds");
     c.steps[i].clause_id=cs[i+1];
     c.steps[i].pivot_var_no=xs[i];
   }
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::l_get
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 tvt satcheck_minisat1_baset::l_get(literalt a) const
 {
@@ -134,73 +90,39 @@ tvt satcheck_minisat1_baset::l_get(literalt a) const
 
   tvt result;
 
-  assert(a.var_no()!=0);
-  assert(a.var_no()<(unsigned)solver->model.size());
+  INVARIANT(a.var_no() != 0, "variable number should be set");
+  INVARIANT(
+    a.var_no() < (unsigned)solver->model.size(),
+    "variable number should be within bounds");
 
   if(solver->model[a.var_no()]==l_True)
     result=tvt(true);
   else if(solver->model[a.var_no()]==l_False)
     result=tvt(false);
   else
-    result=tvt(tvt::TV_UNKNOWN);
-  
-  if(a.sign()) result=!result;
+    result=tvt(tvt::tv_enumt::TV_UNKNOWN);
+
+  if(a.sign())
+    result=!result;
 
   return result;
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const std::string satcheck_minisat1_baset::solver_text()
 {
   return "MiniSAT 1.14p";
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::add_variables
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void satcheck_minisat1_baset::add_variables()
 {
-
   while((unsigned)solver->nVars()<no_variables())
     solver->newVar();
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::lcnf
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void satcheck_minisat1_baset::lcnf(const bvt &bv)
 {
   bvt new_bv;
-  
+
   if(process_clause(bv, new_bv))
     return;
 
@@ -216,50 +138,38 @@ void satcheck_minisat1_baset::lcnf(const bvt &bv)
   vec<Lit> c;
   convert(new_bv, c);
 
-  for(unsigned i=0; i<new_bv.size(); i++)
-    assert(new_bv[i].var_no()<(unsigned)solver->nVars());
+  INVARIANT(
+    std::all_of(
+      new_bv.begin(),
+      new_bv.end(),
+      [](const literalt &l) { return l.var_no() < (unsigned)solver->nVars(); }),
+    "variable number should be within bounds");
 
   solver->addClause(c);
 
   clause_counter++;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-propt::resultt satcheck_minisat1_baset::prop_solve()
+propt::resultt satcheck_minisat1_baset::do_prop_solve()
 {
-  assert(status!=ERROR);
+  PRECONDITION(status != ERROR);
 
-  {
-    std::string msg=
-      i2string(_no_variables)+" variables, "+
-      i2string(solver->nClauses())+" clauses";
-    messaget::status(msg);
-  }
-  
+  log.statistics() << (_no_variables - 1) << " variables, "
+                   << solver->nClauses() << " clauses" << messaget::eom;
+
   add_variables();
 
   solver->simplifyDB();
-  
+
   std::string msg;
 
   if(empty_clause_added)
   {
-    msg="empty clause: negated claim is UNSATISFIABLE, i.e., holds";
+    msg="empty clause: instance is UNSATISFIABLE";
   }
   else if(!solver->okay())
   {
-    msg="SAT checker inconsistent: negated claim is UNSATISFIABLE, i.e., holds";
+    msg="SAT checker inconsistent: instance is UNSATISFIABLE";
   }
   else
   {
@@ -268,31 +178,19 @@ propt::resultt satcheck_minisat1_baset::prop_solve()
 
     if(solver->solve(MiniSat_assumptions))
     {
-      msg="SAT checker: negated claim is SATISFIABLE, i.e., does not hold";
-      messaget::status(msg);
+      msg="SAT checker: instance is SATISFIABLE";
+      log.status() << msg << messaget::eom;
       status=SAT;
       return P_SATISFIABLE;
     }
     else
-      msg="SAT checker: negated claim is UNSATISFIABLE, i.e., holds";
+      msg="SAT checker: instance is UNSATISFIABLE";
   }
 
-  messaget::status(msg);
+  log.status() << msg << messaget::eom;
   status=UNSAT;
   return P_UNSATISFIABLE;
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::set_assignment
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void satcheck_minisat1_baset::set_assignment(literalt a, bool value)
 {
@@ -302,18 +200,6 @@ void satcheck_minisat1_baset::set_assignment(literalt a, bool value)
   value^=sign;
   solver->model[v]=lbool(value);
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::is_in_conflict
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bool satcheck_minisat1_baset::is_in_conflict(literalt a) const
 {
@@ -328,18 +214,6 @@ bool satcheck_minisat1_baset::is_in_conflict(literalt a) const
   return false;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::set_assumptions
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void satcheck_minisat1_baset::set_assumptions(const bvt &bv)
 {
   assumptions=bv;
@@ -347,38 +221,14 @@ void satcheck_minisat1_baset::set_assumptions(const bvt &bv)
   for(bvt::const_iterator it=assumptions.begin();
       it!=assumptions.end();
       it++)
-    assert(!it->is_constant());
+    INVARIANT(!it->is_constant(), "assumptions should be non-constant");
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1t::satcheck_minisat1t
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 satcheck_minisat1t::satcheck_minisat1t()
 {
   empty_clause_added=false;
   solver=new Solver;
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_prooft::satcheck_minisat1_prooft
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 satcheck_minisat1_prooft::satcheck_minisat1_prooft():satcheck_minisat1t()
 {
@@ -388,107 +238,35 @@ satcheck_minisat1_prooft::satcheck_minisat1_prooft():satcheck_minisat1t()
   solver->proof=proof;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_prooft::~satcheck_minisat1_prooft
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 satcheck_minisat1_prooft::~satcheck_minisat1_prooft()
 {
   delete proof;
   delete minisat_proof;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_coret::satcheck_minisat1_coret
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 satcheck_minisat1_coret::satcheck_minisat1_coret()
 {
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_coret::~satcheck_minisat1_coret
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 satcheck_minisat1_coret::~satcheck_minisat1_coret()
 {
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_baset::~satcheck_minisat1_baset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 satcheck_minisat1_baset::~satcheck_minisat1_baset()
 {
   delete solver;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_prooft::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 const std::string satcheck_minisat1_prooft::solver_text()
 {
   return "MiniSAT + Proof";
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_coret::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-propt::resultt satcheck_minisat1_coret::prop_solve()
+propt::resultt satcheck_minisat1_coret::do_prop_solve()
 {
   propt::resultt r;
 
-  r=satcheck_minisat1_prooft::prop_solve();
+  r = satcheck_minisat1_prooft::do_prop_solve();
 
   if(status==UNSAT)
   {
@@ -499,34 +277,10 @@ propt::resultt satcheck_minisat1_coret::prop_solve()
   return r;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat1_coret::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 const std::string satcheck_minisat1_coret::solver_text()
 {
   return "MiniSAT + Core";
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat1_prooft::get_resolution_proof
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 simple_prooft &satcheck_minisat1_prooft::get_resolution_proof()
 {

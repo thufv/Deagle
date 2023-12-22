@@ -6,8 +6,11 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_PREPROCESSOR_H
-#define CPROVER_PREPROCESSOR_H
+/// \file
+/// Preprocessing Base Class
+
+#ifndef CPROVER_UTIL_PREPROCESSOR_H
+#define CPROVER_UTIL_PREPROCESSOR_H
 
 #include <iosfwd>
 #include <string>
@@ -27,7 +30,7 @@ public:
     filename(_filename)
   {
   }
-    
+
   virtual ~preprocessort() { }
 
   std::istream &in;
@@ -37,4 +40,4 @@ public:
   virtual void preprocessor()=0;
 };
 
-#endif
+#endif // CPROVER_UTIL_PREPROCESSOR_H

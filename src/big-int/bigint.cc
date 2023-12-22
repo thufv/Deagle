@@ -8,12 +8,12 @@
 #include "bigint.hh"
 #include "allocainc.h"
 
-#include <ctype.h>
-#include <limits.h>
-#include <string.h>
+#include <cctype>
+#include <climits>
+#include <cstring>
 
 // How to report errors.
-#include <stdio.h>
+#include <cstdio>
 #define error(x) fprintf (stderr, "%s\n", x)
 
 
@@ -464,6 +464,12 @@ BigInt::BigInt (BigInt const &y)
   memcpy (digit, y.digit, length * sizeof (onedig_t));
 }
 
+BigInt::BigInt (BigInt &&y)
+  : BigInt()
+{
+  swap(y);
+}
+
 BigInt::BigInt (char const *s, onedig_t b)
   : size (adjust_size (small)),
     length (0),
@@ -473,40 +479,18 @@ BigInt::BigInt (char const *s, onedig_t b)
   scan (s, b);
 }
 
-
-BigInt &
-BigInt::operator= (llong_t l)
-{
-  reallocate (small);
-  assign (l);
-  return *this;
-}
-
-BigInt &
-BigInt::operator= (ullong_t ul)
-{
-  reallocate (small);
-  assign (ul);
-  return *this;
-}
-
 BigInt &
 BigInt::operator= (BigInt const &y)
 {
-  if (&y != this)
-    {
-      reallocate (y.length);
-      length = y.length;
-      positive = y.positive;
-      memcpy (digit, y.digit, length * sizeof (onedig_t));
-    }
+  BigInt copy(y);
+  swap(copy);
   return *this;
 }
 
 BigInt &
-BigInt::operator= (char const *s)
+BigInt::operator= (BigInt &&y)
 {
-  scan (s);
+  swap(y);
   return *this;
 }
 
@@ -1298,19 +1282,19 @@ BigInt::floorPow2 () const
   while ((power << 1) <= (twodig_t)digit[i]) {
     ++count, power <<= 1;
   }
-  
+
   return (single_bits * i) + count;
 }
 
 // Not part of original BigInt.
-void 
+void
 BigInt::setPower2 (unsigned exponent) {
   unsigned digitOffset = exponent / single_bits;
   unsigned bitOffset = exponent % single_bits;
   unsigned digitsNeeded = 1 + digitOffset;
 
   reallocate(digitsNeeded);
-  this->length = digitsNeeded; 
+  this->length = digitsNeeded;
   this->positive = true;
 
   unsigned i;

@@ -6,454 +6,296 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_BASIC_SYMEX_EQUATION_H
-#define CPROVER_BASIC_SYMEX_EQUATION_H
+/// \file
+/// Generate Equation using Symbolic Execution
 
-#include <list>
+#ifndef CPROVER_GOTO_SYMEX_SYMEX_TARGET_EQUATION_H
+#define CPROVER_GOTO_SYMEX_SYMEX_TARGET_EQUATION_H
+
+#include <algorithm>
 #include <iosfwd>
+#include <list>
 
+#include <util/invariant.h>
 #include <util/merge_irep.h>
+#include <util/message.h>
+#include <util/narrow.h>
 
-#include <goto-programs/goto_program.h>
-#include <goto-programs/goto_trace.h>
+#include <cat/cat_module.h>
 
-#include <solvers/prop/literal.h>
-
+#include "ssa_step.h"
 #include "symex_target.h"
-#include "../solvers/prop/literal.h"
+// #include "partial_order_concurrency.h"
 
 class decision_proceduret;
 class namespacet;
-class prop_convt;
-class edge;
 
 // __SZH_ADD_BEGIN__
-struct oclt_table_entryt
+struct oc_edget
 {
-    std::string u_name;
-    std::string v_name;
-    std::string kind_name;
-    std::string decide_var_name;
-    exprt decide_var_expr;
+    std::string e1_str;
+    std::string e2_str;
+    std::string kind;
+    exprt guard_expr;
 
-    oclt_table_entryt(std::string _u_name, std::string _v_name, std::string _kind_name, std::string _decide_var_name, exprt _decide_var_expr):
-            u_name(_u_name), v_name(_v_name), kind_name(_kind_name), decide_var_name(_decide_var_name), decide_var_expr(_decide_var_expr) {}
+    oc_edget(std::string _e1_str, std::string _e2_str, std::string _kind, exprt _guard_expr):
+            e1_str(_e1_str), e2_str(_e2_str), kind(_kind), guard_expr(_guard_expr) {}
 
-    bool operator<(const oclt_table_entryt& right) const
+    bool operator<(const oc_edget& right) const
     {
-        if(u_name != right.u_name)
-            return u_name < right.u_name;
-        if(v_name != right.v_name)
-            return v_name < right.v_name;
-        if(kind_name != right.kind_name)
-            return kind_name < right.kind_name;
-        return decide_var_name < right.decide_var_name;
+        if(e1_str != right.e1_str)
+            return e1_str < right.e1_str;
+        if(e2_str != right.e2_str)
+            return e2_str < right.e2_str;
+        return kind < right.kind;
+    }
+};
+
+struct oc_labelt
+{
+    std::string e_str;
+    std::string label;
+
+    oc_labelt(std::string _e_str, std::string _label):
+            e_str(_e_str), label(_label){}
+
+    bool operator<(const oc_labelt& right) const
+    {
+        if(e_str != right.e_str)
+            return e_str < right.e_str;
+        return label < right.label;
     }
 };
 // __SZH_ADD_END__
 
+/// Inheriting the interface of symex_targett this class represents the SSA
+/// form of the input program as a list of \ref SSA_stept. It further extends
+/// the base class by providing a conversion interface for decision procedures.
 class symex_target_equationt:public symex_targett
 {
 public:
-  explicit symex_target_equationt(const namespacet &_ns);
-  virtual ~symex_target_equationt();
+  explicit symex_target_equationt(message_handlert &message_handler)
+    : log(message_handler)
+  {
+  }
 
-  // read event
+  virtual ~symex_target_equationt() = default;
+
+  /// \copydoc symex_targett::shared_read()
   virtual void shared_read(
     const exprt &guard,
-    const symbol_exprt &ssa_object,
-    const symbol_exprt &original_object,
-    unsigned atomic_section_id,
-    const sourcet &source,
-	const bool array_assign = false,
-	const bool struct_assign = false);
-
-  // write event
-  virtual void shared_write(
-    const exprt &guard,
-    const symbol_exprt &ssa_object,
-    const symbol_exprt &original_object,
+    const ssa_exprt &ssa_object,
     unsigned atomic_section_id,
     const sourcet &source);
 
-  // assignment to a variable - lhs must be symbol
+  /// \copydoc symex_targett::shared_write()
+  virtual void shared_write(
+    const exprt &guard,
+    const ssa_exprt &ssa_object,
+    unsigned atomic_section_id,
+    const sourcet &source);
+
+  /// \copydoc symex_targett::assignment()
   virtual void assignment(
     const exprt &guard,
-    const symbol_exprt &ssa_lhs,
-    const symbol_exprt &original_lhs,
+    const ssa_exprt &ssa_lhs,
     const exprt &ssa_full_lhs,
     const exprt &original_full_lhs,
     const exprt &ssa_rhs,
     const sourcet &source,
     assignment_typet assignment_type);
-    
-  // declare fresh variable - lhs must be symbol
+
+  /// \copydoc symex_targett::decl()
   virtual void decl(
     const exprt &guard,
-    const symbol_exprt &ssa_lhs,
-    const symbol_exprt &original_lhs_object,
-    const sourcet &source);
+    const ssa_exprt &ssa_lhs,
+    const exprt &initializer,
+    const sourcet &source,
+    assignment_typet assignment_type);
 
-  // note the death of a variable - lhs must be symbol
+  /// \copydoc symex_targett::dead()
   virtual void dead(
     const exprt &guard,
-    const symbol_exprt &ssa_lhs,
-    const symbol_exprt &original_lhs_object,
+    const ssa_exprt &ssa_lhs,
     const sourcet &source);
 
-  // record a function call
+  /// \copydoc symex_targett::function_call()
   virtual void function_call(
     const exprt &guard,
-    const irep_idt &identifier,
+    const irep_idt &function_id,
+    const std::vector<renamedt<exprt, L2>> &ssa_function_arguments,
     const sourcet &source,
-	const irep_idt pthread_join_id = "");
+    bool hidden);
 
-  // record return from a function
+  /// \copydoc symex_targett::function_return()
   virtual void function_return(
     const exprt &guard,
-    const irep_idt &identifier,
-    const sourcet &source);
+    const irep_idt &function_id,
+    const sourcet &source,
+    bool hidden);
 
-  // just record a location
+  /// \copydoc symex_targett::location()
   virtual void location(
     const exprt &guard,
     const sourcet &source);
-  
-  // output
+
+  /// \copydoc symex_targett::output()
   virtual void output(
     const exprt &guard,
     const sourcet &source,
-    const irep_idt &fmt,
-    const std::list<exprt> &args);
-  
-  // output, formatted
+    const irep_idt &output_id,
+    const std::list<renamedt<exprt, L2>> &args);
+
+  /// \copydoc symex_targett::output_fmt()
   virtual void output_fmt(
     const exprt &guard,
     const sourcet &source,
     const irep_idt &output_id,
     const irep_idt &fmt,
     const std::list<exprt> &args);
-  
-  // input
+
+  /// \copydoc symex_targett::input()
   virtual void input(
     const exprt &guard,
     const sourcet &source,
     const irep_idt &input_id,
     const std::list<exprt> &args);
-  
-  // record an assumption
+
+  /// \copydoc symex_targett::assumption()
   virtual void assumption(
     const exprt &guard,
     const exprt &cond,
     const sourcet &source);
 
-  // record an assertion
+  /// \copydoc symex_targett::assertion()
   virtual void assertion(
     const exprt &guard,
     const exprt &cond,
     const std::string &msg,
     const sourcet &source);
 
-  // record a (global) constraint
+  /// \copydoc symex_targett::goto_instruction()
+  virtual void goto_instruction(
+    const exprt &guard,
+    const renamedt<exprt, L2> &cond,
+    const sourcet &source);
+
+  /// \copydoc symex_targett::constraint()
   virtual void constraint(
     const exprt &cond,
     const std::string &msg,
     const sourcet &source);
 
-  // record thread spawn
+  /// \copydoc symex_targett::spawn()
   virtual void spawn(
     const exprt &guard,
     const sourcet &source);
 
-  // record memory barrier
+  /// \copydoc symex_targett::memory_barrier()
   virtual void memory_barrier(
     const exprt &guard,
     const sourcet &source);
 
-  // record atomic section
+  /// \copydoc symex_targett::atomic_begin()
   virtual void atomic_begin(
     const exprt &guard,
     unsigned atomic_section_id,
     const sourcet &source);
+
+  /// \copydoc symex_targett::atomic_end()
   virtual void atomic_end(
     const exprt &guard,
     unsigned atomic_section_id,
     const sourcet &source);
 
-  void convert(prop_convt &prop_conv);
-  void convert_assignments(decision_proceduret &decision_procedure) const;
-  void convert_decls(prop_convt &prop_conv) const;
-  void convert_assumptions(prop_convt &prop_conv);
-  void convert_assertions(prop_convt &prop_conv);
-  void convert_constraints(decision_proceduret &decision_procedure) const;
-  void convert_guards(prop_convt &prop_conv);
+  /// Interface method to initiate the conversion into a decision procedure
+  /// format. The method iterates over the equation, i.e. over the SSA steps and
+  /// converts each type of step separately.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  void convert(decision_proceduret &decision_procedure);
+
+  /// Interface method to initiate the conversion into a decision procedure
+  /// format. The method iterates over the equation, i.e. over the SSA steps and
+  /// converts each type of step separately, except assertions.
+  /// This enables the caller to handle assertion conversion differently,
+  /// e.g. for incremental solving.
+  /// \param decision_procedure: A handle to a particular decision procedure
+  ///   interface
+  void convert_without_assertions(decision_proceduret &decision_procedure);
+
+  /// Converts assignments: set the equality _lhs==rhs_ to _True_.
+  /// \param decision_procedure: A handle to a decision procedure
+  ///  interface
+  void convert_assignments(decision_proceduret &decision_procedure);
+
+  /// Converts declarations: these are effectively ignored by the decision
+  /// procedure.
+  /// \param decision_procedure: A handle to a decision procedure
+  ///  interface
+  void convert_decls(decision_proceduret &decision_procedure);
+
+  /// Converts assumptions: convert the expression the assumption represents.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  void convert_assumptions(decision_proceduret &decision_procedure);
+
+  /// Converts assertions: build a disjunction of negated assertions.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  /// \param optimized_for_single_assertions: Use an optimized encoding for
+  ///   single assertions (unsound for incremental conversions)
+  void convert_assertions(
+    decision_proceduret &decision_procedure,
+    bool optimized_for_single_assertions = true);
+
+  /// Converts constraints: set the represented condition to _True_.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  void convert_constraints(decision_proceduret &decision_procedure);
+
+  /// Converts goto instructions: convert the expression representing the
+  /// condition of this goto.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  void convert_goto_instructions(decision_proceduret &decision_procedure);
+
+  /// Converts guards: convert the expression the guard represents.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  void convert_guards(decision_proceduret &decision_procedure);
+
+  /// Converts function calls: for each argument build an equality between its
+  /// symbol and the argument itself.
+  /// \param decision_procedure: A handle to a decision procedure interface
+  void convert_function_calls(decision_proceduret &decision_procedure);
+
+  /// Converts I/O: for each argument build an equality between its
+  /// symbol and the argument itself.
+  /// \param decision_procedure: A handle to a decision procedure interface
   void convert_io(decision_proceduret &decision_procedure);
 
   exprt make_expression() const;
 
-  class SSA_stept
+  std::size_t count_assertions() const
   {
-  public:
-    sourcet source;
-    goto_trace_stept::typet type;
-    
-    bool is_assert() const          { return type==goto_trace_stept::ASSERT; }
-    bool is_assume() const          { return type==goto_trace_stept::ASSUME; }
-    bool is_assignment() const      { return type==goto_trace_stept::ASSIGNMENT; }
-    bool is_constraint() const      { return type==goto_trace_stept::CONSTRAINT; }
-    bool is_location() const        { return type==goto_trace_stept::LOCATION; }
-    bool is_output() const          { return type==goto_trace_stept::OUTPUT; }
-    bool is_decl() const            { return type==goto_trace_stept::DECL; }
-    bool is_function_call() const   { return type==goto_trace_stept::FUNCTION_CALL; }
-    bool is_function_return() const { return type==goto_trace_stept::FUNCTION_RETURN; }
-    bool is_shared_read() const     { return type==goto_trace_stept::SHARED_READ; }
-    bool is_shared_write() const    { return type==goto_trace_stept::SHARED_WRITE; }
-    bool is_spawn() const           { return type==goto_trace_stept::SPAWN; }
-    bool is_memory_barrier() const  { return type==goto_trace_stept::MEMORY_BARRIER; }
-    bool is_atomic_begin() const    { return type==goto_trace_stept::ATOMIC_BEGIN; }
-    bool is_atomic_end() const      { return type==goto_trace_stept::ATOMIC_END; }
-    bool is_verify_lock(bool mutex) const {
-    	return type == goto_trace_stept::FUNCTION_CALL &&
-    			(identifier == "c::__VERIFIER_atomic_begin" || (identifier == "c::pthread_mutex_lock" && !mutex));
-    }
-    bool is_verify_unlock(bool mutex) const {
-    	return type == goto_trace_stept::FUNCTION_CALL &&
-    			(identifier == "c::__VERIFIER_atomic_end" || (identifier == "c::pthread_mutex_unlock" && !mutex));
-    }
-    bool is_verify_atomic_begin(bool mutex) const {
-    	return type == goto_trace_stept::FUNCTION_CALL &&
-    			(identifier == "c::__VERIFIER_atomic_begin" ||
-    			 (identifier == "c::pthread_mutex_lock" && !mutex) ||
-    			 identifier == "c::__VERIFIER_atomic_acquire" ||
-    			 identifier == "c::__VERIFIER_atomic_malloc_ThreadInfo");
-    }
-    bool is_verify_atomic_end(bool mutex) const {
-    	return type == goto_trace_stept::FUNCTION_CALL &&
-    			(identifier == "c::__VERIFIER_atomic_end" ||
-    			 (identifier == "c::pthread_mutex_unlock" && !mutex) ||
-    			 identifier == "c::__VERIFIER_atomic_release" ||
-    			 identifier == "c::__VERIFIER_atomic_free_ThreadInfo");
-    }
-    bool is_thread_create() const {
-    	return type == goto_trace_stept::FUNCTION_CALL && (identifier == "c::pthread_create");
-    }
-    bool is_thread_create_return() const {
-    	return type == goto_trace_stept::FUNCTION_RETURN && (identifier == "c::pthread_create");
-    }
-    bool is_thread_join() const {
-    	return type == goto_trace_stept::FUNCTION_CALL && (identifier == "c::pthread_join");
-    }
-    bool is_aux_var() const {
-    	return (((type == goto_trace_stept::SHARED_READ) || (type == goto_trace_stept::SHARED_WRITE)) &&
-    			(original_lhs_object.get_identifier() == "c::__CPROVER_next_thread_id"  ||
-    			 original_lhs_object.get_identifier() == "c::__CPROVER_threads_exited"));
-    }
-
-    //// __FHY_ADD_BEGIN__
-    bool is_redundant_var() const {
-        std::string var = id2string(original_lhs_object.get_identifier());
-        return var == "c::__CPROVER_deallocated" || var == "c::__CPROVER_dead_object" ||
-               var == "c::__CPROVER_malloc_object" || var == "c::__CPROVER_malloc_size" ||
-               var == "c::__CPROVER_malloc_is_new_array" || var == "c::__CPROVER_memory_leak" ||
-               var == "c::__CPROVER_pipe_count";
-    }
-    //// __FHY_ADD_END__
-
-      bool is_thread_exited_write() const {
-          return ((type == goto_trace_stept::SHARED_WRITE) &&
-                  (original_lhs_object.get_identifier() == "c::__CPROVER_threads_exited"));
-      }
-    
-    bool is_program_var() const {
-    	if ((type != goto_trace_stept::SHARED_READ) && (type != goto_trace_stept::SHARED_WRITE))
-    		return false;
-    	std::string name = id2string(original_lhs_object.get_identifier());
-    	if (name.find("__CPROVER") != name.npos || name.find("argv") != name.npos)
-    		return false;
-    	if (name.find("object") != name.npos)
-    		return false;
-    	return true;
-    }
-
-    exprt guard;
-    literalt guard_literal;
-    unsigned id; //ylz
-    bool array_assign; // ylz
-    bool struct_assign; //szh
-
-    // for ASSIGNMENT and DECL
-    symbol_exprt ssa_lhs, original_lhs_object;
-    exprt ssa_full_lhs, original_full_lhs;
-    exprt ssa_rhs;
-    assignment_typet assignment_type;
-    bool event_flag;   // ylz: true if it contains an event
-    
-    // for ASSUME/ASSERT/CONSTRAINT
-    exprt cond_expr; 
-    literalt cond_literal;
-    std::string comment;
-    
-    // for INPUT/OUTPUT
-    irep_idt format_string, io_id;
-    bool formatted;
-    std::list<exprt> io_args;
-    std::list<exprt> converted_io_args;
-    
-    // for function call/return
-    irep_idt identifier;
-
-    // ylz, for pthread_create, pthread_join
-    irep_idt pthread_join_id;
-
-    // for SHARED_READ/SHARED_WRITE and ATOMIC_BEGIN/ATOMIC_END
-    unsigned atomic_section_id;
-    unsigned appear_ssa_id;  // ylz
-    
-    // for slicing
-    bool ignore;
-    bool rely;
-
-    SSA_stept():
-      guard(static_cast<const exprt &>(get_nil_irep())),
-      ssa_lhs(static_cast<const symbol_exprt &>(get_nil_irep())),
-      original_lhs_object(static_cast<const symbol_exprt &>(get_nil_irep())),
-      ssa_full_lhs(static_cast<const exprt &>(get_nil_irep())),
-      original_full_lhs(static_cast<const exprt &>(get_nil_irep())),
-      ssa_rhs(static_cast<const exprt &>(get_nil_irep())),
-      cond_expr(static_cast<const exprt &>(get_nil_irep())),
-      formatted(false),
-      atomic_section_id(0),
-	  appear_ssa_id(0),
-	  event_flag(false),
-	  id(0),
-	  array_assign(false),
-      ignore(false),
-	  rely(false)
-    {
-    }
-    
-    void output(
-      const namespacet &ns,
-      std::ostream &out) const;
-
-    void output_backup(
-          const namespacet &ns,
-          std::ostream &out) const;
-  };
-  
-  // added by ylz:for slice
-  // =============================================================
-  typedef std::map<const irep_idt, SSA_stept*> irept_stept_map;
-  irept_stept_map shared_read_map;
-  irept_stept_map shared_write_map;
-  irept_stept_map assignment_map;
-  std::vector<irep_idt> rely_symbols;
-  void compute_maps();
-  void initial_rely_symbols();
-  void compute_rely_symbols();
-  bool is_shared_read(irep_idt var);
-  void compute_address_map();
-  void slice();
-
-  // lists of reads and writes per address
-  typedef std::vector<SSA_stept*> stept_listt;
-  struct a_rect
-  {
-	  stept_listt reads, writes;
-  };
-
-  typedef std::map<irep_idt, a_rect> address_mapt;
-  address_mapt address_map;
-
-  bool mutex_flag;	// mark the manner we dispose pthread_mutex_lock
-  bool order_flag;			// mark if we should define an unique order for each event
-  bool symmetry_flag;		// mark if we should use the symmetry strategy, if events_num >
-  int events_num;			// number of events
-  int maximum_events_limit; // maximum number of events limit
-  std::map<int, int> same_threads_id;
-
-  void set_mutex_flag(bool flag)
-  {mutex_flag = flag;}
-
-  void set_order_flag(bool flag)
-  {order_flag = flag;}
-
-  void set_symmetry_flag(bool flag)
-  {symmetry_flag = flag;}
-
-  void set_events_num(int num)
-  {events_num = num;}
-
-  bool exceed_events_limit()
-  {return events_num > maximum_events_limit;}
-  //==============================================================
-
-
-  unsigned count_assertions() const
-  {
-    unsigned i=0;
-    for(SSA_stepst::const_iterator
-        it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
-      if(it->is_assert()) i++;
-    return i;
+    return narrow_cast<std::size_t>(std::count_if(
+      SSA_steps.begin(), SSA_steps.end(), [](const SSA_stept &step) {
+        return step.is_assert() && !step.ignore && !step.converted;
+      }));
   }
-  
-  unsigned count_ignored_SSA_steps() const
+
+  std::size_t count_ignored_SSA_steps() const
   {
-    unsigned i=0;
-    for(SSA_stepst::const_iterator
-        it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
-      if(it->ignore) i++;
-    return i;
+    return narrow_cast<std::size_t>(std::count_if(
+      SSA_steps.begin(), SSA_steps.end(), [](const SSA_stept &step) {
+        return step.ignore;
+      }));
   }
 
   typedef std::list<SSA_stept> SSA_stepst;
   SSA_stepst SSA_steps;
-	
-	//// __FHY_ADD_BEGIN__
-	/*
-	 * Every element in oclt_symbolt has form:
-	 * <<write_event, read_event>, <implies_literal.to_string(), oclt_type>> for example:
-	 * < <wx1clk,rx2clk>, "rf1", "rf-order" >
-	 * < <wx1clk, ry1clk>, "", "po" >
-	 */
-	typedef symex_target_equationt::SSA_stepst eventst;
-	typedef eventst::const_iterator event_it;
-	typedef std::multimap<std::pair<std::string, std::string>, std::pair<std::string, std::string> > oclt_symbolt;
-    oclt_symbolt oclt_type_table;
 
-	typedef std::vector<oclt_table_entryt> oclt_symbol_closuret;
-    oclt_symbol_closuret oclt_type_table_graph;
-
-    std::map<std::string, exprt> oclt_node_guard_map;
-    std::set<event_it> oclt_write_map;
-	//// __FHY_ADD_END__
-
-	typedef std::map<event_it, std::string> spawn_namet;
-	spawn_namet  spawn_name;
-  
-  // ylz: for build eog
-  class eq_edge{
-  public:
-	  const SSA_stept* m_src;
-	  const SSA_stept* m_dst;
-	  eq_edge(const SSA_stept* src, const SSA_stept* dst): m_src(src), m_dst(dst) {}
-  };
-
-  typedef std::map<symbol_exprt, eq_edge*> choice_symbol_mapt;
-  choice_symbol_mapt choice_symbol_map;
-
-  typedef std::map<edge*, exprt> edge_symbol_mapt;
-  edge_symbol_mapt edge_symbol_map;
-
-  SSA_stepst::iterator get_SSA_step(unsigned s)
+  SSA_stepst::iterator get_SSA_step(std::size_t s)
   {
     SSA_stepst::iterator it=SSA_steps.begin();
     for(; s!=0; s--)
     {
-      assert(it!=SSA_steps.end());
+      PRECONDITION(it != SSA_steps.end());
       it++;
     }
     return it;
@@ -461,51 +303,107 @@ public:
 
   void output(std::ostream &out) const;
 
-  int hash() const;
-
   void clear()
   {
     SSA_steps.clear();
-    thread_id_map.clear();
-    shared_read_map.clear();
-    shared_write_map.clear();
-    assignment_map.clear();
-    rely_symbols.clear();
-    address_map.clear();
-    choice_symbol_map.clear();
-    edge_symbol_map.clear();
-	array_thread_id = false;
-	thread_malloc = false;
-	aux_enable = true;
   }
-  
+
   bool has_threads() const
   {
-    for(SSA_stepst::const_iterator it=SSA_steps.begin();
-        it!=SSA_steps.end();
-        it++)
-      if(it->source.thread_nr!=0)
-        return true;
-
-    return false;
+    return std::any_of(
+      SSA_steps.begin(), SSA_steps.end(), [](const SSA_stept &step) {
+        return step.source.thread_nr != 0;
+      });
   }
 
-  const namespacet &ns;
+  void validate(const namespacet &ns, const validation_modet vm) const
+  {
+    for(const SSA_stept &step : SSA_steps)
+      step.validate(ns, vm);
+  }
+
+  // __SZH_ADD_BEGIN__
+  typedef SSA_stepst::const_iterator event_it;
+  std::set<event_it> oc_guard_map;
+  std::vector<oc_edget> oc_edges;
+  std::vector<oc_labelt> oc_labels;
+  std::map<std::string, unsigned> oc_thread_map;
+
+  std::map<std::string, int> oc_result_order;
+
+  std::vector<std::pair<event_it, event_it>> numbered_dataraces;
+  std::map<event_it, exprt> read_dirties;
+  bool has_threads_total = false;
+  // __SZH_ADD_END__
+
 protected:
+  messaget log;
 
   // for enforcing sharing in the expressions stored
   merge_irept merge_irep;
   void merge_ireps(SSA_stept &SSA_step);
+
+  // for unique I/O identifiers
+  std::size_t io_count = 0;
+
+  // for unique function call argument identifiers
+  std::size_t argument_count = 0;
+
+  // __SZH_ADD_BEGIN__ for datarace information
+public:
+  bool enable_datarace = false;
+  std::set<std::string> datarace_lines;
+  void build_available_cond_map(std::map<std::string, exprt>& available_cond_map);
+  void build_index_map(std::map<std::string, exprt>& index_map);
+  void build_array_update_set(std::set<std::pair<std::string, std::string>>& array_update_set);
+  void build_datarace(bool filter);
+  bool choose_datarace();
+
+  void remove_dummy_accesses();
+
+  struct race_identifier_t
+  {
+    std::string var_name;
+    std::string first_linenumber;
+    std::string second_linenumber;
+    bool first_is_write;
+    bool second_is_write;
+
+    race_identifier_t(std::string v, std::string fl, std::string sl, bool fw, bool sw) :
+        var_name(v), first_linenumber(fl), second_linenumber(sl), first_is_write(fw), second_is_write(sw)
+        {}
+
+    bool operator<(const race_identifier_t& right) const
+    {
+        if(var_name != right.var_name)
+            return var_name < right.var_name;
+        if(first_linenumber != right.first_linenumber)
+            return first_linenumber < right.first_linenumber;
+        if(second_linenumber != right.second_linenumber)
+            return second_linenumber < right.second_linenumber;
+        if(first_is_write != right.first_is_write)
+            return first_is_write < right.first_is_write;
+        return second_is_write < right.second_is_write;
+    }
+  };
+  
+  std::map<race_identifier_t, std::vector<std::pair<event_it, event_it>>> linenumbers_to_races; //all filtered races
+  std::map<race_identifier_t, std::vector<std::pair<event_it, event_it>>>::iterator next_races;
+
+  std::vector<std::pair<event_it, event_it>> datarace_pairs; //chosen races in this solving procedure
+  // __SZH_ADD_END__
+
+  // __SZH_ADD_BEGIN__
+  bool use_cat = false;
+  cat_modulet cat;
+  // __SZH_ADD_END__
 };
 
-extern inline bool operator<(
+inline bool operator<(
   const symex_target_equationt::SSA_stepst::const_iterator a,
   const symex_target_equationt::SSA_stepst::const_iterator b)
 {
   return &(*a)<&(*b);
 }
 
-std::ostream &operator<<(std::ostream &out, const symex_target_equationt::SSA_stept &step);
-std::ostream &operator<<(std::ostream &out, const symex_target_equationt &equation);
-
-#endif
+#endif // CPROVER_GOTO_SYMEX_SYMEX_TARGET_EQUATION_H

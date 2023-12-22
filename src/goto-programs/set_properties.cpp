@@ -6,145 +6,102 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <algorithm>
-
-#include <util/i2string.h>
-#include <util/hash_cont.h>
+/// \file
+/// Set Properties
 
 #include "set_properties.h"
 
-/*******************************************************************\
+#include <util/exception_utils.h>
 
-Function: set_properties
+#include "goto_model.h"
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <algorithm>
+#include <unordered_set>
 
 void set_properties(
   goto_programt &goto_program,
-  hash_set_cont<irep_idt, irep_id_hash> &property_set)
+  std::unordered_set<irep_idt> &property_set)
 {
   for(goto_programt::instructionst::iterator
       it=goto_program.instructions.begin();
       it!=goto_program.instructions.end();
       it++)
   {
-    if(!it->is_assert()) continue;
-    
-    irep_idt property_id=it->source_location.get_property_id();
+    if(!it->is_assert())
+      continue;
 
-    hash_set_cont<irep_idt, irep_id_hash>::iterator
-      c_it=property_set.find(property_id);
-      
+    irep_idt property_id = it->source_location().get_property_id();
+
+    std::unordered_set<irep_idt>::iterator c_it =
+      property_set.find(property_id);
+
     if(c_it==property_set.end())
-      it->type=SKIP;
+      it->turn_into_skip();
     else
       property_set.erase(c_it);
   }
 }
-
-/*******************************************************************\
-
-Function: label_properties
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void label_properties(goto_modelt &goto_model)
 {
   label_properties(goto_model.goto_functions);
 }
 
-/*******************************************************************\
-
-Function: label_properties
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void label_properties(
+  const irep_idt function_identifier,
   goto_programt &goto_program,
-  std::map<irep_idt, unsigned> &property_counters)
+  std::map<irep_idt, std::size_t> &property_counters)
 {
   for(goto_programt::instructionst::iterator
       it=goto_program.instructions.begin();
       it!=goto_program.instructions.end();
       it++)
   {
-    if(!it->is_assert()) continue;
-    
-    irep_idt function=it->source_location.get_function();
-    
-    std::string prefix=id2string(function);
-    if(it->source_location.get_property_class()!="")
+    if(!it->is_assert())
+      continue;
+
+    // No source location? Create one.
+    if(it->source_location().is_nil())
     {
-      if(prefix!="") prefix+=".";
+      it->source_location_nonconst() = source_locationt{};
+      it->source_location_nonconst().set_function(function_identifier);
+    }
 
-      std::string class_infix=
-        id2string(it->source_location.get_property_class());
+    irep_idt function = it->source_location().get_function();
 
-      // replace the spaces by underscores        
+    std::string prefix=id2string(function);
+    if(!it->source_location().get_property_class().empty())
+    {
+      if(!prefix.empty())
+        prefix+=".";
+
+      std::string class_infix =
+        id2string(it->source_location().get_property_class());
+
+      // replace the spaces by underscores
       std::replace(class_infix.begin(), class_infix.end(), ' ', '_');
-      
+
       prefix+=class_infix;
     }
 
-    if(prefix!="") prefix+=".";
-    
-    unsigned &count=property_counters[prefix];
-    
+    if(!prefix.empty())
+      prefix+=".";
+
+    std::size_t &count=property_counters[prefix];
+
     count++;
-    
-    std::string property_id=prefix+i2string(count);
-    
-    it->source_location.set_property_id(property_id);
+
+    std::string property_id=prefix+std::to_string(count);
+
+    it->source_location_nonconst().set_property_id(property_id);
   }
 }
 
-/*******************************************************************\
-
-Function: label_properties
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void label_properties(goto_programt &goto_program)
+void label_properties(irep_idt function_identifier, goto_programt &goto_program)
 {
-  std::map<irep_idt, unsigned> property_counters;
-  label_properties(goto_program, property_counters);
+  std::map<irep_idt, std::size_t> property_counters;
+  label_properties(function_identifier, goto_program, property_counters);
 }
-
-/*******************************************************************\
-
-Function: set_properties
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void set_properties(
   goto_modelt &goto_model,
@@ -153,112 +110,30 @@ void set_properties(
   set_properties(goto_model.goto_functions, properties);
 }
 
-/*******************************************************************\
-
-Function: set_properties
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void set_properties(
   goto_functionst &goto_functions,
   const std::list<std::string> &properties)
 {
-  hash_set_cont<irep_idt, irep_id_hash> property_set;
+  std::unordered_set<irep_idt> property_set;
 
-  for(std::list<std::string>::const_iterator
-      it=properties.begin();
-      it!=properties.end();
-      it++)
-    property_set.insert(*it);
+  property_set.insert(properties.begin(), properties.end());
 
-  for(goto_functionst::function_mapt::iterator
-      it=goto_functions.function_map.begin();
-      it!=goto_functions.function_map.end();
-      it++)
-    if(!it->second.is_inlined())
-      set_properties(it->second.body, property_set);
+  for(auto &gf_entry : goto_functions.function_map)
+    set_properties(gf_entry.second.body, property_set);
 
   if(!property_set.empty())
-    throw "property "+id2string(*property_set.begin())+" not found";
+    throw invalid_command_line_argument_exceptiont(
+      "property " + id2string(*property_set.begin()) + " unknown",
+      "--property id");
 }
-
-/*******************************************************************\
-
-Function: label_properties
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void label_properties(goto_functionst &goto_functions)
 {
-  std::map<irep_idt, unsigned> property_counters;
+  std::map<irep_idt, std::size_t> property_counters;
 
   for(goto_functionst::function_mapt::iterator
       it=goto_functions.function_map.begin();
       it!=goto_functions.function_map.end();
       it++)
-    if(!it->second.is_inlined())
-      label_properties(it->second.body, property_counters);
+    label_properties(it->first, it->second.body, property_counters);
 }
-
-/*******************************************************************\
-
-Function: make_assertions_false
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void make_assertions_false(goto_modelt &goto_model)
-{
-  make_assertions_false(goto_model.goto_functions);
-}
-
-/*******************************************************************\
-
-Function: make_assertions_false
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void make_assertions_false(
-  goto_functionst &goto_functions)
-{
-  for(goto_functionst::function_mapt::iterator
-      f_it=goto_functions.function_map.begin();
-      f_it!=goto_functions.function_map.end();
-      f_it++)
-  {
-    goto_programt &goto_program=f_it->second.body;
-    
-    for(goto_programt::instructionst::iterator
-        i_it=goto_program.instructions.begin();
-        i_it!=goto_program.instructions.end();
-        i_it++)
-    {
-      if(!i_it->is_assert()) continue;
-      i_it->guard=false_exprt();
-    }
-  }
-}
-

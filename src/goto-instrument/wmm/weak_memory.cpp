@@ -8,6 +8,9 @@ Date: September 2011
 
 \*******************************************************************/
 
+/// \file
+/// Weak Memory Instrumentation for Threaded Goto Programs
+
 /*
  * Strategy: we first overapproximate all the read/write sequences of
  * the program executions with a read/write graph. We then detect the
@@ -16,77 +19,80 @@ Date: September 2011
  * in the program.
  */
 
+#include "weak_memory.h"
+
 #include <set>
 
-#include <util/cprover_prefix.h>
-#include <util/prefix.h>
-#include <util/i2string.h>
-#include <util/message.h>
+#include <util/fresh_symbol.h>
 
 #include <goto-programs/remove_skip.h>
 
-#include "../rw_set.h"
+#include <linking/static_lifetime_init.h>
 
-#include "weak_memory.h"
+#include <goto-instrument/rw_set.h>
+
 #include "shared_buffers.h"
 #include "goto2graph.h"
 
-/*******************************************************************\
-
-Function: introduce_temporaries
-
-  Inputs:
-
- Outputs:
-
- Purpose: all access to shared variables is pushed into assignments
-
-\*******************************************************************/
-
+/// all access to shared variables is pushed into assignments
 void introduce_temporaries(
   value_setst &value_sets,
   symbol_tablet &symbol_table,
-  const irep_idt &function,
+  const irep_idt &function_id,
   goto_programt &goto_program,
-  messaget& message)
+#ifdef LOCAL_MAY
+  const goto_functionst::goto_functiont &goto_function,
+#endif
+  messaget &message)
 {
   namespacet ns(symbol_table);
-  unsigned tmp_counter=0;
+
+#ifdef LOCAL_MAY
+  local_may_aliast local_may(goto_function);
+#endif
 
   Forall_goto_program_instructions(i_it, goto_program)
   {
     goto_programt::instructiont &instruction=*i_it;
 
-    message.debugx() <<instruction.source_location<< messaget::eom;
+    message.debug() << instruction.source_location() << messaget::eom;
 
     if(instruction.is_goto() ||
        instruction.is_assert() ||
        instruction.is_assume())
     {
-      rw_set_loct rw_set(ns, value_sets, i_it);
-      if(rw_set.empty()) continue;
-      
-      symbolt new_symbol;
-      new_symbol.base_name="$tmp_guard";
-      new_symbol.name=id2string(function)+"$tmp_guard"+i2string(tmp_counter++);
-      new_symbol.type=bool_typet();
+      rw_set_loct rw_set(
+        ns,
+        value_sets,
+        function_id,
+        i_it
+#ifdef LOCAL_MAY
+        ,
+        local_may
+#endif
+      ); // NOLINT(whitespace/parens)
+      if(rw_set.empty())
+        continue;
+
+      symbolt &new_symbol = get_fresh_aux_symbol(
+        bool_typet(),
+        id2string(function_id),
+        "$tmp_guard",
+        instruction.source_location(),
+        ns.lookup(function_id).mode,
+        symbol_table);
       new_symbol.is_static_lifetime=true;
       new_symbol.is_thread_local=true;
       new_symbol.value.make_nil();
-      
+
       symbol_exprt symbol_expr=new_symbol.symbol_expr();
-      
-      symbolt *symbol_ptr;
-      symbol_table.move(new_symbol, symbol_ptr);
-      
-      goto_programt::instructiont new_i;
-      new_i.make_assignment();
-      new_i.code=code_assignt(symbol_expr, instruction.guard);
-      new_i.source_location=instruction.source_location;
-      new_i.function=instruction.function;
+
+      goto_programt::instructiont new_i = goto_programt::make_assignment(
+        code_assignt(symbol_expr, instruction.condition()),
+        instruction.source_location());
 
       // replace guard
-      instruction.guard=symbol_expr;
+      instruction.condition_nonconst() = symbol_expr;
       goto_program.insert_before_swap(i_it, new_i);
 
       i_it++; // step forward
@@ -98,36 +104,24 @@ void introduce_temporaries(
   }
 }
 
-/*******************************************************************\
-
-Function: weak_memory
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void weak_memory(
   memory_modelt model,
-  value_setst& value_sets,
-  symbol_tablet& symbol_table,
-  goto_functionst &goto_functions,
+  value_setst &value_sets,
+  goto_modelt &goto_model,
   bool SCC,
   instrumentation_strategyt event_strategy,
-  unsigned unwinding_bound,
   bool no_cfg_kill,
   bool no_dependencies,
+  loop_strategyt duplicate_body,
   unsigned input_max_var,
   unsigned input_max_po_trans,
   bool render_po,
   bool render_file,
   bool render_function,
   bool cav11_option,
-  bool hide_internals, 
-  message_handlert& message_handler)
+  bool hide_internals,
+  message_handlert &message_handler,
+  bool ignore_arrays)
 {
   messaget message(message_handler);
 
@@ -140,24 +134,39 @@ void weak_memory(
   message.status() << "--------" << messaget::eom;
 
   // all access to shared variables is pushed into assignments
-  Forall_goto_functions(f_it, goto_functions)
-    if(f_it->first!=CPROVER_PREFIX "initialize" &&
-      f_it->first!=ID_main)
-      introduce_temporaries(value_sets, symbol_table, f_it->first, 
-        f_it->second.body, message);
-  message.status()<<"Temp added"<<messaget::eom;
+  for(auto &gf_entry : goto_model.goto_functions.function_map)
+  {
+    if(
+      gf_entry.first != INITIALIZE_FUNCTION &&
+      gf_entry.first != goto_functionst::entry_point())
+    {
+      introduce_temporaries(
+        value_sets,
+        goto_model.symbol_table,
+        gf_entry.first,
+        gf_entry.second.body,
+#ifdef LOCAL_MAY
+        gf_entry.second,
+#endif
+        message);
+    }
+  }
+
+  message.status() << "Temp added" << messaget::eom;
 
   unsigned max_thds = 0;
-  instrumentert instrumenter(symbol_table, goto_functions, message);
-  max_thds=instrumenter.goto2graph_cfg(value_sets, model, no_dependencies);
+  instrumentert instrumenter(goto_model, message);
+  max_thds=instrumenter.goto2graph_cfg(value_sets, model, no_dependencies,
+    duplicate_body);
   message.status()<<"abstraction completed"<<messaget::eom;
 
   // collects cycles, directly or by SCCs
   if(input_max_var!=0 || input_max_po_trans!=0)
-    instrumenter.set_parameters_collection(input_max_var,input_max_po_trans);
+    instrumenter.set_parameters_collection(input_max_var,
+      input_max_po_trans, ignore_arrays);
   else
-    instrumenter.set_parameters_collection(max_thds);
-  
+    instrumenter.set_parameters_collection(max_thds, 0, ignore_arrays);
+
   if(SCC)
   {
     instrumenter.collect_cycles_by_SCCs(model);
@@ -188,7 +197,7 @@ void weak_memory(
       <<" cycles found"<<messaget::eom;
 
     /* if no cycle, no need to instrument */
-    if(instrumenter.set_of_cycles.size() == 0)
+    if(instrumenter.set_of_cycles.empty())
     {
       message.status()<<"program safe -- no need to instrument"<<messaget::eom;
       return;
@@ -201,9 +210,9 @@ void weak_memory(
   // collects instructions to instrument, depending on the strategy selected
   if(event_strategy == my_events)
   {
-    const std::set<unsigned> events_set = instrumentert::extract_my_events();
+    const std::set<event_idt> events_set = instrumentert::extract_my_events();
     instrumenter.instrument_my_events(events_set);
-  }  
+  }
   else
     instrumenter.instrument_with_strategy(event_strategy);
 
@@ -212,7 +221,8 @@ void weak_memory(
   instrumenter.print_outputs(model, hide_internals);
 
   // now adds buffers
-  shared_bufferst shared_buffers(symbol_table, max_thds, message);
+  shared_bufferst shared_buffers(
+    goto_model.symbol_table, max_thds, message);
 
   if(cav11_option)
     shared_buffers.set_cav11(model);
@@ -223,38 +233,39 @@ void weak_memory(
   shared_buffers.cycles_r_loc = instrumenter.id2cycloc; // places in the cycles
 
   // for reads delays
-  shared_buffers.affected_by_delay(symbol_table,value_sets,goto_functions);
+  shared_buffers.affected_by_delay(value_sets, goto_model.goto_functions);
 
   for(std::set<irep_idt>::iterator it=
-    shared_buffers.affected_by_delay_set.begin(); 
+    shared_buffers.affected_by_delay_set.begin();
     it!=shared_buffers.affected_by_delay_set.end();
     it++)
-    message.debugx()<<id2string(*it)<<messaget::eom;
+    message.debug()<<id2string(*it)<<messaget::eom;
 
   message.status()<<"I instrument:"<<messaget::eom;
-  for(std::set<irep_idt>::iterator it=shared_buffers.cycles.begin(); 
+  for(std::set<irep_idt>::iterator it=shared_buffers.cycles.begin();
     it!=shared_buffers.cycles.end(); it++)
   {
-    typedef std::multimap<irep_idt,source_locationt>::iterator m_itt;
-    const std::pair<m_itt,m_itt> ran=
+    typedef std::multimap<irep_idt, source_locationt>::iterator m_itt;
+    const std::pair<m_itt, m_itt> ran=
       shared_buffers.cycles_loc.equal_range(*it);
     for(m_itt ran_it=ran.first; ran_it!=ran.second; ran_it++)
-      message.result() << ((*it)==""?"fence":*it)<<", "<<ran_it->second<<messaget::eom;
+      message.result() << (it->empty() ? "fence" : *it) << ", "
+                       << ran_it->second << messaget::eom;
   }
 
-  shared_bufferst::cfg_visitort visitor(shared_buffers, symbol_table, 
-    goto_functions);
-  visitor.weak_memory(value_sets, goto_functions.entry_point(), model);
+  shared_bufferst::cfg_visitort visitor(
+    shared_buffers, goto_model.symbol_table, goto_model.goto_functions);
+  visitor.weak_memory(
+    value_sets, goto_model.goto_functions.entry_point(), model);
 
   /* removes potential skips */
-  Forall_goto_functions(f_it, goto_functions)
-    remove_skip(f_it->second.body);
+  remove_skip(goto_model);
 
   // initialization code for buffers
-  shared_buffers.add_initialization_code(goto_functions);
-  
+  shared_buffers.add_initialization_code(goto_model.goto_functions);
+
   // update counters etc.
-  goto_functions.update();
+  goto_model.goto_functions.update();
 
   message.status()<< "Goto-program instrumented" << messaget::eom;
 }

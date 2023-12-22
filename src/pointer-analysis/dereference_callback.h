@@ -6,6 +6,9 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// Pointer Dereferencing
+
 #ifndef CPROVER_POINTER_ANALYSIS_DEREFERENCE_CALLBACK_H
 #define CPROVER_POINTER_ANALYSIS_DEREFERENCE_CALLBACK_H
 
@@ -13,29 +16,22 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include "value_sets.h"
 
-class guardt;
 class exprt;
 class symbolt;
 
-/*! \brief TO_BE_DOCUMENTED
-*/
+/// Base class for pointer value set analysis.
+/// Implemented by goto_program_dereferencet.
+/// This exists so that `value_set_dereferencet` can contain a reference to
+/// `goto_program_derefencet` which cannot be done directly because
+/// `goto_program_derefencet` contains a `value_set_dereferencet`.
 class dereference_callbackt
 {
 public:
-  virtual ~dereference_callbackt();
+  virtual ~dereference_callbackt() = default;
 
-  virtual void dereference_failure(
-    const std::string &property,
-    const std::string &msg,
-    const guardt &guard)=0;
+  virtual std::vector<exprt> get_value_set(const exprt &expr) const = 0;
 
-  virtual void get_value_set(
-    const exprt &expr,
-    value_setst::valuest &value_set)=0;
-  
-  virtual bool has_failed_symbol(
-    const exprt &expr,
-    const symbolt *&symbol)=0;
+  virtual const symbolt *get_or_create_failed_symbol(const exprt &expr) = 0;
 };
 
-#endif
+#endif // CPROVER_POINTER_ANALYSIS_DEREFERENCE_CALLBACK_H

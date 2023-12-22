@@ -6,12 +6,16 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// Generate Equation using Symbolic Execution
+
 #ifndef CPROVER_GOTO_SYMEX_POSTCONDITION_H
 #define CPROVER_GOTO_SYMEX_POSTCONDITION_H
 
-#include <pointer-analysis/value_sets.h>
-
-#include "symex_target_equation.h"
+class exprt;
+class namespacet;
+class symex_target_equationt;
+class value_setst;
 
 void postcondition(
   const namespacet &ns,
@@ -20,4 +24,4 @@ void postcondition(
   const class goto_symex_statet &s,
   exprt &dest);
 
-#endif
+#endif // CPROVER_GOTO_SYMEX_POSTCONDITION_H

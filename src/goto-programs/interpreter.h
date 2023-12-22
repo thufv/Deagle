@@ -6,13 +6,17 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_INTERPRETER_H
-#define CPROVER_INTERPRETER_H
+/// \file
+/// Interpreter for GOTO Programs
 
-#include "goto_functions.h"
+#ifndef CPROVER_GOTO_PROGRAMS_INTERPRETER_H
+#define CPROVER_GOTO_PROGRAMS_INTERPRETER_H
+
+class goto_modelt;
+class message_handlert;
 
 void interpreter(
-  symbol_tablet &symbol_table,
-  const goto_functionst &goto_functions);
+  const goto_modelt &,
+  message_handlert &);
 
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_INTERPRETER_H

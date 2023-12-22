@@ -6,27 +6,20 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <util/arith_tools.h>
-#include <util/std_types.h>
-
-#include <ansi-c/c_types.h>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_typecheck.h"
-#include "cpp_util.h"
 
-/*******************************************************************\
+#include <util/arith_tools.h>
+#include <util/c_types.h>
+#include <util/pointer_expr.h>
 
-Function: cpp_typecheckt::cpp_constructor
-
-  Inputs: non-typchecked object, non-typechecked operands
-
- Outputs: typechecked code
-
- Purpose:
-
-\*******************************************************************/
-
-codet cpp_typecheckt::cpp_constructor(
+/// \param source_location: source location for generated code
+/// \param object: non-typechecked object
+/// \param operands: non-typechecked operands
+/// \return typechecked code
+optionalt<codet> cpp_typecheckt::cpp_constructor(
   const source_locationt &source_location,
   const exprt &object,
   const exprt::operandst &operands)
@@ -35,8 +28,9 @@ codet cpp_typecheckt::cpp_constructor(
 
   typecheck_expr(object_tc);
 
-  typet tmp_type(object_tc.type());
-  follow_symbol(tmp_type);
+  elaborate_class_template(object_tc.type());
+
+  typet tmp_type(follow(object_tc.type()));
 
   assert(!is_reference(tmp_type));
 
@@ -44,59 +38,50 @@ codet cpp_typecheckt::cpp_constructor(
   {
     // We allow only one operand and it must be tagged with '#array_ini'.
     // Note that the operand is an array that is used for copy-initialization.
-    // In the general case, a program is not allow to use this form of
-    // construct. This way of initializing an array is used internaly only.
-    // The purpose of the tag #arra_ini is to rule out ill-formed
+    // In the general case, a program is not allowed to use this form of
+    // construct. This way of initializing an array is used internally only.
+    // The purpose of the tag #array_ini is to rule out ill-formed
     // programs.
 
-    if(!operands.empty() && !operands.front().get_bool("#array_ini"))
+    if(!operands.empty() && !operands.front().get_bool(ID_C_array_ini))
     {
-      err_location(source_location);
-      str << "bad array initializer";
+      error().source_location=source_location;
+      error() << "bad array initializer" << eom;
       throw 0;
     }
 
     assert(operands.empty() || operands.size()==1);
 
     if(operands.empty() && cpp_is_pod(tmp_type))
-    {
-      codet nil;
-      nil.make_nil();
-      return nil;
-    }
+      return {};
 
     const exprt &size_expr=
       to_array_type(tmp_type).size();
 
-    if(size_expr.id()=="infinity")
-    {
-      // don't initialize
-      codet nil;
-      nil.make_nil();
-      return nil;
-    }
-    
+    if(size_expr.id() == ID_infinity)
+      return {}; // don't initialize
+
     exprt tmp_size=size_expr;
     make_constant_index(tmp_size);
 
     mp_integer s;
-    if(to_integer(tmp_size, s))
+    if(to_integer(to_constant_expr(tmp_size), s))
     {
-      err_location(source_location);
-      str << "array size `" << to_string(size_expr)
-          << "' is not a constant";
+      error().source_location=source_location;
+      error() << "array size '" << to_string(size_expr) << "' is not a constant"
+              << eom;
       throw 0;
     }
 
     /*if(cpp_is_pod(tmp_type))
     {
       code_expressiont new_code;
-      exprt op_tc = operands.front();
+      exprt op_tc=operands.front();
       typecheck_expr(op_tc);
        // Override constantness
-      object_tc.type().set("#constant", false);
-      object_tc.set("#lvalue", true);
-      side_effect_exprt assign("assign");
+      object_tc.type().set("ID_C_constant", false);
+      object_tc.set("ID_C_lvalue", true);
+      side_effect_exprt assign(ID_assign);
       assign.add_source_location()=source_location;
       assign.copy_to_operands(object_tc, op_tc);
       typecheck_side_effect_assignment(assign);
@@ -105,130 +90,106 @@ codet cpp_typecheckt::cpp_constructor(
     }
     else*/
     {
-      codet new_code(ID_block);
+      code_blockt new_code;
 
       // for each element of the array, call the default constructor
-      for(mp_integer i = 0; i < s; ++i)
+      for(mp_integer i=0; i < s; ++i)
       {
         exprt::operandst tmp_operands;
 
-        exprt constant=from_integer(i, index_type());
+        exprt constant = from_integer(i, c_index_type());
         constant.add_source_location()=source_location;
 
-        exprt index(ID_index);
-        index.copy_to_operands(object);
-        index.copy_to_operands(constant);
+        index_exprt index = index_exprt(object_tc, constant);
         index.add_source_location()=source_location;
 
         if(!operands.empty())
         {
-          exprt operand(ID_index);
-          operand.copy_to_operands(operands.front());
-          operand.copy_to_operands(constant);
+          index_exprt operand(operands.front(), constant);
           operand.add_source_location()=source_location;
           tmp_operands.push_back(operand);
         }
 
-        exprt i_code =
-          cpp_constructor(source_location, index, tmp_operands);
+        auto i_code = cpp_constructor(source_location, index, tmp_operands);
 
-        if(i_code.is_nil())
-        {
-          new_code.is_nil();
-          break;
-        }
-
-        new_code.move_to_operands(i_code);
+        if(i_code.has_value())
+          new_code.add(std::move(i_code.value()));
       }
-      return new_code;
+      return std::move(new_code);
     }
   }
   else if(cpp_is_pod(tmp_type))
   {
-    code_expressiont new_code;
     exprt::operandst operands_tc=operands;
 
-    for(exprt::operandst::iterator
-      it=operands_tc.begin();
-      it!=operands_tc.end();
-      it++)
+    for(auto &op : operands_tc)
     {
-      typecheck_expr(*it);
-      add_implicit_dereference(*it);
+      typecheck_expr(op);
+      add_implicit_dereference(op);
     }
 
-    if(operands_tc.size()==0)
+    if(operands_tc.empty())
     {
       // a POD is NOT initialized
-      new_code.make_nil();
+      return {};
     }
     else if(operands_tc.size()==1)
     {
       // Override constantness
       object_tc.type().set(ID_C_constant, false);
       object_tc.set(ID_C_lvalue, true);
-      side_effect_exprt assign(ID_assign);
-      assign.add_source_location()=source_location;
-      assign.copy_to_operands(object_tc, operands_tc.front());
+      side_effect_expr_assignt assign(
+        object_tc, operands_tc.front(), typet(), source_location);
       typecheck_side_effect_assignment(assign);
-      new_code.expression()=assign;
+      return code_expressiont(std::move(assign));
     }
     else
     {
-      err_location(source_location);
-      str << "initialization of POD requires one argument, "
-             "but got " << operands.size() << std::endl;
+      error().source_location=source_location;
+      error() << "initialization of POD requires one argument, "
+                 "but got " << operands.size() << eom;
       throw 0;
     }
-    
-    return new_code;
   }
   else if(tmp_type.id()==ID_union)
   {
-    assert(0); // Todo: union
+    UNREACHABLE; // Todo: union
   }
   else if(tmp_type.id()==ID_struct)
   {
     exprt::operandst operands_tc=operands;
 
-    for(exprt::operandst::iterator
-      it=operands_tc.begin();
-      it!=operands_tc.end();
-      it++)
+    for(auto &op : operands_tc)
     {
-      typecheck_expr(*it);
-      add_implicit_dereference(*it);
+      typecheck_expr(op);
+      add_implicit_dereference(op);
     }
 
     const struct_typet &struct_type=
       to_struct_type(tmp_type);
 
     // set most-derived bits
-    codet block(ID_block);
-    for(unsigned i=0; i < struct_type.components().size(); i++)
+    code_blockt block;
+    for(const auto &component : struct_type.components())
     {
-      const irept &component = struct_type.components()[i];
-      if(component.get(ID_base_name) != "@most_derived")
+      if(component.get_base_name() != "@most_derived")
         continue;
 
-      exprt member(ID_member, bool_typet());
-      member.set(ID_component_name, component.get(ID_name));
-      member.copy_to_operands(object_tc);
-      member.add_source_location() = source_location;
+      member_exprt member(object_tc, component.get_name(), bool_typet());
+      member.add_source_location()=source_location;
       member.set(ID_C_lvalue, object_tc.get_bool(ID_C_lvalue));
 
       exprt val=false_exprt();
 
-      if(!component.get_bool("from_base"))
+      if(!component.get_bool(ID_from_base))
         val=true_exprt();
 
-      side_effect_exprt assign(ID_assign);
-      assign.add_source_location()=source_location;
-      assign.move_to_operands(member,val);
+      side_effect_expr_assignt assign(
+        std::move(member), std::move(val), typet(), source_location);
+
       typecheck_side_effect_assignment(assign);
-      code_expressiont code_exp;
-      code_exp.expression()=assign;
-      block.move_to_operands(code_exp);
+
+      block.add(code_expressiont(std::move(assign)));
     }
 
     // enter struct scope
@@ -241,89 +202,63 @@ codet cpp_typecheckt::cpp_constructor(
 
     irep_idt constructor_name;
 
-    for(struct_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
+    for(const auto &c : components)
     {
-      const typet &type=it->type();
+      const typet &type = c.type();
 
-      if(!it->get_bool(ID_from_base) &&
-         type.id()==ID_code &&
-         type.find(ID_return_type).id()==ID_constructor)
+      if(
+        !c.get_bool(ID_from_base) && type.id() == ID_code &&
+        to_code_type(type).return_type().id() == ID_constructor)
       {
-        constructor_name=it->get(ID_base_name);
+        constructor_name = c.get_base_name();
         break;
       }
     }
 
-    // there is always a constructor for non-PODs
-    assert(constructor_name!="");
+    INVARIANT(!constructor_name.empty(), "non-PODs should have a constructor");
 
-    irept cpp_name(ID_cpp_name);
-    cpp_name.get_sub().push_back(irept(ID_name));
-    cpp_name.get_sub().back().set(ID_identifier, constructor_name);
-    cpp_name.get_sub().back().set(ID_C_source_location, source_location);
-
-    side_effect_expr_function_callt function_call;
-    function_call.add_source_location()=source_location;
-    function_call.function().swap(static_cast<exprt&>(cpp_name));
-    function_call.arguments().reserve(operands_tc.size());
-
-    for(exprt::operandst::iterator
-        it=operands_tc.begin();
-        it!=operands_tc.end();
-        it++)
-      function_call.op1().copy_to_operands(*it);
+    side_effect_expr_function_callt function_call(
+      cpp_namet(constructor_name, source_location).as_expr(),
+      operands_tc,
+      uninitialized_typet(),
+      source_location);
 
     typecheck_side_effect_function_call(function_call);
-    assert(function_call.get(ID_statement) == ID_temporary_object);
+    assert(function_call.get(ID_statement)==ID_temporary_object);
 
     exprt &initializer =
       static_cast<exprt &>(function_call.add(ID_initializer));
 
-    assert(initializer.id()==ID_code
-           && initializer.get(ID_statement)==ID_expression);
+    assert(initializer.id()==ID_code &&
+           initializer.get(ID_statement)==ID_expression);
 
-    side_effect_expr_function_callt& func_ini =
-      to_side_effect_expr_function_call(initializer.op0());
+    auto &statement_expr = to_code_expression(to_code(initializer));
 
-    exprt& tmp_this = func_ini.arguments().front();
-    assert(tmp_this.id() == ID_address_of
-           && tmp_this.op0().id() == "new_object");
+    side_effect_expr_function_callt &func_ini =
+      to_side_effect_expr_function_call(statement_expr.expression());
 
-    exprt address_of(ID_address_of, typet(ID_pointer));
-    address_of.type().subtype() = object_tc.type();
-    address_of.copy_to_operands(object_tc);
-    tmp_this.swap(address_of);
+    exprt &tmp_this=func_ini.arguments().front();
+    DATA_INVARIANT(
+      to_address_of_expr(tmp_this).object().id() == ID_new_object,
+      "expected new_object operand in address_of expression");
 
-    if(block.operands().empty())
-      return to_code(initializer);
+    tmp_this=address_of_exprt(object_tc);
+
+    const auto &initializer_code=to_code(initializer);
+
+    if(block.statements().empty())
+      return initializer_code;
     else
     {
-      block.move_to_operands(initializer);
-      return block;
+      block.add(initializer_code);
+      return std::move(block);
     }
   }
   else
-    assert(false);
+    UNREACHABLE;
 
-  codet nil;
-  nil.make_nil();
-  return nil;
+  return {};
 }
-
-/*******************************************************************\
-
-Function: cpp_typecheckt::new_temporary
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_typecheckt::new_temporary(
   const source_locationt &source_location,
@@ -332,42 +267,28 @@ void cpp_typecheckt::new_temporary(
   exprt &temporary)
 {
   // create temporary object
-  exprt tmp_object_expr=exprt(ID_side_effect, type);
-  tmp_object_expr.set(ID_statement, ID_temporary_object);
-  tmp_object_expr.add_source_location()= source_location;
+  side_effect_exprt tmp_object_expr(ID_temporary_object, type, source_location);
+  tmp_object_expr.set(ID_mode, ID_cpp);
 
   exprt new_object(ID_new_object);
-  new_object.add_source_location() = tmp_object_expr.source_location();
+  new_object.add_source_location()=tmp_object_expr.source_location();
   new_object.set(ID_C_lvalue, true);
-  new_object.type() = tmp_object_expr.type();
+  new_object.type()=tmp_object_expr.type();
 
-  already_typechecked(new_object);
+  already_typechecked_exprt::make_already_typechecked(new_object);
 
-  codet new_code =
-    cpp_constructor(source_location, new_object, ops);
+  auto new_code = cpp_constructor(source_location, new_object, ops);
 
-  if(new_code.is_not_nil())
+  if(new_code.has_value())
   {
-    if(new_code.get(ID_statement)==ID_assign)
-      tmp_object_expr.move_to_operands(new_code.op1());
+    if(new_code->get_statement() == ID_assign)
+      tmp_object_expr.add_to_operands(std::move(new_code->op1()));
     else
-      tmp_object_expr.add(ID_initializer)=new_code;
+      tmp_object_expr.add(ID_initializer) = *new_code;
   }
 
   temporary.swap(tmp_object_expr);
 }
-
-/*******************************************************************\
-
-Function: cpp_typecheckt::new_temporary
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_typecheckt::new_temporary(
   const source_locationt &source_location,

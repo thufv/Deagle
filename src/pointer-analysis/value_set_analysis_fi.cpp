@@ -7,26 +7,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/prefix.h>
-#include <util/cprover_prefix.h>
-#include <util/xml_irep.h>
-#include <util/symbol_table.h>
-
-#include <langapi/language_util.h>
+/// \file
+/// Value Set Propagation (Flow Insensitive)
 
 #include "value_set_analysis_fi.h"
 
-/*******************************************************************\
-
-Function: value_set_analysis_fit::initialize
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/pointer_expr.h>
+#include <util/symbol_table.h>
 
 void value_set_analysis_fit::initialize(
   const goto_programt &goto_program)
@@ -35,18 +22,6 @@ void value_set_analysis_fit::initialize(
   add_vars(goto_program);
 }
 
-/*******************************************************************\
-
-Function: value_set_analysis_fit::initialize
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void value_set_analysis_fit::initialize(
   const goto_functionst &goto_functions)
 {
@@ -54,23 +29,11 @@ void value_set_analysis_fit::initialize(
   add_vars(goto_functions);
 }
 
-/*******************************************************************\
-
-Function: value_set_analysis_fit::add_vars
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void value_set_analysis_fit::add_vars(
   const goto_programt &goto_program)
 {
   typedef std::list<value_set_fit::entryt> entry_listt;
-  
+
   // get the globals
   entry_listt globals;
   get_globals(globals);
@@ -79,19 +42,19 @@ void value_set_analysis_fit::add_vars(
   goto_programt::decl_identifierst locals;
   goto_program.get_decl_identifiers(locals);
 
-  // cache the list for the locals to speed things up  
-  typedef hash_map_cont<irep_idt, entry_listt, irep_id_hash> entry_cachet;
+  // cache the list for the locals to speed things up
+  typedef std::unordered_map<irep_idt, entry_listt> entry_cachet;
   entry_cachet entry_cache;
-  
+
   value_set_fit &v=state.value_set;
 
   for(goto_programt::instructionst::const_iterator
       i_it=goto_program.instructions.begin();
       i_it!=goto_program.instructions.end();
       i_it++)
-  {    
+  {
     v.add_vars(globals);
-    
+
     for(goto_programt::decl_identifierst::const_iterator
         l_it=locals.begin();
         l_it!=locals.end();
@@ -103,7 +66,7 @@ void value_set_analysis_fit::add_vars(
       if(e_it==entry_cache.end())
       {
         const symbolt &symbol=ns.lookup(*l_it);
-        
+
         std::list<value_set_fit::entryt> &entries=entry_cache[*l_it];
         get_entries(symbol, entries);
         v.add_vars(entries);
@@ -114,36 +77,12 @@ void value_set_analysis_fit::add_vars(
   }
 }
 
-/*******************************************************************\
-
-Function: value_set_analysis_fit::get_entries
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void value_set_analysis_fit::get_entries(
   const symbolt &symbol,
   std::list<value_set_fit::entryt> &dest)
 {
   get_entries_rec(symbol.name, "", symbol.type, dest);
 }
-
-/*******************************************************************\
-
-Function: value_set_analysis_fit::get_entries
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void value_set_analysis_fit::get_entries_rec(
   const irep_idt &identifier,
@@ -156,25 +95,16 @@ void value_set_analysis_fit::get_entries_rec(
   if(t.id()==ID_struct ||
      t.id()==ID_union)
   {
-    const struct_union_typet &struct_type=to_struct_union_type(t);
-    
-    const struct_typet::componentst &c=struct_type.components();
-    
-    for(struct_typet::componentst::const_iterator
-        it=c.begin();
-        it!=c.end();
-        it++)
+    for(const auto &c : to_struct_union_type(t).components())
     {
       get_entries_rec(
-        identifier,
-        suffix+"."+it->get_string(ID_name),
-        it->type(),
-        dest);
+        identifier, suffix + "." + id2string(c.get_name()), c.type(), dest);
     }
   }
   else if(t.id()==ID_array)
   {
-    get_entries_rec(identifier, suffix+"[]", t.subtype(), dest);
+    get_entries_rec(
+      identifier, suffix + "[]", to_array_type(t).element_type(), dest);
   }
   else if(check_type(t))
   {
@@ -182,94 +112,52 @@ void value_set_analysis_fit::get_entries_rec(
   }
 }
 
-/*******************************************************************\
-
-Function: value_set_analysis_fit::add_vars
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void value_set_analysis_fit::add_vars(
   const goto_functionst &goto_functions)
 {
   // get the globals
   std::list<value_set_fit::entryt> globals;
   get_globals(globals);
-  
-  value_set_fit &v=state.value_set;
 
-  for(goto_functionst::function_mapt::const_iterator
-      f_it=goto_functions.function_map.begin();
-      f_it!=goto_functions.function_map.end();
-      f_it++)
+  value_set_fit &v=state.value_set;
+  v.add_vars(globals);
+
+  for(const auto &gf_entry : goto_functions.function_map)
   {
-    // get the locals  
-    std::set<irep_idt> locals;  
-    get_local_identifiers(f_it->second, locals);  
-              
-    forall_goto_program_instructions(i_it, f_it->second.body)
-    {    
-      v.add_vars(globals);
-      
-      for(std::set<irep_idt>::const_iterator
-          l_it=locals.begin();
-          l_it!=locals.end();
-          l_it++)
-      {
-        const symbolt &symbol=ns.lookup(*l_it);
-        
-        std::list<value_set_fit::entryt> entries;
-        get_entries(symbol, entries);
-        v.add_vars(entries);
-      }
+    // get the locals
+    std::set<irep_idt> locals;
+    get_local_identifiers(gf_entry.second, locals);
+
+    for(auto l : locals)
+    {
+      const symbolt &symbol=ns.lookup(l);
+
+      std::list<value_set_fit::entryt> entries;
+      get_entries(symbol, entries);
+      v.add_vars(entries);
     }
   }
-}    
-
-/*******************************************************************\
-
-Function: value_set_analysis_fit::get_globals
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+}
 
 void value_set_analysis_fit::get_globals(
   std::list<value_set_fit::entryt> &dest)
 {
   // static ones
-  forall_symbols(it, ns.get_symbol_table().symbols)
-    if(it->second.is_lvalue &&
-       it->second.is_static_lifetime)
-      get_entries(it->second, dest);
-}    
-
-/*******************************************************************\
-
-Function: value_set_analysis_fit::check_type
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+  for(const auto &symbol_pair : ns.get_symbol_table().symbols)
+  {
+    if(symbol_pair.second.is_lvalue && symbol_pair.second.is_static_lifetime)
+    {
+      get_entries(symbol_pair.second, dest);
+    }
+  }
+}
 
 bool value_set_analysis_fit::check_type(const typet &type)
 {
   if(type.id()==ID_pointer)
   {
-    switch(track_options) {
+    switch(track_options)
+    {
       case TRACK_ALL_POINTERS:
         { return true; break; }
       case TRACK_FUNCTION_POINTERS:
@@ -277,37 +165,45 @@ bool value_set_analysis_fit::check_type(const typet &type)
         if(type.id()==ID_pointer)
         {
           const typet *t = &type;
-          while (t->id()==ID_pointer) t = &(t->subtype());
-                  
+          while(t->id() == ID_pointer)
+            t = &(to_pointer_type(*t).base_type());
+
           return (t->id()==ID_code);
         }
-        
+
         break;
       }
-      default: // don't track. 
+      default: // don't track.
         break;
     }
   }
   else if(type.id()==ID_struct ||
           type.id()==ID_union)
   {
-    const struct_union_typet &struct_type=to_struct_union_type(type);
-    
-    const struct_typet::componentst &components=
-      struct_type.components();
-
-    for(struct_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
+    for(const auto &c : to_struct_union_type(type).components())
     {
-      if(check_type(it->type())) return true;
-    }    
+      if(check_type(c.type()))
+        return true;
+    }
   }
   else if(type.id()==ID_array)
-    return check_type(type.subtype());
-  else if(type.id()==ID_symbol)
+    return check_type(to_array_type(type).element_type());
+  else if(type.id() == ID_struct_tag || type.id() == ID_union_tag)
     return check_type(ns.follow(type));
-  
+
   return false;
-}    
+}
+
+std::vector<exprt> value_set_analysis_fit::get_values(
+  const irep_idt &function_id,
+  flow_insensitive_analysis_baset::locationt l,
+  const exprt &expr)
+{
+  state.value_set.from_function =
+    state.value_set.function_numbering.number(function_id);
+  state.value_set.to_function =
+    state.value_set.function_numbering.number(function_id);
+  state.value_set.from_target_index = l->location_number;
+  state.value_set.to_target_index = l->location_number;
+  return state.value_set.get_value_set(expr, ns);
+}

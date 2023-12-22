@@ -6,23 +6,12 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <cassert>
-
-#include <ansi-c/ansi_c_y.tab.h>
+/// \file
+/// C++ Parser: Token Buffer
 
 #include "cpp_token_buffer.h"
 
-/*******************************************************************\
-
-Function: cpp_token_buffert::LookAhead
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <ansi-c/ansi_c_parser.h>
 
 int cpp_token_buffert::LookAhead(unsigned offset)
 {
@@ -36,23 +25,12 @@ int cpp_token_buffert::LookAhead(unsigned offset)
   return token_vector[offset]->kind;
 }
 
-/*******************************************************************\
-
-Function: cpp_token_buffert::GetToken
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-int cpp_token_buffert::GetToken(cpp_tokent &token)
+int cpp_token_buffert::get_token(cpp_tokent &token)
 {
   assert(current_pos<=token_vector.size());
 
-  if(token_vector.size()==current_pos) read_token();
+  if(token_vector.size()==current_pos)
+    read_token();
 
   token=*token_vector[current_pos];
 
@@ -61,42 +39,19 @@ int cpp_token_buffert::GetToken(cpp_tokent &token)
   return token.kind;
 }
 
-/*******************************************************************\
-
-Function: cpp_token_buffert::GetToken
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-int cpp_token_buffert::GetToken()
+int cpp_token_buffert::get_token()
 {
   assert(current_pos<=token_vector.size());
 
-  if(token_vector.size()==current_pos) read_token();
-  
+  if(token_vector.size()==current_pos)
+    read_token();
+
   int kind=token_vector[current_pos]->kind;
 
   current_pos++;
 
   return kind;
 }
-
-/*******************************************************************\
-
-Function: cpp_token_buffert::LookAhead
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 int cpp_token_buffert::LookAhead(unsigned offset, cpp_tokent &token)
 {
@@ -112,24 +67,8 @@ int cpp_token_buffert::LookAhead(unsigned offset, cpp_tokent &token)
   return token.kind;
 }
 
-/*******************************************************************\
-
-Function: cpp_token_buffert::read_token
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-int yycpplex();
 int yyansi_clex();
-
 extern char *yyansi_ctext;
-
-#include <ansi-c/ansi_c_parser.h>
 
 void cpp_token_buffert::read_token()
 {
@@ -137,10 +76,7 @@ void cpp_token_buffert::read_token()
   token_vector.push_back(--tokens.end());
 
   int kind;
-  
-  #if 0
-  kind=yycpplex();
-  #else
+
   ansi_c_parser.stack.clear();
   kind=yyansi_clex();
   tokens.back().text=yyansi_ctext;
@@ -149,48 +85,42 @@ void cpp_token_buffert::read_token()
     tokens.back().data=ansi_c_parser.stack.front();
     tokens.back().line_no=ansi_c_parser.get_line_no();
     tokens.back().filename=ansi_c_parser.get_file();
-  }  
-  #endif
+  }
 
-  //std::cout << "TOKEN: " << kind << " " << tokens.back().text << std::endl;
+  // std::cout << "TOKEN: " << kind << " " << tokens.back().text << '\n';
 
   tokens.back().kind=kind;
-  tokens.back().pos=token_vector.size()-1;
 
-  //std::cout << "II: " << token_vector.back()->kind << std::endl;
-  //std::cout << "I2: " << token_vector.size() << std::endl;
+  // std::cout << "II: " << token_vector.back()->kind << '\n';
+  // std::cout << "I2: " << token_vector.size() << '\n';
 }
-
-/*******************************************************************\
-
-Function: cpp_token_buffert::Save
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 cpp_token_buffert::post cpp_token_buffert::Save()
 {
   return current_pos;
 }
 
-/*******************************************************************\
-
-Function: cpp_token_buffert::Restore
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void cpp_token_buffert::Restore(post pos)
 {
   current_pos=pos;
+}
+
+void cpp_token_buffert::Replace(const cpp_tokent &token)
+{
+  assert(current_pos<=token_vector.size());
+
+  if(token_vector.size()==current_pos)
+    read_token();
+
+  *token_vector[current_pos]=token;
+}
+
+void cpp_token_buffert::Insert(const cpp_tokent &token)
+{
+  assert(current_pos<=token_vector.size());
+
+  tokens.push_back(token);
+
+  token_vector.insert(token_vector.begin()+current_pos,
+                      --tokens.end());
 }

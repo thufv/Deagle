@@ -6,21 +6,12 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <util/source_location.h>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_typecheck.h"
 
-/*******************************************************************\
-
-Function: cpp_typecheckt::convert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/source_location.h>
 
 void cpp_typecheckt::convert(cpp_namespace_spect &namespace_spec)
 {
@@ -29,17 +20,17 @@ void cpp_typecheckt::convert(cpp_namespace_spect &namespace_spec)
 
   const irep_idt &name=namespace_spec.get_namespace();
 
-  if(name=="")
+  if(name.empty())
   {
     // "unique namespace"
-    err_location(namespace_spec);
-    throw "unique namespace not supported yet";
+    error().source_location=namespace_spec.source_location();
+    error() << "unique namespace not supported yet" << eom;
+    throw 0;
   }
 
   irep_idt final_name(name);
 
   std::string identifier=
-    language_prefix+
     cpp_scopes.current_scope().prefix+id2string(final_name);
 
   symbol_tablet::symbolst::const_iterator it=
@@ -49,21 +40,19 @@ void cpp_typecheckt::convert(cpp_namespace_spect &namespace_spec)
   {
     if(namespace_spec.alias().is_not_nil())
     {
-      err_location(namespace_spec);
-      str << "namespace alias `" << final_name 
-          << "' previously declared" << std::endl;
-      str << "location of previous declaration: "
-          << it->second.location;
+      error().source_location=namespace_spec.source_location();
+      error() << "namespace alias '" << final_name << "' previously declared\n"
+              << "location of previous declaration: " << it->second.location
+              << eom;
       throw 0;
     }
-  
+
     if(it->second.type.id()!=ID_namespace)
     {
-      err_location(namespace_spec);
-      str << "namespace `" << final_name 
-          << "' previously declared" << std::endl;
-      str << "location of previous declaration: "
-          << it->second.location;
+      error().source_location=namespace_spec.source_location();
+      error() << "namespace '" << final_name << "' previously declared\n"
+              << "location of previous declaration: " << it->second.location
+              << eom;
       throw 0;
     }
 
@@ -82,8 +71,13 @@ void cpp_typecheckt::convert(cpp_namespace_spect &namespace_spec)
     symbol.module=module;
     symbol.type=typet(ID_namespace);
 
-    if(symbol_table.move(symbol))
-      throw "cpp_typecheckt::convert_namespace: symbol_table.move() failed";
+    if(!symbol_table.insert(std::move(symbol)).second)
+    {
+      error().source_location=symbol.location;
+      error() << "cpp_typecheckt::convert_namespace: symbol_table.move() failed"
+              << eom;
+      throw 0;
+    }
 
     cpp_scopes.new_namespace(final_name);
   }
@@ -97,10 +91,7 @@ void cpp_typecheckt::convert(cpp_namespace_spect &namespace_spec)
   else
   {
     // do the declarations
-    for(cpp_namespace_spect::itemst::iterator
-        it=namespace_spec.items().begin();
-        it!=namespace_spec.items().end();
-        it++)
-      convert(*it);
+    for(auto &item : namespace_spec.items())
+      convert(item);
   }
 }

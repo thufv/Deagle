@@ -25,11 +25,23 @@ using namespace Minisat;
 bool closure_edget::operator==(const closure_edget& right) const { return from == right.from && to == right.to && kind == right.kind && reason == right.reason; }
 //bool closure_edget::operator!=(const closure_edget& right) const { return !(*this == right);}
 
-Minisat::closure_nodet::closure_nodet(std::string _name, int _address, int id) : name(_name), address(_address), atomic_parent(id), guard_lighted(false), is_write(false), is_read(false)
-{
-    atomic_items = std::set<int>{id};
-    atomic_in = std::set<int>{id};
-    atomic_out = std::set<int>{id};
-}
+Minisat::closure_nodet::closure_nodet(std::string _name, int _address, int id) : 
+    name(_name), 
+    address(_address), 
+    is_write(false), 
+    is_read(false),
+    out(),
+    in(),
+    out_bitset(),
+    out_vital(),
+    in_vital(),
+    guard_lighted(false), 
+    guard(),
+    in_rf(),
+    out_rf(),
+    atomic_parent(id),
+    atomic_items(std::set<int>{id}),
+    atomic_in(std::set<int>{id}),
+    atomic_out(std::set<int>{id}) {}
 
 // __SZH_ADD_END__

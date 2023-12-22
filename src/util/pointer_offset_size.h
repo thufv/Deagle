@@ -6,11 +6,15 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_POINTER_OFFSET_SIZE_H
-#define CPROVER_POINTER_OFFSET_SIZE_H
+/// \file
+/// Pointer Logic
 
-#include "mp_arith.h"
+#ifndef CPROVER_UTIL_POINTER_OFFSET_SIZE_H
+#define CPROVER_UTIL_POINTER_OFFSET_SIZE_H
+
 #include "irep.h"
+#include "mp_arith.h"
+#include "optional.h"
 
 class exprt;
 class namespacet;
@@ -19,38 +23,44 @@ class typet;
 class member_exprt;
 class constant_exprt;
 
-// these return -1 on failure
-
-mp_integer member_offset(
-  const namespacet &ns,
-  const struct_typet &type,
-  const irep_idt &member);
-
-mp_integer pointer_offset_size(
-  const namespacet &ns,
-  const typet &type);
-
-mp_integer compute_pointer_offset(
-  const namespacet &ns,
-  const exprt &expr);
-
-// these return 'nil' on failure
-
-exprt member_offset_expr(
-  const member_exprt &,
-  const namespacet &ns);
-
-exprt member_offset_expr(
+optionalt<mp_integer> member_offset(
   const struct_typet &type,
   const irep_idt &member,
   const namespacet &ns);
 
-exprt size_of_expr(
-  const typet &type,
+optionalt<mp_integer> member_offset_bits(
+  const struct_typet &type,
+  const irep_idt &member,
   const namespacet &ns);
 
-exprt build_sizeof_expr(
-  const constant_exprt &expr,
+optionalt<mp_integer>
+pointer_offset_size(const typet &type, const namespacet &ns);
+
+optionalt<mp_integer>
+pointer_offset_bits(const typet &type, const namespacet &ns);
+
+optionalt<mp_integer>
+compute_pointer_offset(const exprt &expr, const namespacet &ns);
+
+optionalt<exprt> member_offset_expr(const member_exprt &, const namespacet &ns);
+
+optionalt<exprt> member_offset_expr(
+  const struct_typet &type,
+  const irep_idt &member,
   const namespacet &ns);
 
-#endif
+optionalt<exprt> size_of_expr(const typet &type, const namespacet &ns);
+
+optionalt<exprt> get_subexpression_at_offset(
+  const exprt &expr,
+  const mp_integer &offset,
+  const typet &target_type,
+  const namespacet &ns);
+
+optionalt<exprt> get_subexpression_at_offset(
+  const exprt &expr,
+  const exprt &offset,
+  const typet &target_type,
+  const namespacet &ns);
+
+#endif // CPROVER_UTIL_POINTER_OFFSET_SIZE_H

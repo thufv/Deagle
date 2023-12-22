@@ -6,10 +6,12 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#ifndef CPROVER_QBF_SQUOLEM_CORE_H
-#define CPROVER_QBF_SQUOLEM_CORE_H
+/// \file
+/// Squolem Backend (with Proofs)
 
-#include <util/hash_cont.h>
+#ifndef CPROVER_SOLVERS_QBF_QBF_SQUOLEM_CORE_H
+#define CPROVER_SOLVERS_QBF_QBF_SQUOLEM_CORE_H
+
 #include <quannon/squolem2/squolem2.h>
 
 #include "qdimacs_core.h"
@@ -17,7 +19,7 @@ Author: CM Wintersteiger
 class qbf_squolem_coret:public qdimacs_coret
 {
 protected:
-  Squolem2* squolem;
+  Squolem2 *squolem;
   bool early_decision;
 
 public:
@@ -47,7 +49,7 @@ public:
   virtual const exprt f_get(literalt l);
 
 private:
-  typedef hash_map_cont<unsigned, exprt> function_cachet;
+  typedef std::unordered_map<unsigned, exprt> function_cachet;
     function_cachet function_cache;
 
   const exprt f_get_cnf(WitnessStack *wsp);
@@ -56,4 +58,4 @@ private:
   void setup(void);
 };
 
-#endif /*_CPROVER_QBF_SQUOLEM_CORE_H_*/
+#endif // CPROVER_SOLVERS_QBF_QBF_SQUOLEM_CORE_H

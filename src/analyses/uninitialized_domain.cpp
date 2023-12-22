@@ -8,65 +8,49 @@ Date: January 2010
 
 \*******************************************************************/
 
-#include <util/std_expr.h>
-#include <util/std_code.h>
+/// \file
+/// Detection for Uninitialized Local Variables
 
 #include "uninitialized_domain.h"
 
-/*******************************************************************\
+#include <util/std_expr.h>
 
-Function: uninitialized_domaint::transform
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <list>
 
 void uninitialized_domaint::transform(
-  const namespacet &ns,
-  locationt from,
-  locationt to)
+  const irep_idt &,
+  trace_ptrt trace_from,
+  const irep_idt &,
+  trace_ptrt,
+  ai_baset &,
+  const namespacet &ns)
 {
-  switch(from->type)
+  locationt from{trace_from->current_location()};
+
+  if(has_values.is_false())
+    return;
+
+  if(from->is_decl())
   {
-  case DECL:
-    {
-      const irep_idt &identifier=
-        to_code_decl(from->code).get_identifier();
-      const symbolt &symbol=ns.lookup(identifier);
+    const irep_idt &identifier = from->decl_symbol().get_identifier();
+    const symbolt &symbol = ns.lookup(identifier);
 
-      if(!symbol.is_static_lifetime)
-        uninitialized.insert(identifier);
-    }
-    break;
+    if(!symbol.is_static_lifetime)
+      uninitialized.insert(identifier);
+  }
+  else
+  {
+    std::list<exprt> read = expressions_read(*from);
+    std::list<exprt> written = expressions_written(*from);
 
-  default:
-    {
-      std::list<exprt> read=expressions_read(*from);
-      std::list<exprt> written=expressions_written(*from);
+    for(const auto &expr : written)
+      assign(expr);
 
-      forall_expr_list(it, written) assign(*it);
-      
-      // we only care about the *first* uninitalized use
-      forall_expr_list(it, read) assign(*it);
-    }
+    // we only care about the *first* uninitalized use
+    for(const auto &expr : read)
+      assign(expr);
   }
 }
-
-/*******************************************************************\
-
-Function: uninitialized_domaint::assign
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void uninitialized_domaint::assign(const exprt &lhs)
 {
@@ -78,50 +62,36 @@ void uninitialized_domaint::assign(const exprt &lhs)
     uninitialized.erase(to_symbol_expr(lhs).get_identifier());
 }
 
-/*******************************************************************\
-
-Function: uninitialized_domaint::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void uninitialized_domaint::output(
-  const namespacet &ns,
-  std::ostream &out) const
+  std::ostream &out,
+  const ai_baset &,
+  const namespacet &) const
 {
-  for(uninitializedt::const_iterator
-      it=uninitialized.begin();
-      it!=uninitialized.end();
-      it++)
-    out << *it << '\n';
+  if(has_values.is_known())
+    out << has_values.to_string() << '\n';
+  else
+  {
+    for(const auto &id : uninitialized)
+      out << id << '\n';
+  }
 }
 
-/*******************************************************************\
-
-Function: uninitialized_domaint::merge
-
-  Inputs:
-
- Outputs: returns true iff there is s.th. new
-
- Purpose:
-
-\*******************************************************************/
-
+/// \return returns true iff there is something new
 bool uninitialized_domaint::merge(
   const uninitialized_domaint &other,
-  locationt to)
+  trace_ptrt,
+  trace_ptrt)
 {
-  unsigned old_uninitialized=uninitialized.size();
-  
+  auto old_uninitialized=uninitialized.size();
+
   uninitialized.insert(
     other.uninitialized.begin(),
     other.uninitialized.end());
 
-  return old_uninitialized!=uninitialized.size();
+  bool changed=
+    (has_values.is_false() && !other.has_values.is_false()) ||
+    old_uninitialized!=uninitialized.size();
+  has_values=tvt::unknown();
+
+  return changed;
 }

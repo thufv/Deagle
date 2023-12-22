@@ -6,8 +6,11 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_PROP_CNF_CLAUSE_LIST_H
-#define CPROVER_PROP_CNF_CLAUSE_LIST_H
+/// \file
+/// CNF Generation
+
+#ifndef CPROVER_SOLVERS_SAT_CNF_CLAUSE_LIST_H
+#define CPROVER_SOLVERS_SAT_CNF_CLAUSE_LIST_H
 
 #include <list>
 
@@ -20,27 +23,31 @@ Author: Daniel Kroening, kroening@kroening.com
 class cnf_clause_listt:public cnft
 {
 public:
-  cnf_clause_listt() { }
-  virtual ~cnf_clause_listt() { }
- 
-  virtual void lcnf(const bvt &bv);
-
-  virtual const std::string solver_text()
-  { return "CNF clause list"; }
-   
-  virtual tvt l_get(literalt literal) const
+  explicit cnf_clause_listt(message_handlert &message_handler)
+    : cnft(message_handler)
   {
-    return tvt(tvt::TV_UNKNOWN);
+  }
+  virtual ~cnf_clause_listt() { }
+
+  void lcnf(const bvt &bv) override;
+
+  const std::string solver_text() override
+  { return "CNF clause list"; }
+
+  tvt l_get(literalt) const override
+  {
+    return tvt::unknown();
   }
 
-  virtual resultt prop_solve() { return P_ERROR; }
-  
-  virtual size_t no_clauses() const { return clauses.size(); }
-  
+  size_t no_clauses() const override
+  {
+    return clauses.size();
+  }
+
   typedef std::list<bvt> clausest;
-  
+
   clausest &get_clauses() { return clauses; }
-  
+
   void copy_to(cnft &cnf) const
   {
     cnf.set_no_variables(_no_variables);
@@ -59,7 +66,7 @@ public:
 
     return result;
   }
-  
+
   size_t hash() const
   {
     size_t result=0;
@@ -68,8 +75,13 @@ public:
 
     return result;
   }
-  
+
 protected:
+  resultt do_prop_solve() override
+  {
+    return resultt::P_ERROR;
+  }
+
   clausest clauses;
 };
 
@@ -79,27 +91,34 @@ protected:
 class cnf_clause_list_assignmentt:public cnf_clause_listt
 {
 public:
+  explicit cnf_clause_list_assignmentt(message_handlert &message_handler)
+    : cnf_clause_listt(message_handler)
+  {
+  }
+
   typedef std::vector<tvt> assignmentt;
-  
-  inline assignmentt &get_assignment()
+
+  assignmentt &get_assignment()
   {
     return assignment;
   }
-  
-  virtual tvt l_get(literalt literal) const
+
+  tvt l_get(literalt literal) const override
   {
-    if(literal.is_true()) return tvt(true);
-    if(literal.is_false()) return tvt(false);
-    
+    if(literal.is_true())
+      return tvt(true);
+    if(literal.is_false())
+      return tvt(false);
+
     unsigned v=literal.var_no();
 
     if(v==0 || v>=assignment.size())
-      return tvt(tvt::TV_UNKNOWN);
+      return tvt::unknown();
 
     tvt r=assignment[v];
     return literal.sign()?!r:r;
   }
-  
+
   virtual void copy_assignment_from(const propt &prop);
   void print_assignment(std::ostream &out) const;
 
@@ -107,4 +126,4 @@ protected:
   assignmentt assignment;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_SAT_CNF_CLAUSE_LIST_H

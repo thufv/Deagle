@@ -6,17 +6,17 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <ostream>
-
 #include "threeval.h"
+
+#include <ostream>
 
 const char *tvt::to_string() const
 {
   switch(value)
   {
-  case TV_TRUE: return "TRUE";
-  case TV_FALSE: return "FALSE";
-  case TV_UNKNOWN: return "UNKNOWN";
+  case tv_enumt::TV_TRUE: return "TRUE";
+  case tv_enumt::TV_FALSE: return "FALSE";
+  case tv_enumt::TV_UNKNOWN: return "UNKNOWN";
   default: return "ERROR";
   }
 }

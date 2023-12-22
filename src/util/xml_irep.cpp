@@ -1,71 +1,54 @@
 /*******************************************************************\
- 
+
 Module:
- 
+
 Author: Daniel Kroening
- 
+
   Date: November 2005
- 
+
 \*******************************************************************/
+
+#include "xml_irep.h"
 
 #include <iostream>
 #include <string>
 
-#include "xml_irep.h"
 #include "irep.h"
-#include "xml.h"
-
-/*******************************************************************\
- 
-Function: convert
- 
-  Inputs:
- 
- Outputs:
- 
- Purpose:
- 
-\*******************************************************************/
+#include "source_location.h"
 
 void convert(
   const irept &irep,
   xmlt &xml)
-{  
+{
   if(irep.id()!=ID_nil)
     xml.new_element("id").data=irep.id_string();
 
-  forall_irep(it, irep.get_sub())
+  for(const auto &sub_irep : irep.get_sub())
   {
     xmlt &x_sub=xml.new_element("sub");
-    convert(*it, x_sub);
+    convert(sub_irep, x_sub);
   }
-  
-  forall_named_irep(it, irep.get_named_sub())
+
+  for(const auto &irep_entry : irep.get_named_sub())
   {
-    xmlt &x_nsub=xml.new_element("named_sub");
-    x_nsub.set_attribute("name", name2string(it->first));
-    convert(it->second, x_nsub);
+    if(!irept::is_comment(irep_entry.first))
+    {
+      xmlt &x_nsub = xml.new_element("named_sub");
+      x_nsub.set_attribute("name", id2string(irep_entry.first));
+      convert(irep_entry.second, x_nsub);
+    }
   }
-  
-  forall_named_irep(it, irep.get_comments())
+
+  for(const auto &irep_entry : irep.get_named_sub())
   {
-    xmlt &x_com = xml.new_element("comment");
-    x_com.set_attribute("name", name2string(it->first));
-    convert(it->second, x_com);
+    if(!irept::is_comment(irep_entry.first))
+    {
+      xmlt &x_com = xml.new_element("comment");
+      x_com.set_attribute("name", id2string(irep_entry.first));
+      convert(irep_entry.second, x_com);
+    }
   }
 }
-
-/*******************************************************************\
- 
-Function: convert
- 
-  Inputs:
- 
- Outputs:
- 
- Purpose:
- 
-\*******************************************************************/
 
 void convert(
   const xmlt &xml,
@@ -73,8 +56,8 @@ void convert(
 {
   irep.id(ID_nil);
 
-  xmlt::elementst::const_iterator it = xml.elements.begin();  
-  for (; it != xml.elements.end(); it++)
+  xmlt::elementst::const_iterator it = xml.elements.begin();
+  for(; it != xml.elements.end(); it++)
   {
     if(it->name=="id")
     {
@@ -107,4 +90,29 @@ void convert(
       std::cout << "\n";
     }
   }
+}
+
+xmlt xml(const source_locationt &location)
+{
+  xmlt result;
+
+  result.name = "location";
+
+  if(!location.get_working_directory().empty())
+    result.set_attribute(
+      "working-directory", id2string(location.get_working_directory()));
+
+  if(!location.get_file().empty())
+    result.set_attribute("file", id2string(location.get_file()));
+
+  if(!location.get_line().empty())
+    result.set_attribute("line", id2string(location.get_line()));
+
+  if(!location.get_column().empty())
+    result.set_attribute("column", id2string(location.get_column()));
+
+  if(!location.get_function().empty())
+    result.set_attribute("function", id2string(location.get_function()));
+
+  return result;
 }

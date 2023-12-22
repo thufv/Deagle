@@ -8,130 +8,81 @@ Date: February 2006
 
 \*******************************************************************/
 
-#include <util/std_expr.h>
+/// \file
+/// Race Detection for Threaded Goto Programs
+
+#include "rw_set.h"
+
+#include <util/pointer_expr.h>
 #include <util/std_code.h>
-#include <util/namespace.h>
 
 #include <langapi/language_util.h>
 
 #include <pointer-analysis/goto_program_dereference.h>
 
-#include "rw_set.h"
-
-/*******************************************************************\
-
-Function: rw_set_baset::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void rw_set_baset::output(std::ostream &out) const
 {
-  out << "READ:" << std::endl;
+  out << "READ:\n";
   for(entriest::const_iterator it=r_entries.begin();
       it!=r_entries.end();
       it++)
   {
     out << it->second.object << " if "
-        << from_expr(ns, "", it->second.guard) << std::endl;
+        << from_expr(ns, it->second.object, it->second.guard) << '\n';
   }
-  
-  out << std::endl;
 
-  out << "WRITE:" << std::endl;
+  out << '\n';
+
+  out << "WRITE:\n";
   for(entriest::const_iterator it=w_entries.begin();
       it!=w_entries.end();
       it++)
   {
     out << it->second.object << " if "
-        << from_expr(ns, "", it->second.guard) << std::endl;
+        << from_expr(ns, it->second.object, it->second.guard) << '\n';
   }
 }
 
-/*******************************************************************\
-
-Function: rw_set_loct::compute
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rw_set_loct::compute()
+void _rw_set_loct::compute()
 {
   if(target->is_assign())
   {
-    assert(target->code.operands().size()==2);
-    assign(target->code.op0(), target->code.op1());
+    assign(target->assign_lhs(), target->assign_rhs());
   }
   else if(target->is_goto() ||
           target->is_assume() ||
           target->is_assert())
   {
-    read(target->guard);
+    read(target->condition());
   }
   else if(target->is_function_call())
   {
-    const code_function_callt &code_function_call=
-      to_code_function_call(target->code);
+    read(target->call_function());
 
-    read(code_function_call.function());
-    
     // do operands
-    for(code_function_callt::argumentst::const_iterator
-        it=code_function_call.arguments().begin();
-        it!=code_function_call.arguments().end();
+    for(code_function_callt::argumentst::const_iterator it =
+          target->call_arguments().begin();
+        it != target->call_arguments().end();
         it++)
       read(*it);
-    
-    if(code_function_call.lhs().is_not_nil())
-      write(code_function_call.lhs());
+
+    if(target->call_lhs().is_not_nil())
+      write(target->call_lhs());
   }
 }
 
-/*******************************************************************\
-
-Function: rw_set_loct::assign
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rw_set_loct::assign(const exprt &lhs, const exprt &rhs)
+void _rw_set_loct::assign(const exprt &lhs, const exprt &rhs)
 {
   read(rhs);
-  read_write_rec(lhs, false, true, "", guardt());
+  read_write_rec(lhs, false, true, "", exprt::operandst());
 }
 
-/*******************************************************************\
-
-Function: rw_set_loct::read_write_rec
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void rw_set_loct::read_write_rec(
+void _rw_set_loct::read_write_rec(
   const exprt &expr,
-  bool r, bool w,
+  bool r,
+  bool w,
   const std::string &suffix,
-  const guardt &guard)
+  const exprt::operandst &guard_conjuncts)
 {
   if(expr.id()==ID_symbol)
   {
@@ -141,101 +92,140 @@ void rw_set_loct::read_write_rec(
 
     if(r)
     {
-      entryt &entry=r_entries[object];
-      entry.object=object;
-      entry.symbol_expr=symbol_expr;
-      entry.guard=guard.as_expr(); // should 'OR'
+      const auto &entry = r_entries.emplace(
+        object, entryt(symbol_expr, object, conjunction(guard_conjuncts)));
+
+      track_deref(entry.first->second, true);
     }
-    
+
     if(w)
     {
-      entryt &entry=w_entries[object];
-      entry.object=object;
-      entry.symbol_expr=symbol_expr;
-      entry.guard=guard.as_expr(); // should 'OR'
+      const auto &entry = w_entries.emplace(
+        object, entryt(symbol_expr, object, conjunction(guard_conjuncts)));
+
+      track_deref(entry.first->second, false);
     }
   }
   else if(expr.id()==ID_member)
   {
-    assert(expr.operands().size()==1);
-    const std::string &component_name=expr.get_string(ID_component_name);
-    read_write_rec(expr.op0(), r, w, "."+component_name+suffix, guard);
+    const auto &member_expr = to_member_expr(expr);
+    const std::string &component_name =
+      id2string(member_expr.get_component_name());
+    read_write_rec(
+      member_expr.compound(),
+      r,
+      w,
+      "." + component_name + suffix,
+      guard_conjuncts);
   }
   else if(expr.id()==ID_index)
   {
     // we don't distinguish the array elements for now
-    assert(expr.operands().size()==2);
-    read_write_rec(expr.op0(), r, w, "[]"+suffix, guard);
-    read(expr.op1(), guard);
+    const auto &index_expr = to_index_expr(expr);
+    read_write_rec(index_expr.array(), r, w, "[]" + suffix, guard_conjuncts);
+    read(index_expr.index(), guard_conjuncts);
   }
   else if(expr.id()==ID_dereference)
   {
-    assert(expr.operands().size()==1);
-    read(expr.op0(), guard);
+    set_track_deref();
+    read(to_dereference_expr(expr).pointer(), guard_conjuncts);
 
     exprt tmp=expr;
-    dereference(target, tmp, ns, value_sets);
-    
-    read_write_rec(tmp, r, w, suffix, guard);
+    #ifdef LOCAL_MAY
+    const std::set<exprt> aliases=local_may.get(target, expr);
+    for(std::set<exprt>::const_iterator it=aliases.begin();
+      it!=aliases.end();
+      ++it)
+    {
+      #ifndef LOCAL_MAY_SOUND
+      if(it->id()==ID_unknown)
+      {
+        /* as an under-approximation */
+        // std::cout << "Sorry, LOCAL_MAY too imprecise. "
+        //           << Omitting some variables.\n";
+        irep_idt object=ID_unknown;
+
+        entryt &entry=r_entries[object];
+        entry.object=object;
+        entry.symbol_expr=symbol_exprt(ID_unknown);
+        entry.guard = conjunction(guard_conjuncts); // should 'OR'
+
+        continue;
+      }
+      #endif
+      read_write_rec(*it, r, w, suffix, guard_conjuncts);
+    }
+    #else
+    dereference(function_id, target, tmp, ns, value_sets);
+
+    read_write_rec(tmp, r, w, suffix, guard_conjuncts);
+#endif
+
+    reset_track_deref();
   }
   else if(expr.id()==ID_typecast)
   {
-    assert(expr.operands().size()==1);
-    read_write_rec(expr.op0(), r, w, suffix, guard);
+    read_write_rec(to_typecast_expr(expr).op(), r, w, suffix, guard_conjuncts);
   }
   else if(expr.id()==ID_address_of)
   {
     assert(expr.operands().size()==1);
-    
   }
   else if(expr.id()==ID_if)
   {
-    assert(expr.operands().size()==3);
-    read(expr.op0(), guard);
-    
-    guardt true_guard(guard);
-    true_guard.add(expr.op0());
-    read_write_rec(expr.op1(), r, w, suffix, true_guard);
-    
-    guardt false_guard(guard);
-    false_guard.add(not_exprt(expr.op0()));
-    read_write_rec(expr.op2(), r, w, suffix, false_guard);
+    const auto &if_expr = to_if_expr(expr);
+    read(if_expr.cond(), guard_conjuncts);
+
+    exprt::operandst true_guard = guard_conjuncts;
+    true_guard.push_back(if_expr.cond());
+    read_write_rec(if_expr.true_case(), r, w, suffix, true_guard);
+
+    exprt::operandst false_guard = guard_conjuncts;
+    false_guard.push_back(not_exprt(if_expr.cond()));
+    read_write_rec(if_expr.false_case(), r, w, suffix, false_guard);
   }
   else
   {
     forall_operands(it, expr)
-      read_write_rec(*it, r, w, suffix, guard);
+      read_write_rec(*it, r, w, suffix, guard_conjuncts);
   }
 }
-
-/*******************************************************************\
-
-Function: rw_set_functiont::compute_rec
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void rw_set_functiont::compute_rec(const exprt &function)
 {
   if(function.id()==ID_symbol)
   {
-    const irep_idt &id=to_symbol_expr(function).get_identifier();
+    const irep_idt &function_id = to_symbol_expr(function).get_identifier();
 
-    goto_functionst::function_mapt::const_iterator f_it=
-      goto_functions.function_map.find(id);
+    goto_functionst::function_mapt::const_iterator f_it =
+      goto_functions.function_map.find(function_id);
 
     if(f_it!=goto_functions.function_map.end())
     {
       const goto_programt &body=f_it->second.body;
 
+#ifdef LOCAL_MAY
+      local_may_aliast local_may(f_it->second);
+#if 0
+      for(goto_functionst::function_mapt::const_iterator
+          g_it=goto_functions.function_map.begin();
+          g_it!=goto_functions.function_map.end(); ++g_it)
+        local_may(g_it->second);
+#endif
+#endif
+
       forall_goto_program_instructions(i_it, body)
       {
-        *this+=rw_set_loct(ns, value_sets, i_it);
+        *this += rw_set_loct(
+          ns,
+          value_sets,
+          function_id,
+          i_it
+#ifdef LOCAL_MAY
+          ,
+          local_may
+#endif
+        ); // NOLINT(whitespace/parens)
       }
     }
   }
@@ -244,4 +234,4 @@ void rw_set_functiont::compute_rec(const exprt &function)
     compute_rec(to_if_expr(function).true_case());
     compute_rec(to_if_expr(function).false_case());
   }
-} 
+}

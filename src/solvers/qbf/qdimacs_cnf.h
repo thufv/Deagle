@@ -6,18 +6,21 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_QBF_QDIMACS_CNF_H
-#define CPROVER_QBF_QDIMACS_CNF_H
 
-#include <set>
+#ifndef CPROVER_SOLVERS_QBF_QDIMACS_CNF_H
+#define CPROVER_SOLVERS_QBF_QDIMACS_CNF_H
+
 #include <iosfwd>
 
-#include "../sat/dimacs_cnf.h"
+#include <solvers/sat/dimacs_cnf.h>
 
 class qdimacs_cnft:public dimacs_cnft
 {
 public:
-  qdimacs_cnft() { }
+  explicit qdimacs_cnft(message_handlert &message_handler)
+    : dimacs_cnft(message_handler)
+  {
+  }
   virtual ~qdimacs_cnft() { }
 
   virtual void write_qdimacs_cnf(std::ostream &out);
@@ -32,11 +35,11 @@ public:
   class quantifiert
   {
   public:
-    typedef enum { NONE, EXISTENTIAL, UNIVERSAL } typet;
+    enum class typet { NONE, EXISTENTIAL, UNIVERSAL };
     typet type;
     unsigned var_no;
 
-    quantifiert():type(NONE), var_no(0)
+    quantifiert():type(typet::NONE), var_no(0)
     {
     }
 
@@ -44,14 +47,14 @@ public:
     {
     }
 
-    friend bool operator==(const quantifiert &a, const quantifiert &b)
+    bool operator==(const quantifiert &other) const
     {
-      return a.type==b.type && a.var_no==b.var_no;
+      return type==other.type && var_no==other.var_no;
     }
 
     size_t hash() const
     {
-      return var_no^(type<<24);
+      return var_no^(static_cast<int>(type)<<24);
     }
   };
 
@@ -64,19 +67,19 @@ public:
     quantifiers.push_back(quantifier);
   }
 
-  inline void add_quantifier(const quantifiert::typet type, const literalt l)
+  void add_quantifier(const quantifiert::typet type, const literalt l)
   {
     add_quantifier(quantifiert(type, l));
   }
 
-  inline void add_existential_quantifier(const literalt l)
+  void add_existential_quantifier(const literalt l)
   {
-    add_quantifier(quantifiert(quantifiert::EXISTENTIAL, l));
+    add_quantifier(quantifiert(quantifiert::typet::EXISTENTIAL, l));
   }
 
-  inline void add_universal_quantifier(const literalt l)
+  void add_universal_quantifier(const literalt l)
   {
-    add_quantifier(quantifiert(quantifiert::UNIVERSAL, l));
+    add_quantifier(quantifiert(quantifiert::typet::UNIVERSAL, l));
   }
 
   bool is_quantified(const literalt l) const;
@@ -85,11 +88,12 @@ public:
   virtual void set_quantifier(const quantifiert::typet type, const literalt l);
   void copy_to(qdimacs_cnft &cnf) const;
 
-  friend bool operator==(const qdimacs_cnft &a, const qdimacs_cnft &b);
+  bool operator==(const qdimacs_cnft &other) const;
+
   size_t hash() const;
 
 protected:
   void write_prefix(std::ostream &out) const;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_QBF_QDIMACS_CNF_H

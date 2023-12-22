@@ -1,11 +1,16 @@
 %option nounput
 %option noinput
+%option nounistd
+%option never-interactive
 
 %{
 
-#ifdef _WIN32
-#define YY_NO_UNISTD_H
-static int isatty(int) { return 0; }
+#if defined _MSC_VER
+// signed/unsigned mismatch
+#pragma warning(disable:4365)
+// macro re-definition: flex conditonally defines INT32_MAX et al. and thus
+// they are set before library headers get to define them
+#pragma warning(disable:4005)
 #endif
 
 #define PARSER assembler_parser
@@ -15,6 +20,10 @@ static int isatty(int) { return 0; }
 
 #include "assembler_parser.h"
 
+#include <util/pragma_wsign_compare.def>
+#include <util/pragma_wnull_conversion.def>
+#include <util/pragma_wdeprecated_register.def>
+
 /*** macros for easier rule definition **********************************/
 %}
 
@@ -23,23 +32,23 @@ newline         [\n\f\v]|"\\\n"
 whitespace      {delimiter}+
 ws              {delimiter}*
 ws_or_newline   ({delimiter}|{newline})*
-ucletter	[A-Z]
-lcletter	[a-z]
-letter		({ucletter}|{lcletter})
-digit		[0-9]
-bindigit	[01]
-octdigit	[0-7]
-hexdigit	[0-9a-fA-F]
-identifier	(({letter}|"_"|"$"|".")({letter}|{digit}|"_"|"$"|".")*)
-integer		{digit}+
-binary		{bindigit}+
-bininteger	"0"[bB]{bindigit}+{int_suffix}
-decinteger	[1-9]{digit}*{int_suffix}
-octinteger	"0"{octdigit}*{int_suffix}
-hexinteger	"0"[xX]{hexdigit}+{int_suffix}
+ucletter        [A-Z]
+lcletter        [a-z]
+letter          ({ucletter}|{lcletter})
+digit           [0-9]
+bindigit        [01]
+octdigit        [0-7]
+hexdigit        [0-9a-fA-F]
+identifier      (({letter}|"_"|"$"|".")({letter}|{digit}|"_"|"$"|".")*)
+integer         {digit}+
+binary          {bindigit}+
+bininteger      "0"[bB]{bindigit}+{int_suffix}
+decinteger      [1-9]{digit}*{int_suffix}
+octinteger      "0"{octdigit}*{int_suffix}
+hexinteger      "0"[xX]{hexdigit}+{int_suffix}
 integer_s       {decinteger}|{bininteger}|{octinteger}|{hexinteger}
-octchar		"\\"{octdigit}{1,3}
-hexchar		"\\x"{hexdigit}+
+octchar         "\\"{octdigit}{1,3}
+hexchar         "\\x"{hexdigit}+
 
 escape_sequence [\\][^\n]
 c_char [^'\\\n]|{escape_sequence}
@@ -62,46 +71,44 @@ void assemlber_scanner_init()
 %%
 
 <INITIAL>.|\n   { BEGIN(GRAMMAR);
-		  yyless(0);		/* start again with this character */
-		 }
+                  yyless(0); /* start again with this character */
+                }
 
-<GRAMMAR>"#"	{ PARSER.new_instruction(); BEGIN(LINE_COMMENT); } /* begin comment state */
+<GRAMMAR>"#"    { PARSER.new_instruction(); BEGIN(LINE_COMMENT); } /* begin comment state */
 
 <LINE_COMMENT>{
-   \n		{ BEGIN(GRAMMAR); }	/* end comment state, back GRAMMAR */
-   .*		{ } /* all characters within comments are ignored */
-	}
-
-<GRAMMAR>{newline}	{ PARSER.new_instruction(); }
-<GRAMMAR>";"		{ PARSER.new_instruction(); }
-<GRAMMAR>{whitespace}	{ } /* skipped */
-
-%{
-/*** keywords ***/
-%}
-
-<GRAMMAR>{
-".data"		{ }
+   \n           { BEGIN(GRAMMAR); } /* end comment state, back GRAMMAR */
+   .*           { } /* all characters within comments are ignored */
 }
 
-%{
-/*** rest ***/
-%}
+<GRAMMAR>{newline} { PARSER.new_instruction(); }
+<GRAMMAR>";"    { PARSER.new_instruction(); }
+<GRAMMAR>{whitespace} { } /* skipped */
+
+ /*** keywords ***/
 
 <GRAMMAR>{
-{ws}                { /* ignore */ }
-{identifier}        { irept identifier(ID_symbol);
-                      identifier.set(ID_identifier, yytext);
-                      PARSER.add_token(identifier); }
+".data"         { }
+}
+
+ /*** rest ***/
+
+<GRAMMAR>{
+{ws}            { /* ignore */ }
+{identifier}    { irept identifier(ID_symbol);
+                  identifier.set(ID_identifier, yytext);
+                  PARSER.add_token(identifier);
+                }
 
 ">>"            { PARSER.add_token(irept(ID_shr)); }
 "<<"            { PARSER.add_token(irept(ID_shl)); }
 .               { std::string s;
                   s+=yytext[0];
-                  PARSER.add_token(irept(s)); }
+                  PARSER.add_token(irept(s));
+                }
 }
 
-<<EOF>>		{ yyterminate(); /* done! */ }
+<<EOF>>         { yyterminate(); /* done! */ }
 
 %%
 

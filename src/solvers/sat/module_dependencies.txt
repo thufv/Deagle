@@ -1,0 +1,6 @@
+core # external - glucose
+simp # external - glucose
+minisat/core # external
+minisat/simp # external
+solvers
+util

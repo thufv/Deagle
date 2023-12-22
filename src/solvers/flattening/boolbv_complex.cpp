@@ -8,106 +8,50 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/invariant.h>
 
-Function: boolbvt::convert_complex
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_complex(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_complex(const complex_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
-    
+  std::size_t width=boolbv_width(expr.type());
+
+  DATA_INVARIANT(
+    expr.type().id() == ID_complex,
+    "complex expression shall have complex type");
+
+  bvt bv;
   bv.reserve(width);
 
-  if(expr.type().id()==ID_complex)
+  const exprt::operandst &operands = expr.operands();
+  std::size_t op_width = width / operands.size();
+
+  for(const auto &op : operands)
   {
-    const exprt::operandst &operands=expr.operands();
-    
-    if(operands.size()==2)
-    {
-      unsigned op_width=width/operands.size();
-    
-      forall_expr(it, operands)
-      {
-        const bvt &tmp=convert_bv(*it);
+    const bvt &tmp = convert_bv(op, op_width);
 
-        if(tmp.size()!=op_width)
-          throw "convert_complex: unexpected operand width";
-
-        forall_literals(it2, tmp)
-          bv.push_back(*it2);
-      }   
-    }
-
-    return;
+    bv.insert(bv.end(), tmp.begin(), tmp.end());
   }
-  
-  conversion_failed(expr, bv);
+
+  return bv;
 }
 
-/*******************************************************************\
-
-Function: boolbvt::convert_complex_real
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_complex_real(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_complex_real(const complex_real_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
-    
-  if(expr.operands().size()!=1)
-    return conversion_failed(expr, bv);
+  std::size_t width=boolbv_width(expr.type());
 
-  bv=convert_bv(expr.op0());
+  bvt bv = convert_bv(expr.op(), width * 2);
 
-  assert(bv.size()==width*2);  
-  bv.resize(width);
+  bv.resize(width); // chop
+
+  return bv;
 }
 
-/*******************************************************************\
-
-Function: boolbvt::convert_complex_imag
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_complex_imag(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_complex_imag(const complex_imag_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
-    
-  if(expr.operands().size()!=1)
-    return conversion_failed(expr, bv);
+  std::size_t width=boolbv_width(expr.type());
 
-  bv=convert_bv(expr.op0());
+  bvt bv = convert_bv(expr.op(), width * 2);
 
-  assert(bv.size()==width*2);  
   bv.erase(bv.begin(), bv.begin()+width);
-}
 
+  return bv;
+}

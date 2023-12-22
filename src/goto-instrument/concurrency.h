@@ -8,15 +8,15 @@ Date: February 2006
 
 \*******************************************************************/
 
+/// \file
+/// Encoding for Threaded Goto Programs
+
 #ifndef CPROVER_GOTO_INSTRUMENT_CONCURRENCY_H
 #define CPROVER_GOTO_INSTRUMENT_CONCURRENCY_H
 
-#include <pointer-analysis/value_sets.h>
-#include <goto-programs/goto_functions.h>
+class goto_modelt;
+class value_setst;
 
-void concurrency(
-  value_setst &value_sets,
-  class symbol_tablet &symbol_table,
-  goto_functionst &goto_functions);
+void concurrency(value_setst &, goto_modelt &);
 
-#endif
+#endif // CPROVER_GOTO_INSTRUMENT_CONCURRENCY_H

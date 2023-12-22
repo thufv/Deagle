@@ -6,24 +6,12 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#include <util/arith_tools.h>
-#include <util/std_expr.h>
-
-//#include <solvers/flattening/boolbv_width.h>
-
 #include "qdimacs_core.h"
 
-/*******************************************************************\
+#include <util/bitvector_expr.h>
+#include <util/std_expr.h>
 
-Function: qdimacs_coret::simplify_extractbits
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <set>
 
 void qdimacs_coret::simplify_extractbits(exprt &expr) const
 {
@@ -34,17 +22,22 @@ void qdimacs_coret::simplify_extractbits(exprt &expr) const
 
     forall_operands(it, expr)
     {
-      if(it->id()==ID_extractbit && it->op1().is_constant())
+      if(it->id() == ID_extractbit)
       {
-        used_bits_map[it->op0()].insert(it->op1());
+        const auto &extractbit_expr = to_extractbit_expr(*it);
+        if(extractbit_expr.op1().is_constant())
+          used_bits_map[extractbit_expr.src()].insert(extractbit_expr.index());
       }
-      else if(it->id()==ID_not &&
-              it->op0().id()==ID_extractbit && it->op0().op1().is_constant())
+      else if(it->id() == ID_not && to_not_expr(*it).op().id() == ID_extractbit)
       {
-        used_bits_map[it->op0().op0()].insert(it->op0().op1());
+        const auto &extractbit_expr = to_extractbit_expr(to_not_expr(*it).op());
+        if(extractbit_expr.op1().is_constant())
+          used_bits_map[extractbit_expr.src()].insert(extractbit_expr.index());
       }
     }
 
+    // clang-format off
+    // this is unmaintained code, don't try to reformat it
     for(used_bits_mapt::const_iterator it=used_bits_map.begin();
         it!=used_bits_map.end();
         it++)
@@ -56,7 +49,7 @@ void qdimacs_coret::simplify_extractbits(exprt &expr) const
       std::string value_string;
       value_string.resize(width, '0');
 
-      if(it->second.size() == width) // all bits extracted from this one!
+      if(it->second.size()==width) // all bits extracted from this one!
       {
         const irep_idt &ident=it->first.get(ID_identifier);
         const exprt::operandst &old_operands=expr.operands();
@@ -72,12 +65,11 @@ void qdimacs_coret::simplify_extractbits(exprt &expr) const
             if(oit->op0().get(ID_identifier)==ident)
             {
               const exprt &val_expr=oit->op1();
-              mp_integer value;
-              to_integer(val_expr, value);
-              value_string[value.to_ulong()] = '1';
+              const std::size_t value = numeric_cast_v<std::size_t>(val_expr);
+              value_string[value]='1';
 
               #if 0
-              std::cout << "[" << value << "] = 1" << std::endl;
+              std::cout << "[" << value << "]=1\n";
               #endif
 
               continue;
@@ -97,17 +89,17 @@ void qdimacs_coret::simplify_extractbits(exprt &expr) const
           new_operands.push_back(*oit);
         }
 
-        exprt new_value(ID_constant, it->first.type());
-        new_value.set(ID_value, value_string);
+        const constant_exprt new_value(value_string, it->first.type());
         new_operands.push_back(equality_exprt(it->first, new_value));
 
         #if 0
-        std::cout << "FINAL: " << value_string << std::endl;
+        std::cout << "FINAL: " << value_string << '\n';
         #endif
 
-        expr.operands() = new_operands;
+        expr.operands()=new_operands;
       }
       #endif
     }
+    // clang-format on
   }
 }

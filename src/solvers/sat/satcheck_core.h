@@ -6,12 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_SATCHECK_CORE_H
-#define CPROVER_SATCHECK_CORE_H
 
-//#define SATCHECK_CORE_ZCHAFF
-//#define SATCHECK_CORE_MINISAT1
-//#define SATCHECK_CORE_BOOLEFORCE
+#ifndef CPROVER_SOLVERS_SAT_SATCHECK_CORE_H
+#define CPROVER_SOLVERS_SAT_SATCHECK_CORE_H
+
+// #define SATCHECK_CORE_ZCHAFF
+// #define SATCHECK_CORE_MINISAT1
+// #define SATCHECK_CORE_BOOLEFORCE
 
 #ifdef SATCHECK_CORE_ZCHAFF
 
@@ -40,4 +41,4 @@ typedef satcheck_minisat1_coret satcheck_coret;
 #endif
 #endif
 
-#endif
+#endif // CPROVER_SOLVERS_SAT_SATCHECK_CORE_H

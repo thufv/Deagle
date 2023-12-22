@@ -6,12 +6,15 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#ifndef CPROVER_QBF_QUBE_CORE_H
-#define CPROVER_QBF_QUBE_CORE_H
+
+#ifndef CPROVER_SOLVERS_QBF_QBF_QUBE_CORE_H
+#define CPROVER_SOLVERS_QBF_QBF_QUBE_CORE_H
 
 #include "qdimacs_core.h"
 
-class qbf_qube_coret : public qdimacs_coret
+#include <util/invariant.h>
+
+class qbf_qube_coret:public qdimacs_coret
 {
 protected:
   std::string qbf_tmp_file;
@@ -20,7 +23,7 @@ protected:
   assignmentt assignment;
 
 public:
-  qbf_qube_coret();
+  explicit qbf_qube_coret(message_handlert &message_handler);
   virtual ~qbf_qube_coret();
 
   virtual const std::string solver_text();
@@ -32,26 +35,26 @@ public:
   {
     unsigned v=a.var_no();
 
-    assignmentt::const_iterator fit = assignment.find(v);
+    assignmentt::const_iterator fit=assignment.find(v);
 
     if(fit!=assignment.end())
       return a.sign()?tvt(!fit->second) : tvt(fit->second);
     else
-    {      
+    {
       // throw "Missing toplevel assignment from QuBE";
-      // We assume this is a don't-care and return unknown      
+      // We assume this is a don't-care and return unknown
     }
 
 
-    return tvt(tvt::TV_UNKNOWN);
+    return tvt::unknown();
   }
 
   virtual modeltypet m_get(literalt a) const;
 
-  virtual const exprt f_get(literalt l)
+  virtual const exprt f_get(literalt)
   {
-    throw "Qube does not support full certificates.";
+    INVARIANT(false, "qube does not support full certificates.");
   }
 };
 
-#endif
+#endif // CPROVER_SOLVERS_QBF_QBF_QUBE_CORE_H

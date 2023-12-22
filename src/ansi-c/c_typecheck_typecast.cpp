@@ -6,75 +6,38 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include "c_typecast.h"
 #include "c_typecheck_base.h"
-#include "c_types.h"
 
-/*******************************************************************\
-
-Function: c_typecheck_baset::implicit_typecast
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "c_typecast.h"
 
 void c_typecheck_baset::implicit_typecast(
   exprt &expr,
   const typet &dest_type)
 {
   c_typecastt c_typecast(*this);
-  
+
   typet src_type=expr.type();
-  
+
   c_typecast.implicit_typecast(expr, dest_type);
 
-  for(std::list<std::string>::const_iterator
-      it=c_typecast.errors.begin();
-      it!=c_typecast.errors.end();
-      it++)
+  for(const auto &tc_error : c_typecast.errors)
   {
-    err_location(expr);
-    str << "in expression `" << to_string(expr) << "':\n";
-    str << "conversion from `"
-        << to_string(src_type) << "' to `"
-        << to_string(dest_type) << "': "
-        << *it;
-    error();
+    error().source_location=expr.find_source_location();
+    error() << "in expression '" << to_string(expr) << "':\n"
+            << "conversion from '" << to_string(src_type) << "' to '"
+            << to_string(dest_type) << "': " << tc_error << eom;
   }
-  
+
   if(!c_typecast.errors.empty())
     throw 0; // give up
-  
-  for(std::list<std::string>::const_iterator
-      it=c_typecast.warnings.begin();
-      it!=c_typecast.warnings.end();
-      it++)
+
+  for(const auto &tc_warning : c_typecast.warnings)
   {
-    err_location(expr);
-    str << "warning: conversion from `"
-        << to_string(src_type)
-        << "' to `"
-        << to_string(dest_type)
-        << "': " << *it;
-    warning();
+    warning().source_location=expr.find_source_location();
+    warning() << "warning: conversion from '" << to_string(src_type) << "' to '"
+              << to_string(dest_type) << "': " << tc_warning << eom;
   }
 }
-
-/*******************************************************************\
-
-Function: c_typecheck_baset::implicit_typecast_arithmetic
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void c_typecheck_baset::implicit_typecast_arithmetic(
   exprt &expr1,
@@ -82,22 +45,43 @@ void c_typecheck_baset::implicit_typecast_arithmetic(
 {
   c_typecastt c_typecast(*this);
   c_typecast.implicit_typecast_arithmetic(expr1, expr2);
+
+  for(const auto &tc_error : c_typecast.errors)
+  {
+    error().source_location = expr1.find_source_location();
+    error() << "in expression '" << to_string(expr1) << "':\n"
+            << "conversion from '" << to_string(expr1.type()) << "' to '"
+            << to_string(expr2.type()) << "': " << tc_error << eom;
+  }
+
+  if(!c_typecast.errors.empty())
+    throw 0; // give up
+
+  for(const auto &tc_warning : c_typecast.warnings)
+  {
+    warning().source_location = expr1.find_source_location();
+    warning() << "conversion from '" << to_string(expr1.type()) << "' to '"
+              << to_string(expr2.type()) << "': " << tc_warning << eom;
+  }
 }
-
-/*******************************************************************\
-
-Function: c_typecheck_baset::implicit_typecast_arithmetic
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void c_typecheck_baset::implicit_typecast_arithmetic(exprt &expr)
 {
   c_typecastt c_typecast(*this);
   c_typecast.implicit_typecast_arithmetic(expr);
+
+  for(const auto &tc_error : c_typecast.errors)
+  {
+    error().source_location = expr.find_source_location();
+    error() << tc_error << eom;
+  }
+
+  if(!c_typecast.errors.empty())
+    throw 0; // give up
+
+  for(const auto &tc_warning : c_typecast.warnings)
+  {
+    warning().source_location = expr.find_source_location();
+    warning() << tc_warning << eom;
+  }
 }

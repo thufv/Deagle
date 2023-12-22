@@ -6,5 +6,7 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 
 \*******************************************************************/
 
-#include "irep_hash.h"
+/// \file
+/// irep hash functions
 
+#include "irep_hash.h"

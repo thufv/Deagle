@@ -6,8 +6,9 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#ifndef CPROVER_QDIMACS_CORE_H
-#define CPROVER_QDIMACS_CORE_H
+
+#ifndef CPROVER_SOLVERS_QBF_QDIMACS_CORE_H
+#define CPROVER_SOLVERS_QBF_QDIMACS_CORE_H
 
 #include <map>
 
@@ -18,10 +19,15 @@ Author: CM Wintersteiger
 class qdimacs_coret:public qdimacs_cnft
 {
 public:
+  explicit qdimacs_coret(message_handlert &message_handler)
+    : qdimacs_cnft(message_handler)
+  {
+  }
+
   virtual tvt l_get(literalt a) const=0;
   virtual bool is_in_core(literalt l) const=0;
 
-  typedef enum { M_TRUE, M_FALSE, M_DONTCARE, M_COMPLEX } modeltypet;
+  enum modeltypet { M_TRUE, M_FALSE, M_DONTCARE, M_COMPLEX };
   virtual modeltypet m_get(literalt a) const=0;
 
   typedef std::pair<exprt, unsigned> symbol_mapt;
@@ -32,4 +38,4 @@ public:
   void simplify_extractbits(exprt &expr) const;
 };
 
-#endif /*CPROVER_QDIMACS_CORE_H*/
+#endif // CPROVER_SOLVERS_QBF_QDIMACS_CORE_H

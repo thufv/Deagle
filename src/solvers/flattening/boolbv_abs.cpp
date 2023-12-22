@@ -6,60 +6,34 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/std_types.h>
-
 #include "boolbv.h"
+
 #include "boolbv_type.h"
 
-#include "../floatbv/float_utils.h"
+#include <util/bitvector_types.h>
 
-/*******************************************************************\
+#include <solvers/floatbv/float_utils.h>
 
-Function: boolbvt::convert_abs
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_abs(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_abs(const abs_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
+  const bvt &op_bv=convert_bv(expr.op());
 
-  if(width==0)
-    return conversion_failed(expr, bv);
+  if(expr.op().type()!=expr.type())
+    return conversion_failed(expr);
 
-  const exprt::operandst &operands=expr.operands();
+  const bvtypet bvtype = get_bvtype(expr.type());
 
-  if(operands.size()!=1)
-    throw "abs takes one operand";
-    
-  const exprt &op0=expr.op0();
-
-  const bvt &op_bv=convert_bv(op0);
-
-  if(op0.type()!=expr.type())
-    return conversion_failed(expr, bv);
-
-  bvtypet bvtype=get_bvtype(expr.type());
-  
-  if(bvtype==IS_FIXED ||
-     bvtype==IS_SIGNED ||
-     bvtype==IS_UNSIGNED)
+  if(bvtype==bvtypet::IS_FIXED ||
+     bvtype==bvtypet::IS_SIGNED ||
+     bvtype==bvtypet::IS_UNSIGNED)
   {
-    bv=bv_utils.absolute_value(op_bv);
-    return;
+    return bv_utils.absolute_value(op_bv);
   }
-  else if(bvtype==IS_FLOAT)
+  else if(bvtype==bvtypet::IS_FLOAT)
   {
-    float_utilst float_utils(prop);
-    float_utils.spec=to_floatbv_type(expr.type());
-    bv=float_utils.abs(op_bv);
-    return;
+    float_utilst float_utils(prop, to_floatbv_type(expr.type()));
+    return float_utils.abs(op_bv);
   }
-  
-  conversion_failed(expr, bv);
+
+  return conversion_failed(expr);
 }

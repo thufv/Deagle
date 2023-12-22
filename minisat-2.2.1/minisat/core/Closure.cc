@@ -1,9 +1,9 @@
 // __SZH_ADD_BEGIN__
 
 #include "ClosureSolver.h"
-#include <deque>
 #include <algorithm>
 #include <iostream>
+#include <regex>
 
 #include "../../minisat/mtl/Vec.h"
 #include "../../minisat/mtl/Heap.h"
@@ -20,9 +20,6 @@ const int OC_VERBOSITY = 0;
 #define neg(lv) {for(auto& l : lv) l = ~l;}
 
 #define PROPAGATE_METHOD 1 //-1: nothing; 0: only rf; 1: and ws, fr. Seems that -1 is just the same as 0. And 1 is the only choice
-
-#define RENEW_DANGEROUS_EDGE 1
-#define DANGEROUS_EDGE_CLOSURE 1
 
 using namespace Minisat;
 
@@ -42,6 +39,9 @@ template<typename T> bool contains(std::set<T> s, T elem)
 
 lbool closure::get_assignment(Lit l)
 {
+    if(l.x == -1)
+        return l_True;
+
     return solver->value(l);
 }
 
@@ -55,7 +55,7 @@ int closure::union_find_parent(int n)
 
 void closure::refine_atomic_atoms()
 {
-    for(int rep = 0; rep < nodes.size(); rep++)
+    for(int rep = 0; rep < int(nodes.size()); rep++)
         if(is_representative(rep))
         {
             for(auto item: nodes[rep].atomic_items)
@@ -120,9 +120,9 @@ closure_edget& closure::find_edge(int u, int v)
 
 Lit closure::check_tail_head_to_inactive_lit(int a, int b)
 {
-    if(tail_head_to_inactive_lit.size() <= a)
+    if(int(tail_head_to_inactive_lit.size()) <= a)
         return lit_Error;
-    if(tail_head_to_inactive_lit[a].size() <= b)
+    if(int(tail_head_to_inactive_lit[a].size()) <= b)
         return lit_Error;
     return tail_head_to_inactive_lit[a][b];
 }
@@ -137,12 +137,27 @@ void closure::init(ClosureSolver* _solver)
 
 std::string get_address(std::string name)
 {
+    // std::regex element_pattern("([^\\#]*)#\\d+(\\[\\[[a-zA-Z0-9]+\\]\\])");
+    // std::smatch element_results;
+    // if(regex_match(name, element_results, element_pattern))
+    //     return element_results[1].str() + element_results[2].str();
+
+    // std::regex member_pattern("([^\\#]*)#\\d+(\\.\\.[a-zA-Z0-9_]+)");
+    // std::smatch member_results;
+    // if(regex_match(name, member_results, member_pattern))
+    //     return member_results[1].str() + member_results[2].str();
+
+    std::regex pattern("([^\\#]*)#\\d+([^\\d].*)");
+    std::smatch results;
+    if(regex_match(name, results, pattern))
+        return results[1].str() + results[2].str();
+
     return name.substr(0, name.find_first_of('#'));
 }
 
 int closure::get_node(std::string name)
 {
-    for(int i = 0; i < nodes.size(); i++)
+    for(int i = 0; i < int(nodes.size()); i++)
         if(nodes[i].name == name)
             return i;
 
@@ -151,7 +166,7 @@ int closure::get_node(std::string name)
     std::string address = get_address(name);
     int address_id = -1;
 
-    for(int i = 0; i < id_to_address.size(); i++)
+    for(int i = 0; i < int(id_to_address.size()); i++)
     {
         if(id_to_address[i] == address)
         {
@@ -185,25 +200,36 @@ void closure::init_reasonable_edge(int u, int v, edge_kindt kind, Lit l)
     lit_to_edge[l] = std::make_pair(std::make_pair(u, v), kind);
     inactive_edge_t inactive_edge = std::make_pair(std::make_pair(u, v), l);
 
-    if(tail_to_inactive_edges.size() <= u)
+    if(int(tail_to_inactive_edges.size()) <= u)
         tail_to_inactive_edges.resize(u + 1, std::vector<inactive_edge_t>());
     tail_to_inactive_edges[u].push_back(inactive_edge);
 
-    if(head_to_inactive_edges.size() <= v)
+    if(int(head_to_inactive_edges.size()) <= v)
         head_to_inactive_edges.resize(v + 1, std::vector<inactive_edge_t>());
     head_to_inactive_edges[v].push_back(inactive_edge);
 
-    if(tail_head_to_inactive_lit.size() <= u)
+    if(int(tail_head_to_inactive_lit.size()) <= u)
         tail_head_to_inactive_lit.resize(u + 1, std::vector<Lit>());
-    if(tail_head_to_inactive_lit[u].size() <= v)
+    if(int(tail_head_to_inactive_lit[u].size()) <= v)
         tail_head_to_inactive_lit[u].resize(v + 1, lit_Error);
     tail_head_to_inactive_lit[u][v] = l;
 
-    if(kind == OCLT_RFI || kind == OCLT_RFE)
+    if(kind == OC_RF)
     {
         nodes[u].is_write = true;
         nodes[v].is_read = true;
     }
+}
+
+void closure::init_race(int u, int v, Lit l)
+{
+    if(u > v)
+        std::swap(u, v); //make u < v
+
+    if(OC_VERBOSITY >= 1)
+        std::cout << "initing race " << u << " " << v << " with literal " << var(l) << " (" << sign(l) << ")\n";
+
+    pair_to_inactive_races[std::make_pair(u, v)] = l;
 }
 
 bool closure::add_guard_literal(Lit guard_literal, int u)
@@ -244,315 +270,86 @@ std::vector<int> closure::check_guard_literal(Lit guard_literal)
     return ret;
 }
 
-void closure::preventive_propagation(std::set<Lit>& assigned_lit)
+void closure::add_trinary_pattern(int w1, int w2, int r)
 {
-    while(!unvisited_dangerous_edges.empty())
+    // if(OC_VERBOSITY >= 1)
+    //     std::cout << "checking pattern " << w1 << " " << w2 << " " << r << "\n";
+
+    auto rf_lit = check_tail_head_to_inactive_lit(w1, r);
+    if(rf_lit == lit_Error)
+        return;
+    
+    auto guard_lit = nodes[w2].guard;
+
+    auto rf_hold = get_assignment(rf_lit);
+    auto guard_hold = get_assignment(guard_lit);
+
+    if(rf_hold == l_False || guard_hold == l_False)
+        return;
+
+    if(rf_hold == l_True && guard_hold == l_True)
     {
-        auto& unvisited_dangerous_edge = get_dangerous_edge(unvisited_dangerous_edges.back());
-        unvisited_dangerous_edges.pop_back();
-        unvisited_dangerous_edge.visited = true;
-
-        auto from = unvisited_dangerous_edge.from;
-        auto to = unvisited_dangerous_edge.to;
-
         if(OC_VERBOSITY >= 1)
-            std::cout << "visiting dangerous edge " << from << " " << to << " " << unvisited_dangerous_edge.unvisited_reason << ", NOW!\n";
+            std::cout << "shit! we cannot save it\n";
+        return;
+    }
 
-#if DANGEROUS_EDGE_CLOSURE
-        if(unvisited_dangerous_edge.unvisited_reason == unvisited_reasont::newly_added_prop)
+    triplets_to_check.push_back(triplett(w1, w2, r, rf_lit, guard_lit));
+}
+
+void closure::check_trinary_pattern()
+{
+    while(!triplets_to_check.empty())
+    {
+        auto triplet = triplets_to_check.back();
+        triplets_to_check.pop_back();
+
+        auto& w1 = triplet.w1;
+        auto& w2 = triplet.w2;
+        auto& r = triplet.r;
+        auto& rf_lit = triplet.rf_lit;
+        auto& guard_lit = triplet.guard_lit;
+        
+        auto rf_hold = get_assignment(rf_lit);
+        auto guard_hold = get_assignment(guard_lit);
+
+        auto& reason_w1w2 = find_edge(w1, w2).reason;
+        auto& reason_w2r = find_edge(w2, r).reason;
+
+        if(rf_hold == l_True) //just add guard false
         {
-            //transitive closure, only for newly added dangerous edges obtained from preventive propagation
-            auto from_rep = union_find_parent(from);
-            auto to_rep = union_find_parent(to);
-            if(!has_edge(to, from))
-            {
-                for (auto& from_out_edge: nodes[from_rep].out)
-                    for (auto& to_in_edge: nodes[to_rep].in)
-                    {
-                        auto from_out_rep = from_out_edge.to;
-                        auto to_in_rep = to_in_edge.from;
-                        if (has_edge(to_in_rep, from_out_rep))
-                            continue;
+            auto unit_lv = reason_w1w2;
+            append(unit_lv, reason_w2r);
+            push_need(unit_lv, rf_lit);
+            push_need(unit_lv, guard_lit);
+            neg(unit_lv);
 
-                        for (auto from_out : nodes[from_out_rep].atomic_items)
-                            for (auto to_in : nodes[to_in_rep].atomic_items) {
-                                if (nodes[to_in].address != nodes[from_out].address)
-                                    continue;
+            solver->assign_literal(~guard_lit, unit_lv);
 
-                                if (nodes[to_in].is_write) //ws, fr
-                                {
-                                    auto new_dangerous_reason = unvisited_dangerous_edge.dangerous_reason;
-                                    append(new_dangerous_reason, from_out_edge.reason);
-                                    append(new_dangerous_reason, to_in_edge.reason);
-
-                                    if (!dangerous_edge_exist(from_out, to_in))
-                                    {
-                                        if (OC_VERBOSITY >= 1)
-                                            std::cout << "new dangerous edge: " << from_out << " " << to_in
-                                                      << ", by transitive closure\n";
-
-                                        auto new_dangerous_edge_index = new_dangerous_edge(from_out, to_in, new_dangerous_reason, newly_added_closure);
-                                        unvisited_dangerous_edges.push_back(new_dangerous_edge_index);
-                                    }
-                                }
-                                else if (nodes[from_out].is_write) //rf, just set its rf_variable false
-                                {
-                                    auto rf_lit_cand = check_tail_head_to_inactive_lit(from_out,to_in);
-                                    if(rf_lit_cand == lit_Error)
-                                        continue;
-
-                                    if (get_assignment(rf_lit_cand) != l_Undef)
-                                        continue;
-                                    if (contains(assigned_lit, rf_lit_cand));
-                                    continue;
-
-                                    auto unit_lv = unvisited_dangerous_edge.dangerous_reason;
-                                    append(unit_lv, find_edge(from, from_out).reason);
-                                    append(unit_lv, find_edge(to_in, to).reason);
-                                    push_need(unit_lv, rf_lit_cand);
-
-                                    neg(unit_lv);
-
-                                    if (OC_VERBOSITY >= 1)
-                                        std::cout << "during preventive propagation, set rf" << from_out << " " << to_in << " false\n";
-
-                                    solver->assign_literal(~rf_lit_cand, unit_lv);
-                                    assigned_lit.insert(rf_lit_cand);
-                                }
-                            }
-                    }
-            }
+            if(OC_VERBOSITY >= 1)
+                std::cout << "using pattern, propagate guard " << w2 << " false\n";
         }
-#endif //DANGEROUS_EDGE_CLOSURE
-
-        auto unvisited_reason = unvisited_dangerous_edge.unvisited_reason;
-        if(nodes[from].is_write && nodes[to].is_write)
+        else if(guard_hold == l_True) //just add rf false
         {
-            int w1 = from;
-            int w2 = to;
-            int w1_rep = union_find_parent(w1);
-            int w2_rep = union_find_parent(w2);
+            auto unit_lv = reason_w1w2;
+            append(unit_lv, reason_w2r);
+            push_need(unit_lv, rf_lit);
+            push_need(unit_lv, guard_lit);
+            neg(unit_lv);
 
-            //only no rf
-            if(nodes[w1].guard_lighted && unvisited_reason != rf_activated && tail_to_inactive_edges.size() > w2)
-            {
-                for(auto& inactive_rf: tail_to_inactive_edges[w2])
-                {
-                    if(get_assignment(inactive_rf.second) != l_Undef)
-                        continue;
+            solver->assign_literal(~rf_lit, unit_lv);
 
-                    auto r = inactive_rf.first.second;
-                    int r_rep = union_find_parent(r);
-
-                    if(!has_edge(w1, r))
-                        continue;
-
-                    auto inactive_rf_reason = inactive_rf.second;
-
-                    auto unit_lv = unvisited_dangerous_edge.dangerous_reason;
-                    push_need(unit_lv, inactive_rf_reason);
-                    push_need(unit_lv, nodes[w1].guard);
-                    append(unit_lv, find_edge(w1, r).reason);
-                    
-                    neg(unit_lv);
-                    
-                    if(OC_VERBOSITY >= 1)
-                        std::cout << "during preventive propagation, set rf" << inactive_rf.first.first << " " << inactive_rf.first.second << " false by ws\n";
-
-                    solver->assign_literal(~inactive_rf_reason, unit_lv);
-                }
-            }
-
-            closure_edget* active_rfs;
-            int active_rf_num;
-            if(unvisited_reason != rf_activated)
-            {
-                active_rfs = &(nodes[w2].out_rf[0]);
-                active_rf_num = nodes[w2].out_rf.size();
-            }
-            else
-            {
-                for(auto& rf : nodes[w2].out_rf)
-                    if(rf.to == unvisited_dangerous_edge.unvisited_rf_node)
-                    {
-                        active_rfs = &rf;
-                        active_rf_num = 1;
-                        break;
-                    }
-            }
-
-            //only no guard(w1)
-            if(!nodes[w1].guard_lighted && get_assignment(nodes[w1].guard) == l_Undef)
-            {
-                for(int i = 0; i < active_rf_num; i++)
-                {
-                    auto& active_rf = *(active_rfs + i);
-                    auto r = active_rf.to;
-                    int r_rep = union_find_parent(r);
-                    
-                    if(!has_edge(w1, r))
-                        continue;
-                    
-                    auto unit_lv = unvisited_dangerous_edge.dangerous_reason;
-                    append(unit_lv, active_rf.reason);
-                    push_need(unit_lv, nodes[w1].guard);
-                    append(unit_lv, find_edge(w1, r).reason);
-
-                    neg(unit_lv);
-
-                    if(OC_VERBOSITY >= 1)
-                        std::cout << "during preventive propagation, set guard of " << w1 << " false by ws\n";
-
-                    solver->assign_literal(~nodes[w1].guard, unit_lv);
-                }
-            }
-
-            //only no star edge
-            if(nodes[w1].guard_lighted)
-            {
-                for(int i = 0; i < active_rf_num; i++)
-                {
-                    auto& active_rf = *(active_rfs + i);
-                    auto r = active_rf.to;
-                    
-                    if(has_edge(w1, r))
-                    {
-                        //std::cout << "WARNING: During preventive propagation, w1 = " << w1 << ", w2 = " << w2 << ", r = " << r << "\n";
-                        continue;
-                    }
-                    
-                    auto new_dangerous_reason = unvisited_dangerous_edge.dangerous_reason;
-                    new_dangerous_reason.push_back(nodes[w1].guard);
-                    append(new_dangerous_reason, active_rf.reason);
-
-                    if(!dangerous_edge_exist(w1, r))
-                    {
-                        if(OC_VERBOSITY >= 1)
-                            std::cout << "new dangerous edge: " << w1 << " " << r << ", by ws\n";
-
-                        auto new_dangerous_edge_index = new_dangerous_edge(w1, r, new_dangerous_reason, newly_added_prop);
-                        unvisited_dangerous_edges.push_back(new_dangerous_edge_index);
-                        //unvisited_dangerous_edge.implies.push_back(new_dangerous_edge_index);
-                    }
-                }
-            }
+            if(OC_VERBOSITY >= 1)
+                std::cout << "using pattern, propagate rf " << w1 << " " << r << " false\n";
         }
-
-        if(nodes[from].is_read && nodes[to].is_write)
+        else
         {
-            int r = from;
-            int w2 = to;
-            int r_rep = union_find_parent(r);
-            int w2_rep = union_find_parent(w2);
+            //add "binary clause"
+            triplett triplet(w1, w2, r, rf_lit, guard_lit);
+            rf_to_triplets[rf_lit].push_back(triplet);
+            guard_to_triplets[guard_lit].push_back(triplet);
 
-            //only no rf
-            if(nodes[w2].guard_lighted && unvisited_reason != rf_activated && head_to_inactive_edges.size() > r)
-            {
-                for(auto& inactive_rf: head_to_inactive_edges[r])
-                {
-                    if(get_assignment(inactive_rf.second) != l_Undef)
-                        continue;
-                    
-                    auto w1 = inactive_rf.first.first;
-                    int w1_rep = union_find_parent(w1);
-
-                    if(w1 == w2 || !has_edge(w1, w2))
-                        continue;
-
-                    auto inactive_rf_reason = inactive_rf.second;
-
-                    auto unit_lv = unvisited_dangerous_edge.dangerous_reason;
-                    push_need(unit_lv, inactive_rf_reason);
-                    push_need(unit_lv, nodes[w2].guard);
-                    append(unit_lv, find_edge(w1, w2).reason);
-                    
-                    neg(unit_lv);
-
-                    if(OC_VERBOSITY >= 1)
-                        std::cout << "during preventive propagation, set rf" << inactive_rf.first.first << " " << inactive_rf.first.second << " false by fr\n";
-
-                    solver->assign_literal(~inactive_rf_reason, unit_lv);
-                }
-            }
-
-            closure_edget* active_rfs;
-            int active_rf_num;
-            if(unvisited_reason != rf_activated)
-            {
-                active_rfs = &(nodes[r].in_rf[0]);
-                active_rf_num = nodes[r].in_rf.size();
-            }
-            else
-            {
-                for(auto& rf : nodes[r].in_rf)
-                    if(rf.from == unvisited_dangerous_edge.unvisited_rf_node)
-                    {
-                        active_rfs = &rf;
-                        active_rf_num = 1;
-                        break;
-                    }
-            }
-
-            //only no guard(w2)
-            if(!nodes[w2].guard_lighted && get_assignment(nodes[w2].guard) == l_Undef)
-            {
-                for(int i = 0; i < active_rf_num; i++)
-                {
-                    auto& active_rf = *(active_rfs + i);
-                    auto w1 = active_rf.from;
-                    int w1_rep = union_find_parent(w1);
-                    
-                    if(w1 == w2 || !has_edge(w1, w2))
-                        continue;
-                    
-                    auto active_rf_reason = active_rf.reason;
-
-                    auto unit_lv = unvisited_dangerous_edge.dangerous_reason;
-                    append(unit_lv, active_rf_reason);
-                    push_need(unit_lv, nodes[w2].guard);
-                    append(unit_lv, find_edge(w1, w2).reason);
-                    
-                    neg(unit_lv);
-
-                    if(OC_VERBOSITY >= 1)
-                        std::cout << "during preventive propagation, set guard of " << w2 << " false by fr\n";
-
-                    solver->assign_literal(~nodes[w2].guard, unit_lv);
-                }
-            }
-
-            //only no star edge
-            if(nodes[w2].guard_lighted)
-            {
-                for(int i = 0; i < active_rf_num; i++)
-                {
-                    auto& active_rf = *(active_rfs + i);
-                    auto w1 = active_rf.from;
-                    
-                    if(w1 == w2)
-                        continue;
-
-                    if(has_edge(w1, w2))
-                    {
-                        //std::cout << "WARNING: During preventive propagation, w1 = " << w1 << ", w2 = " << w2 << ", r = " << r << "\n";
-                        continue;
-                    }
-                    
-                    auto new_dangerous_reason = unvisited_dangerous_edge.dangerous_reason;
-                    new_dangerous_reason.push_back(nodes[w2].guard);
-                    append(new_dangerous_reason, active_rf.reason);
-
-                    if(!dangerous_edge_exist(w1, w2))
-                    {
-                        if(OC_VERBOSITY >= 1)
-                            std::cout << "new dangerous edge: " << w1 << " " << w2 << ", by fr\n";
-
-                        auto new_dangerous_edge_index = new_dangerous_edge(w1, w2, new_dangerous_reason, newly_added_prop);
-                        unvisited_dangerous_edges.push_back(new_dangerous_edge_index);
-                        //unvisited_dangerous_edge.implies.push_back(new_dangerous_edge_index);
-                    }
-                }
-            }
+            trail_triplet.push(std::make_pair(rf_lit, guard_lit));
         }
     }
 }
@@ -562,24 +359,54 @@ bool closure::activate_edge(int vi, int wi, edge_kindt kind, literal_vector& rea
     if(OC_VERBOSITY >= 1)
         std::cout << "activating (" << vi << ", " << wi << ", " << kind_to_str(kind) << ")\n";
 
-    std::set<Lit> assigned_lit;
-
     closure_edget edge(vi, wi, kind, reason);
-    if(activate_directed_edge(edge, assigned_lit))
+    if(activate_directed_edge(edge))
         return true;
-
-    preventive_propagation(assigned_lit);
     
+    //revisit triplets
+    if(kind == OC_RF)
+    {
+        auto rf_lit = reason[0];
+        for(auto& triplet : rf_to_triplets[rf_lit])
+        {
+            if(get_assignment(triplet.guard_lit) == l_Undef)
+            {
+                auto& w1 = triplet.w1;
+                auto& w2 = triplet.w2;
+                auto& r = triplet.r;
+                auto& guard_lit = triplet.guard_lit;
+
+                auto& reason_w1w2 = find_edge(w1, w2).reason;
+                auto& reason_w2r = find_edge(w2, r).reason;
+
+                auto unit_lv = reason_w1w2;
+                append(unit_lv, reason_w2r);
+                push_need(unit_lv, rf_lit);
+                push_need(unit_lv, guard_lit);
+                neg(unit_lv);
+
+                solver->assign_literal(~guard_lit, unit_lv);
+
+                if(OC_VERBOSITY >= 1)
+                    std::cout << "revisiting pattern, propagate guard " << w2 << " false\n";
+            }
+        }
+    }
+
+    //visit new triplets
+    check_trinary_pattern();
+
+    show_race();
+
     return false;
 }
 
-bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigned_lit, bool need_closure)
+bool closure::activate_directed_edge(closure_edget &edge, bool need_closure)
 {
-    auto begin = &(nodes[0]);
     auto kind = edge.kind;
     auto& reason = edge.reason;
 
-    if(kind == OCLT_RFE || kind == OCLT_RFI)
+    if(kind == OC_RF)
     {
         nodes[edge.from].out_rf.push_back(edge);
         nodes[edge.to].in_rf.push_back(edge);
@@ -601,12 +428,12 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                 int w2_rep = edge_w2_r_rep_cand.from;
                 for(auto w2_cand: nodes[w2_rep].atomic_writes)
                     if (w2_cand != w1 && nodes[w2_cand].guard_lighted && nodes[w2_cand].address == address)
-                        edges_w2_r.push_back(closure_edget(w2_cand, r, OCLT_NA, edge_w2_r_rep_cand.reason));
+                        edges_w2_r.push_back(closure_edget(w2_cand, r, OC_NA, edge_w2_r_rep_cand.reason));
             }
 
             for(int w2_cand: nodes[r].atomic_in)
                 if(w2_cand != w1 && nodes[w2_cand].guard_lighted && nodes[w2_cand].address == address)
-                    edges_w2_r.push_back(closure_edget(w2_cand, r, OCLT_NA, empty_lv));
+                    edges_w2_r.push_back(closure_edget(w2_cand, r, OC_NA, empty_lv));
 
             for(auto& edge_w2_r: edges_w2_r)
             {
@@ -622,7 +449,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
 
                 process_reason(co_reason);
 
-                closure_edget co(w2, w1, OCLT_NA, co_reason);
+                closure_edget co(w2, w1, OC_NA, co_reason);
 
                 if(OC_VERBOSITY >= 1)
                 {
@@ -631,7 +458,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                     std::cout << nodes[co.from].name << " " << nodes[co.to].name << "\n";
                 }
 
-                if(activate_directed_edge(co, assigned_lit))
+                if(activate_directed_edge(co))
                     return true;
             }
         }
@@ -646,12 +473,12 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                 int w2_rep = edge_w1_w2_rep_cand.to;
                 for(auto w2_cand: nodes[w2_rep].atomic_writes)
                     if (nodes[w2_cand].guard_lighted && nodes[w2_cand].address == address)
-                        edges_w1_w2.push_back(closure_edget(w1, w2_cand, OCLT_NA, edge_w1_w2_rep_cand.reason));
+                        edges_w1_w2.push_back(closure_edget(w1, w2_cand, OC_NA, edge_w1_w2_rep_cand.reason));
             }
 
             for(int w2_cand: nodes[w1].atomic_out)
                 if(nodes[w2_cand].guard_lighted && nodes[w2_cand].address == address)
-                    edges_w1_w2.push_back(closure_edget(w1, w2_cand, OCLT_NA, empty_lv));
+                    edges_w1_w2.push_back(closure_edget(w1, w2_cand, OC_NA, empty_lv));
 
             for(auto& edge_w1_w2: edges_w1_w2)
             {
@@ -667,7 +494,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
 
                 process_reason(fr_reason);
 
-                closure_edget fr(r, w2, OCLT_NA, fr_reason);
+                closure_edget fr(r, w2, OC_NA, fr_reason);
 
                 if(OC_VERBOSITY >= 1)
                 {
@@ -676,34 +503,10 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                     std::cout << nodes[fr.from].name << " " << nodes[fr.to].name << "\n";
                 }
 
-                if(activate_directed_edge(fr, assigned_lit))
+                if(activate_directed_edge(fr))
                     return true;
             }
         }
-
-#if RENEW_DANGEROUS_EDGE
-        //when rf is added, some visited dangerous edges need to revisit
-        for(int w2 : nodes[r].dangerous_out)
-        {
-            //revisit r->w2
-            if(OC_VERBOSITY >= 1)
-                std::cout << "old dangerous edge " << r << " " << w2 << " need to revisit, after rf " << w1 << " " << r << "\n";
-
-            unvisited_dangerous_edges.push_back(renew_dangerous_edge(r, w2, rf_activated, w1));
-        }
-
-        for(auto w0 : nodes[w1].dangerous_in)
-        {
-            if(!nodes[w0].is_write)
-                continue;
-
-            //revisit w0->w1
-            if(OC_VERBOSITY >= 1)
-                std::cout << "old dangerous edge " << w0 << " " << w1 << " need to revisit, after rf " << w1 << " " << r << "\n";
-
-            unvisited_dangerous_edges.push_back(renew_dangerous_edge(w0, w1, rf_activated, r));
-        }
-#endif //RENEW_DANGEROUS_EDGE
     }
 
     int from_rep = union_find_parent(edge.from);
@@ -725,7 +528,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
         if(nodes[edge.from].atomic_in.find(edge.to) != nodes[edge.from].atomic_in.end())
         {
             if(OC_VERBOSITY >= 1)
-                std::cout << "adding " << edge.from << " " << edge.to << " a cycle due to epo\n";
+                std::cout << "adding " << edge.from << " " << edge.to << " a cycle due to apo\n";
 
             conflict_lv = edge.reason;
             return true;
@@ -738,39 +541,106 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
         nodes[from_rep].out_bitset[to_rep] = nodes[from_rep].out.size();
         nodes[from_rep].out.push_back(edge_rep);
         nodes[to_rep].in.push_back(edge_rep);
+        trail_edge.push(std::make_pair(from_rep, to_rep));
+
+        //propagate race
+        for(auto original_from: nodes[from_rep].atomic_items)
+            for(auto original_to: nodes[to_rep].atomic_items)
+            {
+                int from, to;
+                if(original_from > original_to)
+                {
+                    from = original_to;
+                    to = original_from;
+                }
+                else
+                {
+                    from = original_from;
+                    to = original_to;
+                }
+
+                if(pair_to_inactive_races.find(std::make_pair(from, to)) == pair_to_inactive_races.end())
+                    continue;
+
+                auto race_lit = pair_to_inactive_races[std::make_pair(from, to)];
+                auto race_lit_status = get_assignment(race_lit);
+
+                if(race_lit_status == l_False)
+                    continue;
+
+                auto conflict_reason = edge.reason;
+                conflict_reason.push_back(race_lit);
+
+                if(race_lit_status == l_True)
+                {
+                    if(OC_VERBOSITY >= 1)
+                        std::cout << "race" << from << " " << to << " should be set false but already true\n";
+
+                    conflict_lv = conflict_reason;
+                    return true;
+                }
+                else if(race_lit_status == l_Undef)
+                {
+                    neg(conflict_reason);
+
+                    if(OC_VERBOSITY >= 1)
+                        std::cout << "set race" << from << " " << to << " false\n";
+
+                    solver->assign_literal(~race_lit, conflict_reason);
+                }
+                else
+                {
+                    std::cout << "shit! a race_lit_status is not l_True, l_False, or l_Undef\n";
+                }
+
+            }
 
 #if (PROPAGATE_METHOD >= 0)
-        //add dangerous edges
+        //add vital edges, w-w and w-r, and for r-w, just disable rf
         for(auto to: nodes[to_rep].atomic_items)
             for(auto from: nodes[from_rep].atomic_items)
             {
                 if(nodes[to].address != nodes[from].address)
                     continue;
 
-                if(nodes[from].is_write) //ws, fr
-                {
 #if (PROPAGATE_METHOD >= 1)
-                    if(!dangerous_edge_exist(to, from))
-                    {
-                        if(OC_VERBOSITY >= 1)
-                            std::cout << "new dangerous edge " << to << " " << from << ", for normal edge addition\n";
-                        
-                        unvisited_dangerous_edges.push_back(new_dangerous_edge(to, from, reason, newly_added_closure));
+                if(nodes[from].is_write && nodes[to].is_write) //w-w
+                {
+                    if(OC_VERBOSITY >= 1)
+                        std::cout << "new w-w vital edge " << from << " " << to << "\n";
+                    
+                    nodes[from].out_vital.push_back(to);
+                    nodes[to].in_vital.push_back(from);
+                    trail_vital.push(std::make_pair(from, to));
 
-                        if(OC_VERBOSITY >= 1)
-                            std::cout << "newly added index is " << unvisited_dangerous_edges.back() << "\n" << "node size is " << nodes.size() << "\n";
-                    }
-#endif // (PROPAGATE_METHOD >= 1)
+                    auto& w1 = from;
+                    auto& w2 = to;
+                    for(auto r : nodes[w2].out_vital)
+                        add_trinary_pattern(w1, w2, r);
                 }
-                else if(nodes[to].is_write) //rf, just set its rf_variable false
+
+                if(nodes[from].is_write && nodes[to].is_read) //w-r
+                {
+                    if(OC_VERBOSITY >= 1)
+                        std::cout << "new w-r vital edge " << from << " " << to << "\n";
+                    
+                    nodes[from].out_vital.push_back(to);
+                    nodes[to].in_vital.push_back(from);
+                    trail_vital.push(std::make_pair(from, to));
+
+                    auto& w2 = from;
+                    auto& r = to;
+                    for(auto w1 : nodes[w2].in_vital)
+                        add_trinary_pattern(w1, w2, r);
+                }
+#endif // (PROPAGATE_METHOD >= 1)
+                if(nodes[from].is_read && nodes[to].is_write) //special for rf, just set its rf_variable false
                 {
                     auto rf_lit_cand = check_tail_head_to_inactive_lit(to, from);
                     if(rf_lit_cand == lit_Error)
                         continue;
 
                     if (get_assignment(rf_lit_cand) != l_Undef)
-                        continue;
-                    if (contains(assigned_lit, rf_lit_cand))
                         continue;
 
                     literal_set unit_lv;
@@ -782,19 +652,16 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                         std::cout << "before preventive propagation, set rf" << to << " " << from << " false\n";
 
                     solver->assign_literal(~rf_lit_cand, unit_lv);
-                    assigned_lit.insert(rf_lit_cand);
                 }
             }
 #endif // (PROPAGATE_METHOD >= 0)
 
-        trail_edge.push(std::make_pair(from_rep, to_rep));
-
         if(need_closure)
         {
             auto back_edges = nodes[from_rep].in;
-            back_edges.push_back(closure_edget(from_rep, from_rep, OCLT_NA, empty_lv));
+            back_edges.push_back(closure_edget(from_rep, from_rep, OC_NA, empty_lv));
             auto front_edges = nodes[to_rep].out;
-            front_edges.push_back(closure_edget(to_rep, to_rep, OCLT_NA, empty_lv));
+            front_edges.push_back(closure_edget(to_rep, to_rep, OC_NA, empty_lv));
 
             for (auto &back_edge: back_edges)
                 for (auto &front_edge: front_edges)
@@ -808,12 +675,12 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
 
                     process_reason(na_reason);
 
-                    closure_edget closure_edge(back_edge.from, front_edge.to, OCLT_NA, na_reason);
+                    closure_edget closure_edge(back_edge.from, front_edge.to, OC_NA, na_reason);
 
                     if(OC_VERBOSITY >= 1)
                         std::cout << edge.from << " " << edge.to << " propagate " << closure_edge.from << " " << closure_edge.to << " by transitivity\n";
 
-                    if(activate_directed_edge(closure_edge, assigned_lit, false))
+                    if(activate_directed_edge(closure_edge, false))
                         return true;
 
                 }
@@ -848,7 +715,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
 
                             process_reason(co_reason);
 
-                            closure_edget co(w2, w1, OCLT_NA, co_reason);
+                            closure_edget co(w2, w1, OC_NA, co_reason);
 
                             if (OC_VERBOSITY >= 1)
                             {
@@ -857,7 +724,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                                 std::cout << nodes[co.from].name << " " << nodes[co.to].name << "\n";
                             }
 
-                            if (activate_directed_edge(co, assigned_lit))
+                            if (activate_directed_edge(co))
                                 return true;
                         }
                     }
@@ -893,7 +760,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
 
                         process_reason(fr_reason);
 
-                        closure_edget fr(r, w2, OCLT_NA, fr_reason);
+                        closure_edget fr(r, w2, OC_NA, fr_reason);
 
                         //process_reason(fr_reason);
 
@@ -904,7 +771,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
                             std::cout << nodes[fr.from].name << " " << nodes[fr.to].name << "\n";
                         }
 
-                        if (activate_directed_edge(fr, assigned_lit))
+                        if (activate_directed_edge(fr))
                             return true;
                     }
                 }
@@ -914,7 +781,7 @@ bool closure::activate_directed_edge(closure_edget &edge, std::set<Lit>& assigne
     return false;
 }
 
-bool closure::activate_epo(int u, int v) //always before activating other edges
+bool closure::activate_apo(int u, int v) //always before activating other edges
 {
     // if(union_check(u, v))
     //     std::cout << "WARNING: " << u << " and " << v << " are already together\n";
@@ -926,7 +793,7 @@ bool closure::activate_epo(int u, int v) //always before activating other edges
 
 void closure::atomic_remove_self()
 {
-    for(int i = 0; i < nodes.size(); i++)
+    for(int i = 0; i < int(nodes.size()); i++)
     {
         nodes[i].atomic_in.erase(i);
         nodes[i].atomic_out.erase(i);
@@ -935,8 +802,6 @@ void closure::atomic_remove_self()
 
 bool closure::light_guard(int u)
 {
-    std::set<Lit> assigned_lit;
-
    if(nodes[u].guard_lighted) //this circumstance exist?
    {
        //std::cout << "WARNING: " << u << " is lit twice\n";
@@ -964,12 +829,12 @@ bool closure::light_guard(int u)
                 int w2_rep = edge_w2_r_rep_cand.from;
                 for(auto w2_cand: nodes[w2_rep].atomic_writes)
                     if (nodes[w2_cand].guard_lighted)
-                        edges_w2_r.push_back(closure_edget(w2_cand, r, OCLT_NA, edge_w2_r_rep_cand.reason));
+                        edges_w2_r.push_back(closure_edget(w2_cand, r, OC_NA, edge_w2_r_rep_cand.reason));
             }
 
             for(int w2_cand: nodes[r].atomic_in)
                 if(nodes[w2_cand].guard_lighted)
-                    edges_w2_r.push_back(closure_edget(w2_cand, r, OCLT_NA, empty_lv));
+                    edges_w2_r.push_back(closure_edget(w2_cand, r, OC_NA, empty_lv));
 
             for (auto &edge_w2_r: edges_w2_r)
             {
@@ -985,7 +850,7 @@ bool closure::light_guard(int u)
 
                 process_reason(co_reason);
 
-                closure_edget co(w2, w1, OCLT_NA, co_reason);
+                closure_edget co(w2, w1, OC_NA, co_reason);
 
                 if (OC_VERBOSITY >= 1)
                 {
@@ -994,7 +859,7 @@ bool closure::light_guard(int u)
                     std::cout << nodes[co.from].name << " " << nodes[co.to].name << "\n";
                 }
 
-                if (activate_directed_edge(co, assigned_lit))
+                if (activate_directed_edge(co))
                     return true;
             }
         }
@@ -1012,12 +877,12 @@ bool closure::light_guard(int u)
             int r_rep = edge_w2_r_rep_cand.to;
             for(auto r_cand: nodes[r_rep].atomic_reads)
                 if (!nodes[r_cand].in_rf.empty())
-                    edges_w2_r.push_back(closure_edget(w2, r_cand, OCLT_NA, edge_w2_r_rep_cand.reason));
+                    edges_w2_r.push_back(closure_edget(w2, r_cand, OC_NA, edge_w2_r_rep_cand.reason));
         }
 
         for(int r_cand: nodes[w2].atomic_out)
             if(!nodes[r_cand].in_rf.empty())
-                edges_w2_r.push_back(closure_edget(w2, r_cand, OCLT_NA, empty_lv));
+                edges_w2_r.push_back(closure_edget(w2, r_cand, OC_NA, empty_lv));
 
         for(auto& edge_w2_r: edges_w2_r)
         {
@@ -1042,7 +907,7 @@ bool closure::light_guard(int u)
 
                     process_reason(co_reason);
 
-                    closure_edget co(w2, w1, OCLT_NA, co_reason);
+                    closure_edget co(w2, w1, OC_NA, co_reason);
 
                     if(OC_VERBOSITY >= 1)
                     {
@@ -1050,7 +915,7 @@ bool closure::light_guard(int u)
                         std::cout << nodes[co.from].name << " " << nodes[co.to].name << "\n";
                     }
 
-                    if(activate_directed_edge(co, assigned_lit))
+                    if(activate_directed_edge(co))
                         return true;
                 }
             }
@@ -1069,12 +934,12 @@ bool closure::light_guard(int u)
             int w2_rep = edge_w1_w2_rep_cand.to;
             for(auto w2_cand: nodes[w2_rep].atomic_writes)
                 if (nodes[w2_cand].guard_lighted)
-                    edges_w1_w2.push_back(closure_edget(w1, w2_cand, OCLT_NA, edge_w1_w2_rep_cand.reason));
+                    edges_w1_w2.push_back(closure_edget(w1, w2_cand, OC_NA, edge_w1_w2_rep_cand.reason));
         }
 
         for(int w2_cand: nodes[w1].atomic_out)
             if(nodes[w2_cand].guard_lighted)
-                edges_w1_w2.push_back(closure_edget(w1, w2_cand, OCLT_NA, empty_lv));
+                edges_w1_w2.push_back(closure_edget(w1, w2_cand, OC_NA, empty_lv));
 
         std::vector<closure_edget>& edges_w1_r = nodes[w1].out_rf;
 
@@ -1094,7 +959,7 @@ bool closure::light_guard(int u)
 
                 process_reason(fr_reason);
 
-                closure_edget fr(r, w2, OCLT_NA, fr_reason);
+                closure_edget fr(r, w2, OC_NA, fr_reason);
 
                 if(OC_VERBOSITY >= 1)
                 {
@@ -1103,7 +968,7 @@ bool closure::light_guard(int u)
                     std::cout << nodes[fr.from].name << " " << nodes[fr.to].name << "\n";
                 }
 
-                if(activate_directed_edge(fr, assigned_lit))
+                if(activate_directed_edge(fr))
                     return true;
             }
     }
@@ -1121,12 +986,12 @@ bool closure::light_guard(int u)
             int w1_rep = edge_w1_w2_rep_cand.from;
             for(auto w1_cand: nodes[w1_rep].atomic_writes)
                 if (nodes[w1_cand].guard_lighted)
-                    edges_w1_w2.push_back(closure_edget(w1_cand, w2, OCLT_NA, edge_w1_w2_rep_cand.reason));
+                    edges_w1_w2.push_back(closure_edget(w1_cand, w2, OC_NA, edge_w1_w2_rep_cand.reason));
         }
 
         for(int w1_cand: nodes[w2].atomic_in)
             if(nodes[w1_cand].guard_lighted)
-                edges_w1_w2.push_back(closure_edget(w1_cand, w2, OCLT_NA, empty_lv));
+                edges_w1_w2.push_back(closure_edget(w1_cand, w2, OC_NA, empty_lv));
 
         for (auto &edge_w1_w2: edges_w1_w2)
         {
@@ -1148,7 +1013,7 @@ bool closure::light_guard(int u)
 
                 process_reason(fr_reason);
 
-                closure_edget fr(r, w2, OCLT_NA, fr_reason);
+                closure_edget fr(r, w2, OC_NA, fr_reason);
 
                 if (OC_VERBOSITY >= 1)
                 {
@@ -1157,38 +1022,43 @@ bool closure::light_guard(int u)
                     std::cout << nodes[fr.from].name << " " << nodes[fr.to].name << "\n";
                 }
 
-                if (activate_directed_edge(fr, assigned_lit))
+                if (activate_directed_edge(fr))
                     return true;
             }
         }
     }
 
-#if RENEW_DANGEROUS_EDGE
-    //when guard lighted, some visited dangerous edges need to revisit
-    int w = u;
-
-    for(int w2 : nodes[w].dangerous_out)
+    //revisit triplets
     {
-        //revisit w->w2
-        if(OC_VERBOSITY >= 1)
-            std::cout << "old dangerous edge " << w << " " << w2 << " need to revisit, after lighting " << w << "\n";
+        auto guard_lit = nodes[u].guard;
+        for(auto& triplet : guard_to_triplets[guard_lit])
+        {
+            if(get_assignment(triplet.rf_lit) == l_Undef)
+            {
+                auto& w1 = triplet.w1;
+                auto& w2 = triplet.w2;
+                auto& r = triplet.r;
+                auto& rf_lit = triplet.rf_lit;
 
-        unvisited_dangerous_edges.push_back(renew_dangerous_edge(w, w2, guard_activated));
+                auto& reason_w1w2 = find_edge(w1, w2).reason;
+                auto& reason_w2r = find_edge(w2, r).reason;
+
+                auto unit_lv = reason_w1w2;
+                append(unit_lv, reason_w2r);
+                push_need(unit_lv, rf_lit);
+                push_need(unit_lv, guard_lit);
+                neg(unit_lv);
+
+                solver->assign_literal(~rf_lit, unit_lv);
+
+                if(OC_VERBOSITY >= 1)
+                    std::cout << "revisiting pattern, propagate rf " << w1 << " " << r << " false\n";
+            }
+        }
     }
 
-    for(int r : nodes[w].dangerous_in)
-    {
-        if(!nodes[r].is_read)
-            continue;
-
-        //revisit r->w
-        if(OC_VERBOSITY >= 1)
-            std::cout << "old dangerous edge " << r << " " << w << " need to revisit, after lighting " << w << "\n";
-
-        unvisited_dangerous_edges.push_back(renew_dangerous_edge(r, w, guard_activated));
-    }
-#endif //RENEW_DANGEROUS_EDGE
-    preventive_propagation(assigned_lit);
+    //visit new triplets
+    check_trinary_pattern();
 
     return false;
 }
@@ -1197,8 +1067,9 @@ void closure::push_scope()
 {
     trail_rf_lim.push(trail_rf.size());
     trail_edge_lim.push(trail_edge.size());
+    trail_vital_lim.push(trail_vital.size());
     trail_light_guard_lim.push(trail_light_guard.size());
-    trail_dangerous_edge_lim.push(trail_dangerous_edge.size());
+    trail_triplet_lim.push(trail_triplet.size());
 }
 
 void closure::pop_scope(int new_level)
@@ -1222,6 +1093,15 @@ void closure::pop_scope(int new_level)
     trail_rf.shrink(trail_rf.size() - trail_rf_lim[new_level]);
     trail_rf_lim.shrink(trail_rf_lim.size() - new_level);
 
+    for (int c = trail_vital.size() - 1; c >= trail_vital_lim[new_level]; c--)
+    {
+        auto e = trail_vital[c];
+        nodes[e.first].out_vital.pop_back();
+        nodes[e.second].in_vital.pop_back();
+    }
+    trail_vital.shrink(trail_vital.size() - trail_vital_lim[new_level]);
+    trail_vital_lim.shrink(trail_vital_lim.size() - new_level);
+
     for (int c = trail_light_guard.size() - 1; c >= trail_light_guard_lim[new_level]; c--)
     {
         auto u = trail_light_guard[c];
@@ -1230,15 +1110,14 @@ void closure::pop_scope(int new_level)
     trail_light_guard.shrink(trail_light_guard.size() - trail_light_guard_lim[new_level]);
     trail_light_guard_lim.shrink(trail_light_guard_lim.size() - new_level);
 
-    unvisited_dangerous_edges.clear();
-
-    for (int c = trail_dangerous_edge.size() - 1; c >= trail_dangerous_edge_lim[new_level]; c--)
+    for (int c = trail_triplet.size() - 1; c >= trail_triplet_lim[new_level]; c--)
     {
-        auto dangerous_edge = trail_dangerous_edge[c];
-        remove_dangerous_edge(dangerous_edge.first, dangerous_edge.second);
+        auto lits = trail_triplet[c];
+        rf_to_triplets[lits.first].pop_back();
+        guard_to_triplets[lits.second].pop_back();
     }
-    trail_dangerous_edge.shrink(trail_dangerous_edge.size() - trail_dangerous_edge_lim[new_level]);
-    trail_dangerous_edge_lim.shrink(trail_dangerous_edge_lim.size() - new_level);
+    trail_triplet.shrink(trail_triplet.size() - trail_triplet_lim[new_level]);
+    trail_triplet_lim.shrink(trail_triplet_lim.size() - new_level);
 }
 
 //void closure::show_edges()
@@ -1264,15 +1143,30 @@ void closure::pop_scope(int new_level)
 //    }
 //}
 
+void closure::show_race()
+{
+    if(OC_VERBOSITY < 1)
+        return;
+
+    for(auto race_pair: pair_to_inactive_races)
+    {
+        int from = race_pair.first.first;
+        int to = race_pair.first.second;
+        auto race_lit = race_pair.second;
+
+        std::cout << "race " << from << " " << to << "'s literal is " << var(race_lit) << "(" << sign(race_lit) << "), whose assignment is " << toInt(get_assignment(race_lit)) << "\n";
+    }
+}
+
 void closure::show_rf()
 {
     if(OC_VERBOSITY < 1)
         return;
 
-    std::cout << "current lighted nodes:";
-    for(int i = 0; i < nodes.size(); i++)
+    std::cout << "current lighted nodes:\n";
+    for(int i = 0; i < int(nodes.size()); i++)
         if(nodes[i].guard_lighted || !nodes[i].in_rf.empty())
-            std::cout << i << " ";
+            std::cout << i << "(" << nodes[i].name << ")\n";
     std::cout << "\n";
 
     std::cout << "current rf:\n";
@@ -1283,8 +1177,10 @@ void closure::show_rf()
             std::cout << rf.from << "(" << nodes[rf.from].name << ") " << rf.to << "(" << nodes[rf.to].name << ")\n";
     }
 
+    show_race();
+
     std::cout << "current outs:\n";
-    for(int i = 0; i < nodes.size(); i++)
+    for(int i = 0; i < int(nodes.size()); i++)
     {
         std::cout << i << "has outs: ";
         for(auto& edge: nodes[union_find_parent(i)].out)
@@ -1296,7 +1192,7 @@ void closure::show_rf()
     }
 
     std::cout << "current ins:\n";
-    for(int i = 0; i < nodes.size(); i++)
+    for(int i = 0; i < int(nodes.size()); i++)
     {
         std::cout << i << "has ins: ";
         for(auto& edge: nodes[union_find_parent(i)].in)
@@ -1308,10 +1204,35 @@ void closure::show_rf()
     }
 }
 
+void closure::show_model()
+{
+    if(OC_VERBOSITY < 1)
+        return;
+
+    std::cout << "Happened events:\n";
+    for(int i = 0; i < int(nodes.size()); i++)
+        if(nodes[i].guard_lighted || !nodes[i].in_rf.empty())
+            std::cout << "\t" << nodes[i] << "\n";
+    std::cout << "\n";
+
+    std::cout << "Unhappened events:\n";
+    for(int i = 0; i < int(nodes.size()); i++)
+        if(!nodes[i].guard_lighted && nodes[i].in_rf.empty())
+            std::cout << "\t" << nodes[i] << "\n";
+    std::cout << "\n";
+
+    std::cout << "Read-from relations:\n";
+    for(auto& node: nodes)
+        for(auto& rf: node.out_rf)
+            std::cout << "\t" << nodes[rf.from] << " " << nodes[rf.to] << "\n";
+    std::cout << "\n";
+
+    
+}
+
 closure::simple_nodet closure::simplify_node(int node_id)
 {
     auto& node = nodes[node_id];
-    auto& represent_node = nodes[union_find_parent(node_id)];
 
     simple_nodet simple_node;
     simple_node.name = node.name;
@@ -1331,7 +1252,7 @@ void closure::final_check()
 {
     // get model
     std::vector<simple_nodet> simple_nodes;
-    for(int i = 0; i < nodes.size(); i++)
+    for(int i = 0; i < int(nodes.size()); i++)
         simple_nodes.push_back(simplify_node(i));
 
     // for(int i = 0; i < nodes.size(); i++)
@@ -1345,7 +1266,7 @@ void closure::final_check()
     write_order.clear();
 
     std::vector<int> zero_degree_nodes;
-    for(int i = 0; i < simple_nodes.size(); i++)
+    for(int i = 0; i < int(simple_nodes.size()); i++)
         if(simple_nodes[i].in_degree == 0 && is_representative(i))
             zero_degree_nodes.push_back(i);
 
@@ -1355,6 +1276,7 @@ void closure::final_check()
     {
         int visiting_node = zero_degree_nodes.back();
         zero_degree_nodes.pop_back();
+        int node_order = visited_node_num;
         visited_node_num++;
 
         std::vector<std::pair<int, int> > visiting_items_locations;
@@ -1371,10 +1293,13 @@ void closure::final_check()
         {
             auto item = item_location.first;
             auto name = simple_nodes[item].name;
-            if(simple_nodes[item].is_write && 
-                name.find("__CPROVER") == std::string::npos && 
-                name.find("argv'") == std::string::npos)
+            // if(simple_nodes[item].is_write && 
+            //     name.find("__CPROVER") == std::string::npos && 
+            //     name.find("argv'") == std::string::npos)
+            {
                 write_order.push_back(name);
+                solver->oc_result_order->insert(std::make_pair(name, node_order));
+            }
         }
 
         for(auto out_node : simple_nodes[visiting_node].out)
@@ -1418,12 +1343,12 @@ void closure::final_check()
                     int w2_rep = edge_w2_r_rep_cand.from;
                     for (auto w2_cand: nodes[w2_rep].atomic_writes)
                         if (nodes[w2_cand].guard_lighted)
-                            edges_w2_r.push_back(closure_edget(w2_cand, r, OCLT_NA, edge_w2_r_rep_cand.reason));
+                            edges_w2_r.push_back(closure_edget(w2_cand, r, OC_NA, edge_w2_r_rep_cand.reason));
                 }
 
                 for (int w2_cand: nodes[r].atomic_in)
                     if (nodes[w2_cand].guard_lighted)
-                        edges_w2_r.push_back(closure_edget(w2_cand, r, OCLT_NA, empty_lv));
+                        edges_w2_r.push_back(closure_edget(w2_cand, r, OC_NA, empty_lv));
 
                 for (auto &edge_w2_r: edges_w2_r)
                 {
@@ -1437,7 +1362,7 @@ void closure::final_check()
                     push_need(co_reason, nodes[w1].guard);
                     push_need(co_reason, nodes[w2].guard);
 
-                    closure_edget co(w2, w1, OCLT_NA, co_reason);
+                    closure_edget co(w2, w1, OC_NA, co_reason);
 
                     int w2_rep = union_find_parent(w2);
 
@@ -1466,12 +1391,12 @@ void closure::final_check()
                     int w2_rep = edge_w1_w2_rep_cand.to;
                     for (auto w2_cand: nodes[w2_rep].atomic_writes)
                         if (nodes[w2_cand].guard_lighted)
-                            edges_w1_w2.push_back(closure_edget(w1, w2_cand, OCLT_NA, edge_w1_w2_rep_cand.reason));
+                            edges_w1_w2.push_back(closure_edget(w1, w2_cand, OC_NA, edge_w1_w2_rep_cand.reason));
                 }
 
                 for (int w2_cand: nodes[w1].atomic_out)
                     if (nodes[w2_cand].guard_lighted)
-                        edges_w1_w2.push_back(closure_edget(w1, w2_cand, OCLT_NA, empty_lv));
+                        edges_w1_w2.push_back(closure_edget(w1, w2_cand, OC_NA, empty_lv));
 
                 for (auto &edge_w1_w2: edges_w1_w2)
                 {
@@ -1491,7 +1416,7 @@ void closure::final_check()
                     //newly added
                     process_reason(fr_reason);
 
-                    closure_edget fr(r, w2, OCLT_NA, fr_reason);
+                    closure_edget fr(r, w2, OC_NA, fr_reason);
 
                     int w2_rep = union_find_parent(w2);
 
@@ -1515,7 +1440,7 @@ decide_entryt closure::get_decide_entry(Lit l)
 {
     if(lit_to_edge.find(l) != lit_to_edge.end())
         return lit_to_edge[l];
-    return std::make_pair(std::make_pair(-1, -1), OCLT_PO);
+    return std::make_pair(std::make_pair(-1, -1), OC_PO);
 }
 
 bool closure::use_available_info()

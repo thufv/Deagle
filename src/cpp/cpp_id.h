@@ -6,58 +6,67 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_ID_H
-#define CPROVER_CPP_ID_H
+/// \file
+/// C++ Language Type Checking
 
-#include <cassert>
-#include <list>
+#ifndef CPROVER_CPP_CPP_ID_H
+#define CPROVER_CPP_CPP_ID_H
+
 #include <map>
 #include <string>
-#include <set>
 #include <iosfwd>
 
 #include <util/expr.h>
-#include <util/std_types.h>
-
-typedef std::multimap<irep_idt, class cpp_idt> cpp_id_mapt;
-
-class cpp_scopet;
+#include <util/invariant.h>
 
 class cpp_idt
 {
 public:
   cpp_idt();
 
-  typedef enum
+  enum class id_classt
   {
-    UNKNOWN, SYMBOL, TYPEDEF, CLASS, ENUM, TEMPLATE,
-    TEMPLATE_PARAMETER, NAMESPACE, BLOCK_SCOPE,
-    TEMPLATE_SCOPE, ROOT_SCOPE
-  } id_classt;
+    UNKNOWN,
+    SYMBOL,
+    TYPEDEF,
+    CLASS,
+    ENUM,
+    TEMPLATE,
+    TEMPLATE_PARAMETER,
+    NAMESPACE,
+    BLOCK_SCOPE,
+    TEMPLATE_SCOPE,
+    ROOT_SCOPE,
+  };
 
   bool is_member, is_method, is_static_member,
        is_scope, is_constructor;
 
   id_classt id_class;
 
-  inline bool is_class() const
+  bool is_class() const
   {
-    return id_class==CLASS;
+    return id_class==id_classt::CLASS;
   }
 
-  inline bool is_enum() const
+  bool is_enum() const
   {
-    return id_class==ENUM;
+    return id_class==id_classt::ENUM;
   }
 
-  inline bool is_namespace() const
+  bool is_namespace() const
   {
-    return id_class==NAMESPACE;
+    return id_class==id_classt::NAMESPACE;
   }
 
-  inline bool is_typedef() const
+  bool is_typedef() const
   {
-    return id_class==TYPEDEF;
+    return id_class==id_classt::TYPEDEF;
+  }
+
+  bool is_template_scope() const
+  {
+    return id_class == id_classt::TEMPLATE_SCOPE;
   }
 
   irep_idt identifier, base_name;
@@ -67,45 +76,22 @@ public:
   exprt this_expr;
 
   // scope data
-  std::string prefix;
+  std::string prefix, suffix;
   unsigned compound_counter;
-  
-  cpp_idt &insert(const irep_idt &_base_name)
+
+  cpp_idt &get_parent() const
   {
-    cpp_id_mapt::iterator it=
-      sub.insert(std::pair<irep_idt, cpp_idt>
-        (_base_name, cpp_idt()));
-
-    it->second.base_name=_base_name;
-    it->second.set_parent(*this);
-
-    return it->second;
-  }
-
-  cpp_idt &insert(const cpp_idt &cpp_id)
-  {
-    cpp_id_mapt::iterator it=
-      sub.insert(std::pair<irep_idt, cpp_idt>
-        (cpp_id.base_name, cpp_id));
-
-    it->second.set_parent(*this);
-
-    return it->second;
-  }
-
-  inline cpp_idt &get_parent() const
-  {
-    assert(parent!=NULL);
+    PRECONDITION(parent!=nullptr);
     return *parent;
   }
 
-  inline void set_parent(cpp_idt &_parent)
+  void set_parent(cpp_idt &_parent)
   {
     assert(_parent.is_scope);
     parent=&_parent;
   }
 
-  inline void clear()
+  void clear()
   {
     *this=cpp_idt();
   }
@@ -113,12 +99,10 @@ public:
   void print(std::ostream &out, unsigned indent=0) const;
   void print_fields(std::ostream &out, unsigned indent=0) const;
 
-  friend class cpp_scopet;
-
 protected:
+  typedef std::multimap<irep_idt, cpp_idt> cpp_id_mapt;
   cpp_id_mapt sub;
 
-private:
   // These are used for base classes and 'using' clauses.
   typedef std::vector<cpp_idt *> scope_listt;
   scope_listt using_scopes, secondary_scopes;
@@ -128,4 +112,4 @@ private:
 std::ostream &operator<<(std::ostream &out, const cpp_idt &cpp_id);
 std::ostream &operator<<(std::ostream &out, const cpp_idt::id_classt &id_class);
 
-#endif
+#endif // CPROVER_CPP_CPP_ID_H

@@ -6,173 +6,176 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+#include "boolbv.h"
+
 #include <algorithm>
 #include <iostream>
 
-#include <util/std_types.h>
+#include <util/bitvector_types.h>
+#include <util/c_types.h>
+#include <util/floatbv_expr.h>
 
-#include "boolbv.h"
+#include <solvers/floatbv/float_utils.h>
 
-#include "../floatbv/float_utils.h"
-
-/*******************************************************************\
-
-Function: boolbvt::convert_floatbv_typecast
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_floatbv_typecast(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_floatbv_typecast(const floatbv_typecast_exprt &expr)
 {
-  const exprt::operandst &operands=expr.operands();
-  
-  if(operands.size()!=2)
-    throw "operator "+expr.id_string()+" takes two operands";
-
-  const exprt &op0=expr.op0(); // number to convert
-  const exprt &op1=expr.op1(); // rounding mode
+  const exprt &op0=expr.op(); // number to convert
+  const exprt &op1=expr.rounding_mode(); // rounding mode
 
   bvt bv0=convert_bv(op0);
   bvt bv1=convert_bv(op1);
 
-  const typet &src_type=ns.follow(expr.op0().type());
-  const typet &dest_type=ns.follow(expr.type());
-  
+  const typet &src_type = expr.op0().type();
+  const typet &dest_type = expr.type();
+
   if(src_type==dest_type) // redundant type cast?
+    return bv0;
+
+  if(src_type.id() == ID_c_bit_field)
   {
-    bv=bv0;
-    return;
+    // go through underlying type
+    return convert_floatbv_typecast(floatbv_typecast_exprt(
+      typecast_exprt(op0, to_c_bit_field_type(src_type).underlying_type()),
+      op1,
+      dest_type));
   }
 
   float_utilst float_utils(prop);
-  
+
   float_utils.set_rounding_mode(convert_bv(op1));
-  
+
   if(src_type.id()==ID_floatbv &&
      dest_type.id()==ID_floatbv)
   {
-    float_utils.spec=to_floatbv_type(src_type);
-    bv=float_utils.conversion(bv0, to_floatbv_type(dest_type));
+    float_utils.spec=ieee_float_spect(to_floatbv_type(src_type));
+    return
+      float_utils.conversion(
+        bv0,
+        ieee_float_spect(to_floatbv_type(dest_type)));
   }
   else if(src_type.id()==ID_signedbv &&
           dest_type.id()==ID_floatbv)
   {
-    float_utils.spec=to_floatbv_type(dest_type);
-    bv=float_utils.from_signed_integer(bv0);
+    float_utils.spec=ieee_float_spect(to_floatbv_type(dest_type));
+    return float_utils.from_signed_integer(bv0);
   }
   else if(src_type.id()==ID_unsignedbv &&
           dest_type.id()==ID_floatbv)
   {
-    float_utils.spec=to_floatbv_type(dest_type);
-    bv=float_utils.from_unsigned_integer(bv0);
+    float_utils.spec=ieee_float_spect(to_floatbv_type(dest_type));
+    return float_utils.from_unsigned_integer(bv0);
+  }
+  else if(src_type.id()==ID_floatbv &&
+          dest_type.id()==ID_signedbv)
+  {
+    std::size_t dest_width=to_signedbv_type(dest_type).get_width();
+    float_utils.spec=ieee_float_spect(to_floatbv_type(src_type));
+    return float_utils.to_signed_integer(bv0, dest_width);
+  }
+  else if(src_type.id()==ID_floatbv &&
+          dest_type.id()==ID_unsignedbv)
+  {
+    std::size_t dest_width=to_unsignedbv_type(dest_type).get_width();
+    float_utils.spec=ieee_float_spect(to_floatbv_type(src_type));
+    return float_utils.to_unsigned_integer(bv0, dest_width);
   }
   else
-    return conversion_failed(expr, bv);
+    return conversion_failed(expr);
 }
 
-/*******************************************************************\
-
-Function: boolbvt::convert_floatbv_op
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_floatbv_op(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_floatbv_op(const ieee_float_op_exprt &expr)
 {
-  const exprt::operandst &operands=expr.operands();
-  
-  if(operands.size()!=3)
-    throw "operator "+expr.id_string()+" takes three operands";
+  const exprt &lhs = expr.lhs();
+  const exprt &rhs = expr.rhs();
+  const exprt &rounding_mode = expr.rounding_mode();
 
-  const exprt &op0=expr.op0(); // first operand
-  const exprt &op1=expr.op1(); // second operand
-  const exprt &op2=expr.op2(); // rounding mode
+  bvt lhs_as_bv = convert_bv(lhs);
+  bvt rhs_as_bv = convert_bv(rhs);
+  bvt rounding_mode_as_bv = convert_bv(rounding_mode);
 
-  bvt bv0=convert_bv(op0);
-  bvt bv1=convert_bv(op1);
-  bvt bv2=convert_bv(op2);
-
-  const typet &type=ns.follow(expr.type());
-
-  if(op0.type()!=type || op1.type()!=type)
-  {
-    std::cerr << expr.pretty() << std::endl;
-    throw "float op with mixed types";
-  }
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    lhs.type() == expr.type() && rhs.type() == expr.type(),
+    "both operands of a floating point operator must match the expression type",
+    irep_pretty_diagnosticst{expr});
 
   float_utilst float_utils(prop);
-  
-  float_utils.set_rounding_mode(bv2);
 
-  if(type.id()==ID_floatbv)
+  float_utils.set_rounding_mode(rounding_mode_as_bv);
+
+  if(expr.type().id() == ID_floatbv)
   {
-    float_utils.spec=to_floatbv_type(expr.type());
+    float_utils.spec=ieee_float_spect(to_floatbv_type(expr.type()));
 
     if(expr.id()==ID_floatbv_plus)
-      bv=float_utils.add_sub(bv0, bv1, false);
+      return float_utils.add_sub(lhs_as_bv, rhs_as_bv, false);
     else if(expr.id()==ID_floatbv_minus)
-      bv=float_utils.add_sub(bv0, bv1, true);
+      return float_utils.add_sub(lhs_as_bv, rhs_as_bv, true);
     else if(expr.id()==ID_floatbv_mult)
-      bv=float_utils.mul(bv0, bv1);
+      return float_utils.mul(lhs_as_bv, rhs_as_bv);
     else if(expr.id()==ID_floatbv_div)
-      bv=float_utils.div(bv0, bv1);
+      return float_utils.div(lhs_as_bv, rhs_as_bv);
     else
-      assert(false);
+      UNREACHABLE;
   }
-  else if(type.id()==ID_vector || type.id()==ID_complex)
+  else if(expr.type().id() == ID_vector || expr.type().id() == ID_complex)
   {
-    const typet &subtype=ns.follow(type.subtype());
-    
+    const typet &subtype = to_type_with_subtype(expr.type()).subtype();
+
     if(subtype.id()==ID_floatbv)
     {
-      float_utils.spec=to_floatbv_type(subtype);
+      float_utils.spec=ieee_float_spect(to_floatbv_type(subtype));
 
-      unsigned width=boolbv_width(type);
-      unsigned sub_width=boolbv_width(subtype);
+      std::size_t width = boolbv_width(expr.type());
+      std::size_t sub_width=boolbv_width(subtype);
 
-      if(sub_width==0 || width%sub_width!=0)
-        throw "convert_floatbv_op: unexpected vector operand width";
+      DATA_INVARIANT(
+        sub_width > 0 && width % sub_width == 0,
+        "width of a vector subtype must be positive and evenly divide the "
+        "width of the vector");
 
-      unsigned size=width/sub_width;
-      bv.resize(width);
+      std::size_t size=width/sub_width;
+      bvt result_bv;
+      result_bv.resize(width);
 
-      for(unsigned i=0; i<size; i++)
+      for(std::size_t i=0; i<size; i++)
       {
-        bvt tmp_bv0, tmp_bv1, tmp_bv;
-        
-        tmp_bv0.assign(bv0.begin()+i*sub_width, bv0.begin()+(i+1)*sub_width);
-        tmp_bv1.assign(bv1.begin()+i*sub_width, bv1.begin()+(i+1)*sub_width);
+        bvt lhs_sub_bv, rhs_sub_bv, sub_result_bv;
+
+        lhs_sub_bv.assign(
+          lhs_as_bv.begin() + i * sub_width,
+          lhs_as_bv.begin() + (i + 1) * sub_width);
+        rhs_sub_bv.assign(
+          rhs_as_bv.begin() + i * sub_width,
+          rhs_as_bv.begin() + (i + 1) * sub_width);
 
         if(expr.id()==ID_floatbv_plus)
-          tmp_bv=float_utils.add_sub(tmp_bv0, tmp_bv1, false);
+          sub_result_bv = float_utils.add_sub(lhs_sub_bv, rhs_sub_bv, false);
         else if(expr.id()==ID_floatbv_minus)
-          tmp_bv=float_utils.add_sub(tmp_bv0, tmp_bv1, true);
+          sub_result_bv = float_utils.add_sub(lhs_sub_bv, rhs_sub_bv, true);
         else if(expr.id()==ID_floatbv_mult)
-          tmp_bv=float_utils.mul(tmp_bv0, tmp_bv1);
+          sub_result_bv = float_utils.mul(lhs_sub_bv, rhs_sub_bv);
         else if(expr.id()==ID_floatbv_div)
-          tmp_bv=float_utils.div(tmp_bv0, tmp_bv1);
+          sub_result_bv = float_utils.div(lhs_sub_bv, rhs_sub_bv);
         else
-          assert(false);
+          UNREACHABLE;
 
-        assert(tmp_bv.size()==sub_width);
-        assert(i*sub_width+sub_width-1<bv.size());
-        std::copy(tmp_bv.begin(), tmp_bv.end(), bv.begin()+i*sub_width);
+        INVARIANT(
+          sub_result_bv.size() == sub_width,
+          "we constructed a new vector of the right size");
+        INVARIANT(
+          i * sub_width + sub_width - 1 < result_bv.size(),
+          "the sub-bitvector fits into the result bitvector");
+        std::copy(
+          sub_result_bv.begin(),
+          sub_result_bv.end(),
+          result_bv.begin() + i * sub_width);
       }
+
+      return result_bv;
     }
     else
-      return conversion_failed(expr, bv);
+      return conversion_failed(expr);
   }
   else
-    return conversion_failed(expr, bv);
+    return conversion_failed(expr);
 }
-

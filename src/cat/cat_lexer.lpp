@@ -1,0 +1,132 @@
+%{
+/*
+ * KATER -- Automating Weak Memory Model Metatheory
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, you can access it online at
+ * http://www.gnu.org/licenses/gpl-3.0.html.
+ */
+
+#include <cerrno>
+#include <climits>
+#include <cstdlib>
+#include <string>
+#include "cat_parser.tab.h"
+#include "cat_parsing_driver.h"
+
+#define YY_USER_ACTION  loc.columns (yyleng);
+
+# define YY_DECL \
+  yy::parser::symbol_type yylex (cat_parsing_drivert& drv)
+YY_DECL;
+
+char* current_line = NULL;
+size_t current_line_alloc = 0;
+ssize_t current_line_sent = 0;
+ssize_t current_line_len = 0;
+
+void reset_current_line()
+{
+	free(current_line);
+	current_line = NULL;
+	current_line_alloc = current_line_sent = current_line_len = 0;
+}
+
+ssize_t refill_flex_buffer(char* buf, size_t max_size)
+{
+	ssize_t avail = current_line_len - current_line_sent;
+	if (!avail) {
+		current_line_sent = 0;
+		avail = getline(&current_line, &current_line_alloc, yyin);
+		if (avail < 0) {
+			if (ferror(yyin)) { perror("Could not read input: "); }
+			avail = 0;
+		}
+		current_line_len = avail;
+	}
+	if (avail > long(max_size))
+		avail = max_size;
+	memcpy(buf, current_line + current_line_sent, avail);
+	current_line_sent += avail;
+	if (!avail)
+		reset_current_line();
+	return avail;
+}
+
+#define YY_INPUT(buf, result, max_size) \
+	result = refill_flex_buffer(buf, max_size);
+%}
+
+%option nodefault
+%option noyywrap nounput noinput batch
+
+DIGIT	[0-9]+
+ALPHA	[_a-zA-Z]
+EALPHA	[-'._0-9a-zA-Z]
+BLANK	[ \t\r]
+
+%%
+%{
+	yy::location& loc = drv.getLocation();
+	loc.step ();
+%}
+
+as			return yy::parser::make_AS	(loc);
+acyclic			return yy::parser::make_ACYCLIC	(loc);
+irreflexive			return yy::parser::make_IRREFLEXIVE	(loc);
+declare			return yy::parser::make_DECLARE	(loc);
+declare-loc		return yy::parser::make_DECLARE_LOC (loc);
+empty			return yy::parser::make_EMPTY	(loc);
+error			return yy::parser::make_ERROR	(loc);
+id			return yy::parser::make_ID_REL	(loc);
+include			return yy::parser::make_INCLUDE	(loc);
+let			return yy::parser::make_LET	(loc);
+rot			return yy::parser::make_ROT     (loc);
+int			return yy::parser::make_INT     (loc);
+ext			return yy::parser::make_EXT     (loc);
+save			return yy::parser::make_SAVE	(loc);
+total			return yy::parser::make_TOTAL	(loc);
+view			return yy::parser::make_VIEW	(loc);
+warning			return yy::parser::make_WARNING	(loc);
+
+["][^\n]*["]		return yy::parser::make_QPATH  (yytext, loc);
+{ALPHA}{EALPHA}*	return yy::parser::make_ID     (yytext, loc);
+
+"::"		return yy::parser::make_DCOLON (loc);
+","			return yy::parser::make_COMMA  (loc);
+"+"			return yy::parser::make_PLUS   (loc);
+"*"			return yy::parser::make_TIMES   (loc);
+"?"			return yy::parser::make_QMARK  (loc);
+";"			return yy::parser::make_SEMI   (loc);
+"&"			return yy::parser::make_AND    (loc);
+"|"			return yy::parser::make_ALT    (loc);
+"("			return yy::parser::make_LPAREN (loc);
+")"			return yy::parser::make_RPAREN (loc);
+"["			return yy::parser::make_LBRACK (loc);
+"]"			return yy::parser::make_RBRACK (loc);
+"="			return yy::parser::make_EQ     (loc);
+"0"			return yy::parser::make_ZERO   (loc);
+"-1"		return yy::parser::make_MONE   (loc);
+"^"			return yy::parser::make_SUPER  (loc);
+"\\"			return yy::parser::make_BSLASH (loc);
+{BLANK}+		loc.step ();
+\n+			loc.lines (yyleng); loc.step ();
+"//"[^\n]*	
+"(*"([^\*]|(\*)*[^\*/])*(\*)*"*)"	
+
+.			{ throw yy::parser::syntax_error
+			    (loc, "invalid character: " + std::string(yytext)); }
+
+<<EOF>>			return yy::parser::make_YYEOF (loc);
+
+%%

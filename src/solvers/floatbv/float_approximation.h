@@ -6,15 +6,18 @@ Author:
 
 \*******************************************************************/
 
-#ifndef CPROVER_FLOAT_APPROXIMATION_H
-#define CPROVER_FLOAT_APPROXIMATION_H
+/// \file
+/// Floating Point with under/over-approximation
 
-#include <floatbv/float_utils.h>
+#ifndef CPROVER_SOLVERS_FLOATBV_FLOAT_APPROXIMATION_H
+#define CPROVER_SOLVERS_FLOATBV_FLOAT_APPROXIMATION_H
+
+#include "float_utils.h"
 
 class float_approximationt:public float_utilst
 {
 public:
-  float_approximationt(propt &_prop):
+  explicit float_approximationt(propt &_prop):
     float_utilst(_prop),
     over_approximate(false),
     partial_interpretation(false)
@@ -22,7 +25,7 @@ public:
   }
 
   virtual ~float_approximationt();
-  
+
   bool over_approximate;
   bool partial_interpretation;
 
@@ -31,7 +34,8 @@ protected:
   bvt overapproximating_left_shift(const bvt &src, unsigned dist);
 
 private:
+  // NOLINTNEXTLINE(readability/identifiers)
   typedef float_utilst SUB;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_FLOATBV_FLOAT_APPROXIMATION_H

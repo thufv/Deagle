@@ -8,16 +8,22 @@ Date: March 2013
 
 \*******************************************************************/
 
-#ifndef CPROVER_LOCALS_H
-#define CPROVER_LOCALS_H
+/// \file
+/// Local variables whose address is taken
 
-#include <goto-programs/goto_functions.h>
+#ifndef CPROVER_ANALYSES_LOCALS_H
+#define CPROVER_ANALYSES_LOCALS_H
+
+#include <iosfwd>
+#include <unordered_set>
+
+#include <util/irep.h>
+
+class goto_functiont;
 
 class localst
 {
 public:
-  typedef goto_functionst::goto_functiont goto_functiont;
-
   explicit localst(const goto_functiont &goto_function)
   {
     build(goto_function);
@@ -28,23 +34,23 @@ public:
   // Returns true for all procedure-local variables,
   // not including those with static storage duration,
   // but including the function parameters.
-  inline bool is_local(const irep_idt &identifier) const
+  bool is_local(const irep_idt &identifier) const
   {
-    return locals_map.find(identifier)!=locals_map.end();
+    return locals.find(identifier) != locals.end();
   }
 
-  typedef std::map<irep_idt, typet> locals_mapt;
-  locals_mapt locals_map;
-  
+  typedef std::unordered_set<irep_idt> locals_sett;
+  locals_sett locals;
+
 protected:
   void build(const goto_functiont &goto_function);
 };
 
-static inline std::ostream &operator << (
+inline std::ostream &operator<<(
   std::ostream &out, const localst &locals)
 {
   locals.output(out);
   return out;
 }
 
-#endif
+#endif // CPROVER_ANALYSES_LOCALS_H

@@ -6,107 +6,43 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
+#include "qbf_skizzo.h"
+
 #include <cstdlib>
 #include <fstream>
 
-#include <util/i2string.h>
+#include <util/invariant.h>
 
-#include "qbf_skizzo.h"
-
-/*******************************************************************\
-
-Function: qbf_skizzot::qbf_skizzot
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-qbf_skizzot::qbf_skizzot()
+qbf_skizzot::qbf_skizzot(message_handlert &message_handler)
+  : qdimacs_cnft(message_handler)
 {
   // skizzo crashes on broken lines
   break_lines=false;
 }
 
-/*******************************************************************\
-
-Function: qbf_skizzot::~qbf_skizzot
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 qbf_skizzot::~qbf_skizzot()
 {
 }
 
-/*******************************************************************\
-
-Function: qbf_skizzot::l_get
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-tvt qbf_skizzot::l_get(literalt a) const
+tvt qbf_skizzot::l_get(literalt) const
 {
-  assert(false);
-  return tvt(false);
+  UNREACHABLE;
 }
-
-/*******************************************************************\
-
-Function: qbf_skizzot::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const std::string qbf_skizzot::solver_text()
 {
   return "Skizzo";
 }
 
-/*******************************************************************\
-
-Function: qbf_skizzot::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 propt::resultt qbf_skizzot::prop_solve()
 {
   // sKizzo crashes on empty instances
   if(no_clauses()==0)
-    return P_SATISFIABLE;
-  
+    return resultt::P_SATISFIABLE;
+
   {
-    std::string msg=
-      "Skizzo: "+
-      i2string(no_variables())+" variables, "+
-      i2string(no_clauses())+" clauses";
-    messaget::status(msg);
+    log.status() << "Skizzo: " << no_variables() << " variables, "
+                 << no_clauses() << " clauses" << messaget::eom;
   }
 
   std::string qbf_tmp_file="sKizzo.qdimacs";
@@ -118,30 +54,28 @@ propt::resultt qbf_skizzot::prop_solve()
     // write it
     write_qdimacs_cnf(out);
   }
-  
-  //std::string options=" --equivalences=0";
-  std::string options="";
+
+  std::string options;
 
   // solve it
-  int res=system(("sKizzo "+qbf_tmp_file+
-         options+
-         " > "+result_tmp_file).c_str());
-  assert(0 == res);
+  int res=system((
+    "sKizzo "+qbf_tmp_file+options+" > "+result_tmp_file).c_str());
+  CHECK_RETURN(0==res);
 
   bool result=false;
-  
+
   // read result
   {
     std::ifstream in(result_tmp_file.c_str());
-    
+
     bool result_found=false;
     while(in)
     {
       std::string line;
 
       std::getline(in, line);
-      
-      if(line!="" && line[line.size()-1]=='\r')
+
+      if(!line.empty() && line[line.size() - 1] == '\r')
         line.resize(line.size()-1);
 
       if(line=="The instance evaluates to TRUE.")
@@ -160,22 +94,21 @@ propt::resultt qbf_skizzot::prop_solve()
 
     if(!result_found)
     {
-      messaget::error("Skizzo failed: unknown result");
-      return P_ERROR;
-    }    
+      log.error() << "Skizzo failed: unknown result" << messaget::eom;
+      return resultt::P_ERROR;
+    }
   }
 
   if(result)
   {
-    messaget::status("Skizzo: TRUE");
-    return P_SATISFIABLE;
+    log.status() << "Skizzo: TRUE" << messaget::eom;
+    return resultt::P_SATISFIABLE;
   }
   else
   {
-    messaget::status("Skizzo: FALSE");
-    return P_UNSATISFIABLE;
+    log.status() << "Skizzo: FALSE" << messaget::eom;
+    return resultt::P_UNSATISFIABLE;
   }
- 
-  return P_ERROR;
-}
 
+  return resultt::P_ERROR;
+}

@@ -8,237 +8,133 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include "bv_refinement.h"
 
-/*******************************************************************\
+#include <util/xml.h>
 
-Function: bv_refinementt::bv_refinementt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bv_refinementt::bv_refinementt(
-  const namespacet &_ns, propt &_prop):
-  bv_pointerst(_ns, _prop),
-  max_node_refinement(5)
+bv_refinementt::bv_refinementt(const infot &info)
+  : bv_pointerst(*info.ns, *info.prop, *info.message_handler),
+    progress(false),
+    config_(info)
 {
   // check features we need
-  assert(prop.has_set_assumptions());
-  assert(prop.has_set_to());
-  assert(prop.has_is_in_conflict());
+  PRECONDITION(prop.has_set_assumptions());
+  PRECONDITION(prop.has_set_to());
+  PRECONDITION(prop.has_is_in_conflict());
 }
-
-/*******************************************************************\
-
-Function: bv_refinementt::~bv_refinementt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bv_refinementt::~bv_refinementt()
-{
-}
-
-/*******************************************************************\
-
-Function: bv_refinementt::dec_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 decision_proceduret::resultt bv_refinementt::dec_solve()
 {
   // do the usual post-processing
-  status() << "BV-Refinement: post-processing" << eom;
-  post_process();
+  log.status() << "BV-Refinement: post-processing" << messaget::eom;
+  finish_eager_conversion();
 
-  debugx() << "Solving with " << prop.solver_text() << eom;
-  
+  log.debug() << "Solving with " << prop.solver_text() << messaget::eom;
+
   unsigned iteration=0;
-  
+
   // now enter the loop
   while(true)
   {
     iteration++;
-  
-    status() << "BV-Refinement: iteration " << iteration << eom;
-  
+
+    log.status() << "BV-Refinement: iteration " << iteration << messaget::eom;
+
+    // output the very same information in a structured fashion
+    if(config_.output_xml)
+    {
+      xmlt xml("refinement-iteration");
+      xml.data=std::to_string(iteration);
+      log.status() << xml << '\n';
+    }
+
     switch(prop_solve())
     {
-    case D_SATISFIABLE:
+    case resultt::D_SATISFIABLE:
       check_SAT();
       if(!progress)
       {
-        status() << "BV-Refinement: got SAT, and it simulates => SAT" << eom;
-        status() << "Total iterations: " << iteration << eom;
-        return D_SATISFIABLE;
+        log.status() << "BV-Refinement: got SAT, and it simulates => SAT"
+                     << messaget::eom;
+        log.status() << "Total iterations: " << iteration << messaget::eom;
+        return resultt::D_SATISFIABLE;
       }
       else
-        status() << "BV-Refinement: got SAT, and it is spurious, refining" << eom;
+        log.status() << "BV-Refinement: got SAT, and it is spurious, refining"
+                     << messaget::eom;
       break;
 
-    case D_UNSATISFIABLE:
+    case resultt::D_UNSATISFIABLE:
       check_UNSAT();
       if(!progress)
       {
-        status() << "BV-Refinement: got UNSAT, and the proof passes => UNSAT" << eom;
-        status() << "Total iterations: " << iteration << eom;
-        return D_UNSATISFIABLE;
+        log.status()
+          << "BV-Refinement: got UNSAT, and the proof passes => UNSAT"
+          << messaget::eom;
+        log.status() << "Total iterations: " << iteration << messaget::eom;
+        return resultt::D_UNSATISFIABLE;
       }
       else
-        status() << "BV-Refinement: got UNSAT, and the proof fails, refining" << eom;
+        log.status()
+          << "BV-Refinement: got UNSAT, and the proof fails, refining"
+          << messaget::eom;
       break;
-    
-    default:
-      return D_ERROR;
+
+    case resultt::D_ERROR:
+      return resultt::D_ERROR;
     }
   }
 }
 
-/*******************************************************************\
-
-Function: bv_refinementt::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 decision_proceduret::resultt bv_refinementt::prop_solve()
 {
   // this puts the underapproximations into effect
-  bvt assumptions = parent_assumptions;
-  
-  for(approximationst::const_iterator
-      a_it=approximations.begin();
-      a_it!=approximations.end();
-      a_it++)
+  std::vector<exprt> assumptions;
+
+  for(const approximationt &approximation : approximations)
   {
     assumptions.insert(
       assumptions.end(),
-      a_it->over_assumptions.begin(), a_it->over_assumptions.end());
+      approximation.over_assumptions.begin(),
+      approximation.over_assumptions.end());
     assumptions.insert(
       assumptions.end(),
-      a_it->under_assumptions.begin(), a_it->under_assumptions.end());
+      approximation.under_assumptions.begin(),
+      approximation.under_assumptions.end());
   }
 
-  prop.set_assumptions(assumptions);
+  push(assumptions);
   propt::resultt result=prop.prop_solve();
-  prop.set_assumptions(parent_assumptions);
- 
+  pop();
+
+  // clang-format off
   switch(result)
   {
-   case propt::P_SATISFIABLE: return D_SATISFIABLE;
-   case propt::P_UNSATISFIABLE: return D_UNSATISFIABLE;
-   default: return D_ERROR;
+  case propt::resultt::P_SATISFIABLE: return resultt::D_SATISFIABLE;
+  case propt::resultt::P_UNSATISFIABLE: return resultt::D_UNSATISFIABLE;
+  case propt::resultt::P_ERROR: return resultt::D_ERROR;
   }
+  // clang-format off
+
+  UNREACHABLE;
 }
-
-/*******************************************************************\
-
-Function: bv_refinementt::check_SAT
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void bv_refinementt::check_SAT()
 {
   progress=false;
-  
+
   arrays_overapproximated();
 
-  for(approximationst::iterator
-      a_it=approximations.begin();
-      a_it!=approximations.end();
-      a_it++)
-    check_SAT(*a_it);
+  // get values before modifying the formula
+  for(approximationt &approximation : this->approximations)
+    get_values(approximation);
+
+  for(approximationt &approximation : this->approximations)
+    check_SAT(approximation);
 }
-
-/*******************************************************************\
-
-Function: bv_refinementt::check_UNSAT
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void bv_refinementt::check_UNSAT()
 {
   progress=false;
 
-  for(approximationst::iterator
-      a_it=approximations.begin();
-      a_it!=approximations.end();
-      a_it++)
-    check_UNSAT(*a_it);
-}
-
-/*******************************************************************\
-
-Function: bv_refinementt::set_to
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void bv_refinementt::set_to(const exprt &expr, bool value)
-{
-  #if 0
-  unsigned prev=prop.no_variables();
-  SUB::set_to(expr, value);
-  unsigned n=prop.no_variables()-prev;
-  std::cout << n << " EEE " << expr.id() << "@" << expr.type().id();
-  forall_operands(it, expr) std::cout << " " << it->id() << "@" << it->type().id();
-  if(expr.id()=="=" && expr.operands().size()==2)
-    forall_operands(it, expr.op1()) std::cout << " " << it->id() << "@" << it->type().id();
-  std::cout << std::endl;
-  #else
-  SUB::set_to(expr, value);
-  #endif
-}
-
-/*******************************************************************\
-
-Function: bv_refinementt::set_assumptions
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void bv_refinementt::set_assumptions(const bvt &_assumptions) {
-  parent_assumptions = _assumptions;
-  prop.set_assumptions(_assumptions);
+  for(approximationt &approximation : this->approximations)
+    check_UNSAT(approximation);
 }

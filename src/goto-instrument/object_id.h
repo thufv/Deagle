@@ -6,14 +6,18 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_OBJECT_ID_H
-#define CPROVER_OBJECT_ID_H
+/// \file
+/// Object Identifiers
 
+#ifndef CPROVER_GOTO_INSTRUMENT_OBJECT_ID_H
+#define CPROVER_GOTO_INSTRUMENT_OBJECT_ID_H
+
+#include <iosfwd>
 #include <set>
-#include <ostream>
 
 #include <util/std_expr.h>
-#include <util/std_code.h>
+
+class code_assignt;
 
 class object_idt
 {
@@ -24,28 +28,32 @@ public:
   {
     id=symbol_expr.get_identifier();
   }
-  
+
   explicit object_idt(const irep_idt &identifier)
   {
     id=identifier;
   }
-  
-  friend std::ostream &operator << (std::ostream &out, const object_idt &x)
+
+  bool operator<(const object_idt &other) const
   {
-    return out << x.id;
+    return id<other.id;
   }
 
-  friend inline bool operator < (const object_idt &a, const object_idt &b)
+  const irep_idt &get_id() const
   {
-    return a.id < b.id;
+    return id;
   }
-  
+
 protected:
   irep_idt id;
 };
 
-inline std::ostream &operator << (std::ostream &, const object_idt &);
-inline bool operator < (const object_idt &a, const object_idt &b);
+inline std::ostream &operator<<(
+  std::ostream &out,
+  const object_idt &object_id)
+{
+  return out << object_id.get_id();
+}
 
 typedef std::set<object_idt> object_id_sett;
 
@@ -55,4 +63,4 @@ void get_objects_w(const code_assignt &assign, object_id_sett &);
 void get_objects_w_lhs(const exprt &lhs, object_id_sett &);
 void get_objects_r_lhs(const exprt &lhs, object_id_sett &);
 
-#endif
+#endif // CPROVER_GOTO_INSTRUMENT_OBJECT_ID_H

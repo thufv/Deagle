@@ -6,8 +6,9 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_TYPECAST_H
-#define CPROVER_CPP_TYPECAST_H
+
+#ifndef CPROVER_CPP_CPP_TYPECAST_H
+#define CPROVER_CPP_CPP_TYPECAST_H
 
 #include <ansi-c/c_typecast.h>
 
@@ -16,7 +17,7 @@ class cpp_typecheckt;
 class cpp_typecastt:public c_typecastt
 {
 public:
-  cpp_typecastt(cpp_typecheckt &cpp_typecheck);
+  explicit cpp_typecastt(cpp_typecheckt &cpp_typecheck);
 
   virtual void implicit_typecast(
     exprt &expr,
@@ -47,22 +48,22 @@ public:
   bool subtype_typecast(
     const typet &from,
     const typet &to,
-    std::string& err);
+    std::string &err);
 
   bool integral_conversion(
-      const typet &src_type,
-      const typet &dest_type);
+    const typet &src_type,
+    const typet &dest_type);
 
   exprt subtype_offset(
-      const struct_typet &from,
-      const struct_typet &to);
+    const struct_typet &from,
+    const struct_typet &to);
 
   void make_ptr_typecast(
-      exprt &expr,
-      const typet & src_type,
-      const typet & dest_type);
+    exprt &expr,
+    const typet &src_type,
+    const typet &dest_type);
 
   cpp_typecheckt &cpp_typecheck;
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_TYPECAST_H

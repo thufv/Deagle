@@ -6,26 +6,35 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <ostream>
-
 #include "c_qualifiers.h"
 
-/*******************************************************************\
+#include <util/make_unique.h>
+#include <util/type.h>
 
-Function: c_qualifierst::as_string
+c_qualifierst &c_qualifierst::operator=(const c_qualifierst &other)
+{
+  is_constant = other.is_constant;
+  is_volatile = other.is_volatile;
+  is_restricted = other.is_restricted;
+  is_atomic = other.is_atomic;
+  is_noreturn = other.is_noreturn;
+  is_ptr32 = other.is_ptr32;
+  is_ptr64 = other.is_ptr64;
+  is_transparent_union = other.is_transparent_union;
+  return *this;
+}
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+std::unique_ptr<qualifierst> c_qualifierst::clone() const
+{
+  auto other = util_make_unique<c_qualifierst>();
+  *other = *this;
+  return std::move(other);
+}
 
 std::string c_qualifierst::as_string() const
 {
   std::string qualifiers;
-  
+
   if(is_constant)
     qualifiers+="const ";
 
@@ -34,30 +43,21 @@ std::string c_qualifierst::as_string() const
 
   if(is_restricted)
     qualifiers+="restrict ";
-    
+
   if(is_atomic)
     qualifiers+="_Atomic ";
-    
+
   if(is_ptr32)
     qualifiers+="__ptr32 ";
-    
+
   if(is_ptr64)
     qualifiers+="__ptr64 ";
-    
+
+  if(is_noreturn)
+    qualifiers+="_Noreturn ";
+
   return qualifiers;
 }
-
-/*******************************************************************\
-
-Function: c_qualifierst::read
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void c_qualifierst::read(const typet &src)
 {
@@ -81,19 +81,10 @@ void c_qualifierst::read(const typet &src)
 
   if(src.get_bool(ID_C_transparent_union))
     is_transparent_union=true;
+
+  if(src.get_bool(ID_C_noreturn))
+    is_noreturn=true;
 }
-
-/*******************************************************************\
-
-Function: c_qualifierst::write
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void c_qualifierst::write(typet &dest) const
 {
@@ -131,19 +122,12 @@ void c_qualifierst::write(typet &dest) const
     dest.set(ID_C_transparent_union, true);
   else
     dest.remove(ID_C_transparent_union);
+
+  if(is_noreturn)
+    dest.set(ID_C_noreturn, true);
+  else
+    dest.remove(ID_C_noreturn);
 }
-
-/*******************************************************************\
-
-Function: c_qualifierst::clear
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void c_qualifierst::clear(typet &dest)
 {
@@ -153,24 +137,11 @@ void c_qualifierst::clear(typet &dest)
   dest.remove(ID_C_ptr32);
   dest.remove(ID_C_ptr64);
   dest.remove(ID_C_transparent_union);
+  dest.remove(ID_C_noreturn);
 }
 
-/*******************************************************************\
-
-Function: operator <<
-
-  Inputs:
-
- Outputs:
-
- Purpose: pretty-print the qualifiers
-
-\*******************************************************************/
-
-std::ostream &operator << (
-  std::ostream &out,
-  const c_qualifierst &c_qualifiers)
+/// pretty-print the qualifiers
+std::ostream &operator<<(std::ostream &out, const qualifierst &qualifiers)
 {
-  return out << c_qualifiers.as_string();
+  return out << qualifiers.as_string();
 }
-

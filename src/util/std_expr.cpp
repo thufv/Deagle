@@ -6,27 +6,14 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
-
-#include "arith_tools.h"
-#include "byte_operators.h"
-#include "config.h"
-#include "namespace.h"
-#include "pointer_offset_size.h"
-
 #include "std_expr.h"
 
-/*******************************************************************\
+#include "namespace.h"
+#include "pointer_expr.h"
+#include "range.h"
+#include "substitute_symbols.h"
 
-Function: constant_exprt::value_is_zero_string
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <map>
 
 bool constant_exprt::value_is_zero_string() const
 {
@@ -34,17 +21,32 @@ bool constant_exprt::value_is_zero_string() const
   return val.find_first_not_of('0')==std::string::npos;
 }
 
-/*******************************************************************\
+void constant_exprt::check(const exprt &expr, const validation_modet vm)
+{
+  DATA_CHECK(
+    vm, !expr.has_operands(), "constant expression must not have operands");
 
-Function: disjunction
+  DATA_CHECK(
+    vm,
+    !can_cast_type<bitvector_typet>(expr.type()) ||
+      !id2string(to_constant_expr(expr).get_value()).empty(),
+    "bitvector constant must have a non-empty value");
 
-  Inputs:
+  DATA_CHECK(
+    vm,
+    !can_cast_type<bitvector_typet>(expr.type()) ||
+      can_cast_type<pointer_typet>(expr.type()) ||
+      id2string(to_constant_expr(expr).get_value())
+          .find_first_not_of("0123456789ABCDEF") == std::string::npos,
+    "negative bitvector constant must use two's complement");
 
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+  DATA_CHECK(
+    vm,
+    !can_cast_type<bitvector_typet>(expr.type()) ||
+      to_constant_expr(expr).get_value() == ID_0 ||
+      id2string(to_constant_expr(expr).get_value())[0] != '0',
+    "bitvector constant must not have leading zeros");
+}
 
 exprt disjunction(const exprt::operandst &op)
 {
@@ -54,23 +56,9 @@ exprt disjunction(const exprt::operandst &op)
     return op.front();
   else
   {
-    or_exprt result;
-    result.operands()=op;
-    return result;
+    return or_exprt(exprt::operandst(op));
   }
 }
-
-/*******************************************************************\
-
-Function: conjunction
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 exprt conjunction(const exprt::operandst &op)
 {
@@ -80,105 +68,139 @@ exprt conjunction(const exprt::operandst &op)
     return op.front();
   else
   {
-    and_exprt result;
-    result.operands()=op;
-    return result;
+    return and_exprt(exprt::operandst(op));
   }
 }
 
-/*******************************************************************\
+// Implementation of struct_exprt::component for const / non const overloads.
+template <typename T>
+auto component(T &struct_expr, const irep_idt &name, const namespacet &ns)
+  -> decltype(struct_expr.op0())
+{
+  static_assert(
+    std::is_base_of<struct_exprt, T>::value, "T must be a struct_exprt.");
+  const auto index =
+    to_struct_type(ns.follow(struct_expr.type())).component_number(name);
+  DATA_INVARIANT(
+    index < struct_expr.operands().size(),
+    "component matching index should exist");
+  return struct_expr.operands()[index];
+}
 
-Function: build_object_descriptor_rec
+/// \return The expression for a named component of this struct.
+exprt &struct_exprt::component(const irep_idt &name, const namespacet &ns)
+{
+  return ::component(*this, name, ns);
+}
 
-  Inputs:
+/// \return The expression for a named component of this struct.
+const exprt &
+struct_exprt::component(const irep_idt &name, const namespacet &ns) const
+{
+  return ::component(*this, name, ns);
+}
 
- Outputs:
-
- Purpose: Build an object_descriptor_exprt from a given expr
-
-\*******************************************************************/
-
-static void build_object_descriptor_rec(
+/// Check that the member expression has the right number of operands, refers
+/// to a component that exists on its underlying compound type, and uses the
+/// same type as is declared on that compound type. Throws or raises an
+/// invariant if not, according to validation mode.
+/// \param expr: expression to validate
+/// \param ns: global namespace
+/// \param vm: validation mode (see \ref exprt::validate)
+void member_exprt::validate(
+  const exprt &expr,
   const namespacet &ns,
-  const exprt &expr,
-  object_descriptor_exprt &dest)
+  const validation_modet vm)
 {
-  const signedbv_typet index_type(config.ansi_c.pointer_width);
+  check(expr, vm);
 
-  if(expr.id()==ID_index)
+  const auto &member_expr = to_member_expr(expr);
+
+  const typet &compound_type = ns.follow(member_expr.compound().type());
+  const auto *struct_union_type =
+    type_try_dynamic_cast<struct_union_typet>(compound_type);
+  DATA_CHECK(
+    vm,
+    struct_union_type != nullptr,
+    "member must address a struct, union or compatible type");
+
+  const auto &component =
+    struct_union_type->get_component(member_expr.get_component_name());
+
+  DATA_CHECK(
+    vm,
+    component.is_not_nil(),
+    "member component '" + id2string(member_expr.get_component_name()) +
+      "' must exist on addressed type");
+
+  DATA_CHECK(
+    vm,
+    component.type() == member_expr.type(),
+    "member expression's type must match the addressed struct or union "
+    "component");
+}
+
+void let_exprt::validate(const exprt &expr, const validation_modet vm)
+{
+  check(expr, vm);
+
+  const auto &let_expr = to_let_expr(expr);
+
+  DATA_CHECK(
+    vm,
+    let_expr.values().size() == let_expr.variables().size(),
+    "number of variables must match number of values");
+
+  for(const auto &binding :
+      make_range(let_expr.variables()).zip(let_expr.values()))
   {
-    const index_exprt &index=to_index_expr(expr);
+    DATA_CHECK(
+      vm,
+      binding.first.id() == ID_symbol,
+      "let binding symbols must be symbols");
 
-    build_object_descriptor_rec(ns, index.array(), dest);
-
-    exprt sub_size=size_of_expr(expr.type(), ns);
-    assert(sub_size.is_not_nil());
-
-    dest.offset()=
-      plus_exprt(dest.offset(),
-                 mult_exprt(typecast_exprt(index.index(), index_type),
-                            typecast_exprt(sub_size, index_type)));
-  }
-  else if(expr.id()==ID_member)
-  {
-    const member_exprt &member=to_member_expr(expr);
-    const exprt &struct_op=member.struct_op();
-    const typet &struct_type=ns.follow(struct_op.type());
-
-    build_object_descriptor_rec(ns, struct_op, dest);
-
-    if(struct_type.id()==ID_union)
-      return;
-
-    mp_integer offset=
-      member_offset(ns,
-                    to_struct_type(struct_type),
-                    member.get_component_name());
-    assert(offset>=0);
-
-    dest.offset()=
-      plus_exprt(dest.offset(), from_integer(offset, index_type));
-  }
-  else if(expr.id()==ID_byte_extract_little_endian ||
-          expr.id()==ID_byte_extract_big_endian)
-  {
-    const byte_extract_exprt &be=to_byte_extract_expr(expr);
-
-    dest.object()=be.op();
-
-    build_object_descriptor_rec(ns, be.op(), dest);
-
-    dest.offset()=
-      plus_exprt(dest.offset(),
-                 typecast_exprt(to_byte_extract_expr(expr).offset(),
-                                index_type));
+    DATA_CHECK(
+      vm,
+      binding.first.type() == binding.second.type(),
+      "let bindings must be type consistent");
   }
 }
 
-/*******************************************************************\
-
-Function: object_descriptor_exprt::build
-
-  Inputs:
-
- Outputs:
-
- Purpose: Build an object_descriptor_exprt from a given expr
-
-\*******************************************************************/
-
-void object_descriptor_exprt::build(
-  const exprt &expr,
-  const namespacet &ns)
+exprt binding_exprt::instantiate(const operandst &values) const
 {
-  assert(object().id()==ID_unknown);
-  object()=expr;
+  // number of values must match the number of bound variables
+  auto &variables = this->variables();
+  PRECONDITION(variables.size() == values.size());
 
-  if(offset().id()==ID_unknown)
-    offset()=from_integer(0, signedbv_typet(config.ansi_c.pointer_width));
+  std::map<symbol_exprt, exprt> value_map;
 
-  build_object_descriptor_rec(ns, expr, *this);
+  for(std::size_t i = 0; i < variables.size(); i++)
+  {
+    // types must match
+    PRECONDITION(variables[i].type() == values[i].type());
+    value_map[variables[i]] = values[i];
+  }
 
-  assert(root_object().type().id()!=ID_empty);
+  // build a substitution map
+  std::map<irep_idt, exprt> substitutions;
+
+  for(std::size_t i = 0; i < variables.size(); i++)
+    substitutions[variables[i].get_identifier()] = values[i];
+
+  // now recurse downwards and substitute in 'where'
+  auto substitute_result = substitute_symbols(substitutions, where());
+
+  if(substitute_result.has_value())
+    return substitute_result.value();
+  else
+    return where(); // trivial case, variables not used
 }
 
+exprt binding_exprt::instantiate(const variablest &new_variables) const
+{
+  std::vector<exprt> values;
+  values.reserve(new_variables.size());
+  for(const auto &new_variable : new_variables)
+    values.push_back(new_variable);
+  return instantiate(values);
+}

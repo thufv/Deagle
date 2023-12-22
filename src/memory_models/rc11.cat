@@ -1,0 +1,22 @@
+let fr = rf^-1 ; co
+let rfe = ext(rf)
+let coe = ext(co)
+let fre = ext(fr)
+
+let eco = (rf | co | fr)+
+let rs = [W]; (po & loc)?; [W & (RLX | REL | ACQ | ACQ_REL | SC)]; (rf; rmw)*
+let sw = [(REL | ACQ_REL | SC)]; ([F]; po)?; rs; rf; [R & (RLX | REL | ACQ | ACQ_REL | SC)]; (po; [F])?; [(ACQ | ACQ_REL | SC)]
+let hb = (po | sw)+
+
+let pol = po \ loc
+let hbl = hb & loc
+let scb = po | pol; hb; pol | hbl | co | fr
+let pscb = ([SC] | [F & SC]; hb?); scb; ([SC] | hb? ; [F & SC])
+let pscf = [F & SC]; (hb | hb; eco; hb); [F & SC]
+let psc = pscb | pscf
+
+irreflexive hb; eco? as coherence1
+irreflexive (rmw; eco) as coherencermw
+empty (rmw & (fr; co)) as atomicity
+irreflexive psc+ as SC
+irreflexive (po | rf)+ as no-thin-air

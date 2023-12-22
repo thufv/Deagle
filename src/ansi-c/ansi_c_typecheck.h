@@ -6,11 +6,15 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_ANSI_C_TYPECHECK_H
-#define CPROVER_ANSI_C_TYPECHECK_H
+/// \file
+/// ANSI-C Language Type Checking
+
+#ifndef CPROVER_ANSI_C_ANSI_C_TYPECHECK_H
+#define CPROVER_ANSI_C_ANSI_C_TYPECHECK_H
 
 #include "c_typecheck_base.h"
-#include "ansi_c_parse_tree.h"
+
+class ansi_c_parse_treet;
 
 bool ansi_c_typecheck(
   ansi_c_parse_treet &parse_tree,
@@ -39,7 +43,7 @@ public:
   ansi_c_typecheckt(
     ansi_c_parse_treet &_parse_tree,
     symbol_tablet &_symbol_table1,
-    symbol_tablet &_symbol_table2,
+    const symbol_tablet &_symbol_table2,
     const std::string &_module,
     message_handlert &_message_handler):
     c_typecheck_baset(_symbol_table1, _symbol_table2,
@@ -56,4 +60,4 @@ protected:
   ansi_c_parse_treet &parse_tree;
 };
 
-#endif
+#endif // CPROVER_ANSI_C_ANSI_C_TYPECHECK_H

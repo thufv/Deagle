@@ -6,39 +6,36 @@ Author: CM Wintersteiger, 2006
 
 \*******************************************************************/
 
-#include <iostream>
-
-#include <util/string2int.h>
-#include <util/message.h>
-#include <util/prefix.h>
-#include <util/config.h>
+/// \file
+/// Command line option container
 
 #include "armcc_mode.h"
+
+#ifdef _WIN32
+#define EX_OK 0
+#define EX_USAGE 64
+#define EX_SOFTWARE 70
+#else
+#include <sysexits.h>
+#endif
+
+#include <iostream>
+
+#include <util/message.h>
+#include <util/config.h>
+
 #include "compile.h"
 
-/*******************************************************************\
-
-Function: armcc_modet::doit
-
-  Inputs:
-
- Outputs:
-
- Purpose: does it.
-
-\*******************************************************************/
-
-bool armcc_modet::doit()
+/// does it.
+int armcc_modet::doit()
 {
   if(cmdline.isset('?') || cmdline.isset("help"))
   {
     help();
-    return false;
+    return EX_OK;
   }
 
-  int verbosity=1;
-
-  compilet compiler(cmdline);
+  compilet compiler(cmdline, message_handler, cmdline.isset("diag_error="));
 
   #if 0
   bool act_as_ld=
@@ -48,22 +45,23 @@ bool armcc_modet::doit()
     has_prefix(base_name, "goto-link");
   #endif
 
-  if(cmdline.isset("verbosity"))
-    verbosity=unsafe_string2int(cmdline.getval("verbosity"));
+  const auto verbosity = messaget::eval_verbosity(
+    cmdline.get_value("verbosity"), messaget::M_ERROR, message_handler);
 
-  compiler.ui_message_handler.set_verbosity(verbosity);
-  ui_message_handler.set_verbosity(verbosity);
+  messaget log{message_handler};
+  log.debug() << "ARM mode" << messaget::eom;
 
-  debugx("ARM mode");
-  
+  // model validation
+  compiler.validate_goto_model = cmdline.isset("validate-goto-model");
+
   // get configuration
   config.set(cmdline);
 
-  config.ansi_c.mode=configt::ansi_ct::MODE_ARM_C_CPP;
-  config.ansi_c.arch=configt::ansi_ct::ARCH_ARM;
-  
+  config.ansi_c.mode=configt::ansi_ct::flavourt::ARM;
+  config.ansi_c.arch="arm";
+
   // determine actions to be taken
-  
+
   if(cmdline.isset('E'))
     compiler.mode=compilet::PREPROCESS_ONLY;
   else if(cmdline.isset('c') || cmdline.isset('S'))
@@ -103,13 +101,13 @@ bool armcc_modet::doit()
       config.ansi_c.preprocessor_options.push_back("--preinclude="+*it);
   }
 
-  // armcc's default is .o    
+  // armcc's default is .o
   if(cmdline.isset("default_extension="))
     compiler.object_file_extension=
-      cmdline.getval("default_extension=");
+      cmdline.get_value("default_extension=");
   else
     compiler.object_file_extension="o";
-      
+
   // note that ARM's default is "unsigned_chars",
   // in contrast to gcc's default!
   if(cmdline.isset("signed_chars"))
@@ -131,11 +129,11 @@ bool armcc_modet::doit()
   }
   else
   {
-    compiler.output_file_object="";
+    compiler.output_file_object.clear();
     compiler.output_file_executable="a.out";
   }
 
-  if(verbosity>8)
+  if(verbosity > messaget::M_STATISTICS)
   {
     std::list<std::string>::iterator it;
 
@@ -144,7 +142,7 @@ bool armcc_modet::doit()
         it!=config.ansi_c.defines.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Undefines:\n";
@@ -152,7 +150,7 @@ bool armcc_modet::doit()
         it!=config.ansi_c.undefines.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Preprocessor Options:\n";
@@ -160,7 +158,7 @@ bool armcc_modet::doit()
         it!=config.ansi_c.preprocessor_options.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Include Paths:\n";
@@ -168,7 +166,7 @@ bool armcc_modet::doit()
         it!=config.ansi_c.include_paths.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Library Paths:\n";
@@ -176,32 +174,22 @@ bool armcc_modet::doit()
         it!=compiler.library_paths.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
-    std::cout << "Output file (object): " << compiler.output_file_object << std::endl;
-    std::cout << "Output file (executable): " << compiler.output_file_executable << std::endl;
+    std::cout << "Output file (object): "
+              << compiler.output_file_object << '\n';
+    std::cout << "Output file (executable): "
+              << compiler.output_file_executable << '\n';
   }
 
   // Parse input program, convert to goto program, write output
-  return compiler.doit();
+  return compiler.doit() ? EX_USAGE : EX_OK;
 }
 
-/*******************************************************************\
-
-Function: armcc_modet::help_mode
-
-  Inputs:
-
- Outputs:
-
- Purpose: display command line help
-
-\*******************************************************************/
-
+/// display command line help
 void armcc_modet::help_mode()
 {
-  std::cout << "goto-armcc understands the options of armcc plus the following.\n\n";
+  std::cout << "goto-armcc understands the options "
+            << "of armcc plus the following.\n\n";
 }
-
-

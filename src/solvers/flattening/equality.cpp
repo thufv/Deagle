@@ -6,26 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-//#define DEBUG
+#include "equality.h"
 
 #ifdef DEBUG
 #include <iostream>
 #endif
 
-#include "equality.h"
 #include "bv_utils.h"
-
-/*******************************************************************\
-
-Function: equalityt::equality
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 literalt equalityt::equality(const exprt &e1, const exprt &e2)
 {
@@ -35,24 +22,11 @@ literalt equalityt::equality(const exprt &e1, const exprt &e2)
     return equality2(e2, e1);
 }
 
-/*******************************************************************\
-
-Function: equalityt::equality2
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 literalt equalityt::equality2(const exprt &e1, const exprt &e2)
 {
-  const typet &type=e1.type();
+  PRECONDITION(e1.type() == e2.type());
 
-  if(e2.type()!=e1.type())
-    throw "equality got different types";
+  const typet &type = e1.type();
 
   // check for syntactical equality
 
@@ -61,9 +35,8 @@ literalt equalityt::equality2(const exprt &e1, const exprt &e2)
 
   // check for boolean equality
 
-  if(type.id()==ID_bool)
-    throw "equalityt got boolean equality";
-  // return lequal(convert(e1), convert(e2));
+  INVARIANT(
+    type.id() != ID_bool, "method shall not be used to compare Boolean types");
 
   // look it up
 
@@ -86,7 +59,7 @@ literalt equalityt::equality2(const exprt &e1, const exprt &e2)
 
   {
     std::pair<elementst::iterator, bool> result=
-      elements.insert(std::pair<exprt, unsigned>(e2, elements.size()));
+      elements.insert(elementst::value_type(e2, elements.size()));
 
     u.second=result.first->second;
 
@@ -102,31 +75,16 @@ literalt equalityt::equality2(const exprt &e1, const exprt &e2)
     if(result==equalities.end())
     {
       l=prop.new_variable();
-      equalities.insert(std::pair<std::pair<unsigned, unsigned>, literalt>(u, l));
+      if(freeze_all && !l.is_constant())
+        prop.set_frozen(l);
+      equalities.insert(equalitiest::value_type(u, l));
     }
     else
       l=result->second;
   }
 
-  #ifdef DEBUG
-  std::cout << "EQUALITY " << l << "<=>" 
-            << e1 << "=" << e2 << std::endl;
-  #endif
-
   return l;
 }
-
-/*******************************************************************\
-
-Function: equalityt::add_equality_constraints
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void equalityt::add_equality_constraints()
 {
@@ -135,26 +93,14 @@ void equalityt::add_equality_constraints()
     add_equality_constraints(it->second);
 }
 
-/*******************************************************************\
-
-Function: equalityt::add_equality_constraints
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void equalityt::add_equality_constraints(const typestructt &typestruct)
 {
-  unsigned no_elements=typestruct.elements.size();
-  unsigned bits=0;
+  std::size_t no_elements=typestruct.elements.size();
+  std::size_t bits=0;
 
   // get number of necessary bits
 
-  for(unsigned i=no_elements; i!=0; bits++)
+  for(std::size_t i=no_elements; i!=0; bits++)
     i=(i>>1);
 
   // generate bit vectors
@@ -163,15 +109,11 @@ void equalityt::add_equality_constraints(const typestructt &typestruct)
 
   eq_bvs.resize(no_elements);
 
-  for(unsigned i=0; i<no_elements; i++)
-  {
-    eq_bvs[i].resize(bits);
-    for(unsigned j=0; j<bits; j++)
-      eq_bvs[i][j]=prop.new_variable();
-  }
+  for(std::size_t i=0; i<no_elements; i++)
+    eq_bvs[i] = prop.new_variables(bits);
 
   // generate equality constraints
-  
+
   bv_utilst bv_utils(prop);
 
   for(equalitiest::const_iterator
@@ -181,7 +123,7 @@ void equalityt::add_equality_constraints(const typestructt &typestruct)
   {
     const bvt &bv1=eq_bvs[it->first.first];
     const bvt &bv2=eq_bvs[it->first.second];
-    
+
     prop.set_equal(bv_utils.equal(bv1, bv2), it->second);
   }
 }

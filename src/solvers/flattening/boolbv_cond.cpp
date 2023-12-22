@@ -6,42 +6,22 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <iostream>
-
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/invariant.h>
 
-Function: boolbvt::convert_cond
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_cond(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_cond(const cond_exprt &expr)
 {
   const exprt::operandst &operands=expr.operands();
 
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
+  std::size_t width=boolbv_width(expr.type());
 
-  bv.resize(width);
+  bvt bv;
 
-  // make it free variables
-  Forall_literals(it, bv)
-    *it=prop.new_variable();
+  DATA_INVARIANT(operands.size() >= 2, "cond must have at least two operands");
 
-  if(operands.size()<2)
-    throw "cond takes at least two operands";
-
-  if((operands.size()%2)!=0)
-    throw "number of cond operands must be even";
+  DATA_INVARIANT(
+    operands.size() % 2 == 0, "number of cond operands must be even");
 
   if(prop.has_set_to())
   {
@@ -49,29 +29,21 @@ void boolbvt::convert_cond(const exprt &expr, bvt &bv)
     literalt previous_cond=const_literal(false);
     literalt cond_literal=const_literal(false);
 
+    // make it free variables
+    bv = prop.new_variables(width);
+
     forall_operands(it, expr)
     {
       if(condition)
       {
         cond_literal=convert(*it);
-        cond_literal=prop.land(prop.lnot(previous_cond), cond_literal);
+        cond_literal=prop.land(!previous_cond, cond_literal);
 
         previous_cond=prop.lor(previous_cond, cond_literal);
       }
       else
       {
-        const bvt &op=convert_bv(*it);
-
-        if(bv.size()!=op.size())
-        {
-          std::cerr << "result size: " << bv.size()
-                    << std::endl
-                    << "operand: " << op.size() << std::endl
-                    << it->pretty()
-                    << std::endl;
-
-          throw "size of value operand does not match";
-        }
+        const bvt &op = convert_bv(*it, bv.size());
 
         literalt value_literal=bv_utils.equal(bv, op);
 
@@ -83,22 +55,26 @@ void boolbvt::convert_cond(const exprt &expr, bvt &bv)
   }
   else
   {
+    bv.resize(width);
+
     // functional version -- go backwards
-    for(unsigned i=expr.operands().size(); i!=0; i-=2)
+    for(std::size_t i=expr.operands().size(); i!=0; i-=2)
     {
-      assert(i>=2);
+      INVARIANT(
+        i >= 2,
+        "since the number of operands is even if i is nonzero it must be "
+        "greater than two");
       const exprt &cond=expr.operands()[i-2];
       const exprt &value=expr.operands()[i-1];
 
       literalt cond_literal=convert(cond);
 
-      const bvt &op=convert_bv(value);
+      const bvt &op = convert_bv(value, bv.size());
 
-      if(bv.size()!=op.size())
-        throw "unexpected operand size in convert_cond";
-
-      for(unsigned i=0; i<bv.size(); i++)
-        bv[i]=prop.lselect(cond_literal, op[i], bv[i]);
+      for(std::size_t j = 0; j < bv.size(); j++)
+        bv[j] = prop.lselect(cond_literal, op[j], bv[j]);
     }
   }
+
+  return bv;
 }

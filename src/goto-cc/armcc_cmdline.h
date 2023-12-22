@@ -1,15 +1,18 @@
 /*******************************************************************\
- 
-Module: A special command line object to mimick ARM's armcc
- 
+
+Module: A special command line object to mimic ARM's armcc
+
 Author: Daniel Kroening
- 
+
 Date: June 2006
- 
+
 \*******************************************************************/
 
-#ifndef GOTO_CC_ARMCC_CMDLINE_H
-#define GOTO_CC_ARMCC_CMDLINE_H
+/// \file
+/// A special command line object to mimic ARM's armcc
+
+#ifndef CPROVER_GOTO_CC_ARMCC_CMDLINE_H
+#define CPROVER_GOTO_CC_ARMCC_CMDLINE_H
 
 #include "goto_cc_cmdline.h"
 
@@ -23,4 +26,4 @@ public:
   }
 };
 
-#endif /* GOTO_CC_ARMCC_CMDLINE_H */
+#endif // CPROVER_GOTO_CC_ARMCC_CMDLINE_H

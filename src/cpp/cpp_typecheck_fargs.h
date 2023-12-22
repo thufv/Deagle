@@ -6,19 +6,24 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_TYPECHECK_FARGS_H
-#define CPROVER_CPP_TYPECHECK_FARGS_H
+/// \file
+/// C++ Language Type Checking
 
-#include <util/std_code.h>
+#ifndef CPROVER_CPP_CPP_TYPECHECK_FARGS_H
+#define CPROVER_CPP_CPP_TYPECHECK_FARGS_H
 
+#include <util/expr.h>
+
+class code_typet;
 class cpp_typecheckt;
+class side_effect_expr_function_callt;
 
 class cpp_typecheck_fargst // for function overloading
 {
 public:
   bool in_use, has_object;
   exprt::operandst operands;
-  
+
   // has_object indicates that the first element of
   // 'operands' is the 'this' pointer (with the object type,
   // not pointer to object type)
@@ -44,7 +49,7 @@ public:
 
   void add_object(const exprt &expr)
   {
-    //if(!in_use) return;
+    // if(!in_use) return;
     has_object=true;
     operands.insert(operands.begin(), expr);
   }
@@ -57,4 +62,4 @@ public:
   }
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_TYPECHECK_FARGS_H

@@ -6,92 +6,118 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/message.h>
-
-#include <linking/zero_initializer.h>
+/// \file
+/// Symbolic Execution
 
 #include "goto_symex.h"
-#include <iostream>
 
-/*******************************************************************\
+#include <util/exception_utils.h>
+#include <util/expr_initializer.h>
 
-Function: goto_symext::symex_start_thread
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "expr_skeleton.h"
+#include "path_storage.h"
+#include "symex_assign.h"
 
 void goto_symext::symex_start_thread(statet &state)
 {
-  if(state.guard.is_false()) return;
+  if(!state.reachable)
+    return;
+
+  if(state.atomic_section_id != 0)
+    throw incorrect_goto_program_exceptiont(
+      "spawning threads out of atomic sections is not allowed; "
+      "this would require amendments to ordering constraints",
+      state.source.pc->source_location());
 
   // record this
   target.spawn(state.guard.as_expr(), state.source);
 
   const goto_programt::instructiont &instruction=*state.source.pc;
-  
-  if(instruction.targets.size()!=1)
-    throw "start_thread expects one target";
-    
+
+  INVARIANT(instruction.targets.size() == 1, "start_thread expects one target");
+
   goto_programt::const_targett thread_target=
-    instruction.targets.front();
+    instruction.get_target();
 
   // put into thread vector
-  unsigned t=state.threads.size();
-  state.threads.push_back(statet::threadt());
-  //statet::threadt &cur_thread=state.threads[state.source.thread_nr];
+  const std::size_t new_thread_nr = state.threads.size();
+  state.threads.push_back(statet::threadt(guard_manager));
+  // statet::threadt &cur_thread=state.threads[state.source.thread_nr];
   statet::threadt &new_thread=state.threads.back();
   new_thread.pc=thread_target;
+  new_thread.function_id = state.source.function_id;
   new_thread.guard=state.guard;
-  new_thread.call_stack.push_back(state.top());
-  new_thread.call_stack.back().local_variables.clear();
+  new_thread.call_stack.push_back(state.call_stack().top());
+  new_thread.call_stack.back().local_objects.clear();
   new_thread.call_stack.back().goto_state_map.clear();
   #if 0
   new_thread.abstract_events=&(target.new_thread(cur_thread.abstract_events));
   #endif
 
-  // create a copy of the local variables for the new thread
-  statet::framet &frame=state.top();
+  const std::size_t current_thread_nr = state.source.thread_nr;
 
-  for(std::set<irep_idt>::const_iterator
-      it=frame.local_variables.begin();
-      it!=frame.local_variables.end();
-      it++)
+  // create a copy of the local variables for the new thread
+  framet &frame = state.call_stack().top();
+
+  symex_renaming_levelt::viewt view;
+  state.get_level2().current_names.get_view(view);
+
+  for(const auto &pair : view)
   {
+    const irep_idt l1_o_id = pair.second.first.get_l1_object_identifier();
+
+    // could use iteration over local_objects as l1_o_id is prefix
+    if(frame.local_objects.find(l1_o_id)==frame.local_objects.end())
+      continue;
+
     // get original name
-    irep_idt original_name=state.get_original_name(*it);
+    ssa_exprt lhs(pair.second.first.get_original_expr());
 
     // get L0 name for current thread
-    irep_idt l0_name=state.level0.rename_identifier(original_name, t);
+    const renamedt<ssa_exprt, L0> l0_lhs =
+      symex_level0(std::move(lhs), ns, new_thread_nr);
+    const irep_idt &l0_name = l0_lhs.get().get_identifier();
+    std::size_t l1_index = path_storage.get_unique_l1_index(l0_name, 0);
+    CHECK_RETURN(l1_index == 0);
 
-    // setup L1 name
-    state.level1.rename_identifier(l0_name, 0);
-    irep_idt l1_name=state.level1.current_name(l0_name);
-    state.l1_history.insert(l1_name);
+    // set up L1 name
+    state.level1.insert(l0_lhs, 0);
 
-    // make sure the L2 name with current index exists for future renaming
-    state.level2(l1_name);
+    const ssa_exprt lhs_l1 = state.rename_ssa<L1>(l0_lhs.get(), ns).get();
+    const irep_idt l1_name = lhs_l1.get_l1_object_identifier();
+    // store it
+    new_thread.call_stack.back().local_objects.insert(l1_name);
 
     // make copy
-    typet type=ns.lookup(original_name).type;
-    symbol_exprt lhs(l1_name, type);
-    symbol_exprt rhs(*it, type);
-    var_level[lhs.get_identifier()] = t;
+    ssa_exprt rhs = pair.second.first;
 
-    guardt guard;
-    symex_assign_symbol(state, lhs, nil_exprt(), rhs, guard, HIDDEN);
+    exprt::operandst lhs_conditions;
+    state.record_events.push(false);
+    symex_assignt{
+      state, symex_targett::assignment_typet::HIDDEN, ns, symex_config, target}
+      .assign_symbol(lhs_l1, expr_skeletont{}, rhs, lhs_conditions);
+    const exprt l2_lhs = state.rename(lhs_l1, ns).get();
+    state.record_events.pop();
+
+    // record a shared write in the new thread
+    if(
+      state.write_is_shared(lhs_l1, ns) ==
+        goto_symex_statet::write_is_shared_resultt::SHARED &&
+      is_ssa_expr(l2_lhs))
+    {
+      state.source.thread_nr = new_thread_nr;
+      target.shared_write(
+        state.guard.as_expr(), to_ssa_expr(l2_lhs), 0, state.source);
+      state.source.thread_nr = current_thread_nr;
+    }
   }
 
   // initialize all variables marked thread-local
   const symbol_tablet &symbol_table=ns.get_symbol_table();
 
-  forall_symbols(it, symbol_table.symbols)
+  for(const auto &symbol_pair : symbol_table.symbols)
   {
-    const symbolt &symbol=it->second;
+    const symbolt &symbol = symbol_pair.second;
 
     if(!symbol.is_thread_local ||
        !symbol.is_static_lifetime ||
@@ -99,23 +125,22 @@ void goto_symext::symex_start_thread(statet &state)
       continue;
 
     // get original name
-    irep_idt original_name=symbol.name;
+    ssa_exprt lhs(symbol.symbol_expr());
 
     // get L0 name for current thread
-    irep_idt l0_name=state.level0.rename_identifier(original_name, t);
+    lhs.set_level_0(new_thread_nr);
 
-    symbol_exprt lhs=symbol.symbol_expr();
-    lhs.set_identifier(l0_name);
-    var_level[lhs.get_identifier()] = t;
     exprt rhs=symbol.value;
     if(rhs.is_nil())
     {
-      null_message_handlert null_message;
-      rhs=zero_initializer(symbol.type, symbol.location, ns, null_message);
+      const auto zero = zero_initializer(symbol.type, symbol.location, ns);
+      CHECK_RETURN(zero.has_value());
+      rhs = *zero;
     }
 
-    guardt guard;
-    symex_assign_symbol(state, lhs, nil_exprt(), rhs, guard, HIDDEN);
+    exprt::operandst lhs_conditions;
+    symex_assignt{
+      state, symex_targett::assignment_typet::HIDDEN, ns, symex_config, target}
+      .assign_symbol(lhs, expr_skeletont{}, rhs, lhs_conditions);
   }
 }
-

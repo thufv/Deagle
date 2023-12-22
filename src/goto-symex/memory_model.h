@@ -6,100 +6,80 @@ Author: Michael Tautschnig, michael.tautschnig@cs.ox.ac.uk
 
 \*******************************************************************/
 
-#ifndef CPROVER_MEMORY_MODEL_H
-#define CPROVER_MEMORY_MODEL_H
+/// \file
+/// Memory models for partial order concurrency
+
+#ifndef CPROVER_GOTO_SYMEX_MEMORY_MODEL_H
+#define CPROVER_GOTO_SYMEX_MEMORY_MODEL_H
 
 #include "partial_order_concurrency.h"
-#include "../cbmc/eog.h"
-//// __FHY_ADD_BEGIN__
-/*
- * Encoding Method:
- * Origin:
- *      po -> clk(e1) < clk(e2)
- *
- *      rfi/rfe -> value(w) = value(r) & w.guard &
- *      rfi/rfe -> clk(w) < clk(r)
- *      r.guard -> || rf(i), where read event of rf(i) is r
 
- *      coe -> clk(w1) < clk(w2)
- *      !coe -> clk(w2) < clk(w1)
- *
- *      rf & coe & w2.guard & r.guard -> fr
- * Now:
- *      po -> clk(e1) < clk(e2)
- *
- *      rfi/rfe -> value(w) = value(r) & w.guard & r.guard
- *      rfi/rfe -> clk(w) < clk(r)
- *      r.guard -> || rf(i), where read event of rf(i) is r
- *
- *      coi -> w1.guard & w2.guard
- *      coi -> clk(w1) < clk(w2)
- *      w1.guard & w2.guard -> coi
- *
- *      coe1 -> w1.guard & w2.guard
- *      coe1 -> clk(w1) < clk(w2)
- *      coe2 -> w2.guard & w1.guard
- *      coe2 -> clk(w2) < clk(w1)
- *      w1.guard & w2.guard -> coe1 || coe2
- *
- */
-#define origin_frontend_set_partial_fr 0
-#define front_deduce_fr_by_coi 0
-#define front_deduce_all_fr 0
-
-//// __FHY_ADD_BEGIN_210409__
-#define TRADITIONAL 0
-#define PARTIAL_PPO 0
-#define ALL_PPO 1
-/*
- * PARTIAL_PPO:
- *      + just delete some po in SC and leave the derivation of ppo to backend
- * ALL_PPO:
- *      + generate all the ppo order in front-end.
- */
-//// __FHY_ADD_BEGIN_210409__
-//// __FHY_ADD_END__
-
-class memory_model_baset:public partial_order_concurrencyt
+class memory_model_baset : public partial_order_concurrencyt
 {
 public:
-	// __SZH_ADD_BEGIN__
-	enum solve_methodt {solve_method_sat, solve_method_smt2, solve_method_sat_closure, solve_method_sat_icd};
-	solve_methodt solve_method;
-	// __SZH_ADD_END__
+  explicit memory_model_baset(const namespacet &_ns);
+  virtual ~memory_model_baset();
 
-	explicit memory_model_baset(const namespacet &_ns);
-	virtual ~memory_model_baset();
-	
-	virtual void operator()(symex_target_equationt &)=0;
+  virtual void operator()(symex_target_equationt &, message_handlert &) = 0;
+
+  // __SZH_ADD_BEGIN__
+  bool use_deagle;
+  void build_guard_map_write(symex_target_equationt &equation);
+  void build_guard_map_all(symex_target_equationt &equation);
+  bool is_apo(event_it e1, event_it e2);
+  bool is_apo(std::set<std::pair<std::string, std::string>>& array_update_set, event_it e1, event_it e2); // this apo considers whether e1 and e2 belong to the same array update operation
+  std::string get_name(event_it e);
+  void add_oc_edge(symex_target_equationt &equation, event_it e1, event_it e2, std::string kind, exprt guard_expr);
+  void add_oc_edge(symex_target_equationt &equation, std::string e1_str, std::string e2_str, std::string kind, exprt guard_expr);
+
+  void add_oc_label(symex_target_equationt &equation, event_it e, std::string label);
+  std::string fill_name(event_it& event);
+
+  bool enable_datarace;
+  void data_race(symex_target_equationt &equation);
+  exprt array_find_index(symex_target_equationt &equation, event_it event);
+  // __SZH_ADD_END__
 
 protected:
-	// program order
-	bool po(event_it e1, event_it e2);
-	
-	// produce fresh symbols
-	unsigned var_cnt;
-	symbol_exprt nondet_bool_symbol(const std::string &prefix);
-	
-	// This gives us the choice symbol for an R-W pair;
-	// built by the method below.
-	typedef std::map<
-			std::pair<event_it, event_it>, exprt> choice_symbolst;
-	choice_symbolst choice_symbols;
-	
-	//// __FHY_ADD_BEGIN__
-	choice_symbolst wse_symbols;
-	//// __FHY_ADD_END__
-	
-	// maps thread numbers to an event list
-	typedef std::map<unsigned, event_listt> per_thread_mapt;
-	
-	bool valid_mutex(symex_target_equationt &equation);
-	
-	void read_from(symex_target_equationt &equation);
-	
-	void read_from_item(const event_it& r, symex_target_equationt &equation, int thread_num);
+  /// In-thread program order
+  /// \param e1: preceding event
+  /// \param e2: following event
+  /// \return true if e1 precedes e2 in program order
+  bool po(event_it e1, event_it e2);
+
+  // produce fresh symbols
+  unsigned var_cnt;
+  symbol_exprt nondet_bool_symbol(const std::string &prefix);
+
+  // This gives us the choice symbol for an R-W pair;
+  // built by the method below.
+  typedef std::map<std::pair<event_it, event_it>, symbol_exprt> choice_symbolst;
+  choice_symbolst choice_symbols;
+
+  /// For each read `r` from every address we collect the choice symbols `S`
+  ///   via \ref register_read_from_choice_symbol (for potential read-write
+  ///   pairs) and add a constraint r.guard => \/S.
+  /// \param equation: symex equation where the new constraint should be added
+  void read_from(symex_target_equationt &equation);
+
+  /// Introduce a new choice symbol `s` for the pair (\p r, \p w)
+  /// add constraint s => (w.guard /\ r.lhs=w.lhs)
+  /// add constraint s => before(w,r) [if \p w is from another thread]
+  /// \param r: read event
+  /// \param w: write event
+  /// \param equation: symex equation where the new constraints should be added
+  /// \return the new choice symbol
+  symbol_exprt register_read_from_choice_symbol(
+    const event_it &r,
+    const event_it &w,
+    symex_target_equationt &equation);
+
+  // maps thread numbers to an event list
+  typedef std::map<unsigned, event_listt> per_thread_mapt;
+  typedef std::map<std::string, event_listt> per_loc_mapt;
+
+  void build_per_thread_map(const symex_target_equationt &equation, per_thread_mapt &dest) const;
+  void build_per_loc_map(const symex_target_equationt &equation, per_loc_mapt &dest) const;
 };
 
-#endif
-
+#endif // CPROVER_GOTO_SYMEX_MEMORY_MODEL_H

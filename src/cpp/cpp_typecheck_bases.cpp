@@ -6,81 +6,73 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <set>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_typecheck.h"
 
-/*******************************************************************\
+#include <set>
 
-Function: cpp_typecheckt::typcheck_compound_bases
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "cpp_typecheck_fargs.h"
 
 void cpp_typecheckt::typecheck_compound_bases(struct_typet &type)
 {
   std::set<irep_idt> bases;
   std::set<irep_idt> vbases;
 
-  irep_idt default_class_access=
-    type.get_bool(ID_C_class)?ID_private:ID_public;
-    
+  irep_idt default_class_access = type.default_access();
+
   irept::subt &bases_irep=type.add(ID_bases).get_sub();
 
-  Forall_irep(base_it, bases_irep)
+  for(auto &base : bases_irep)
   {
-    const cpp_namet &name=
-      to_cpp_name(base_it->find(ID_name));
+    const cpp_namet &name = to_cpp_name(base.find(ID_name));
 
     exprt base_symbol_expr=
       resolve(
         name,
-        cpp_typecheck_resolvet::TYPE,
+        cpp_typecheck_resolvet::wantt::TYPE,
         cpp_typecheck_fargst());
 
     if(base_symbol_expr.id()!=ID_type)
     {
-      err_location(name.location());
-      str << "expected type as struct/class base";
+      error().source_location=name.source_location();
+      error() << "expected type as struct/class base" << eom;
       throw 0;
     }
-    
+
     // elaborate any class template instances given as bases
     elaborate_class_template(base_symbol_expr.type());
 
-    if(base_symbol_expr.type().id()!=ID_symbol)
+    if(base_symbol_expr.type().id() != ID_struct_tag)
     {
-      err_location(name.location());
-      str << "expected type symbol as struct/class base";
+      error().source_location=name.source_location();
+      error() << "expected type symbol as struct/class base" << eom;
       throw 0;
     }
 
-    const symbolt &base_symbol=
-      lookup(base_symbol_expr.type());
+    const symbolt &base_symbol =
+      lookup(to_struct_tag_type(base_symbol_expr.type()));
 
-    if(base_symbol.type.id()==ID_incomplete_struct)
+    if(base_symbol.type.id() != ID_struct)
     {
-      err_location(name.location());
-      str << "base type is incomplete";
-      throw 0;
-    }
-    else if(base_symbol.type.id()!=ID_struct)
-    {
-      err_location(name.location());
-      str << "expected struct or class as base, but got `"
-          << to_string(base_symbol.type) << "'";
+      error().source_location=name.source_location();
+      error() << "expected struct or class as base, but got '"
+              << to_string(base_symbol.type) << "'" << eom;
       throw 0;
     }
 
-    bool virtual_base = base_it->get_bool(ID_virtual);
-    irep_idt class_access = base_it->get(ID_protection);
+    if(to_struct_type(base_symbol.type).is_incomplete())
+    {
+      error().source_location=name.source_location();
+      error() << "base type is incomplete" << eom;
+      throw 0;
+    }
 
-    if(class_access==irep_idt())
+    bool virtual_base = base.get_bool(ID_virtual);
+    irep_idt class_access = base.get(ID_protection);
+
+    if(class_access.empty())
       class_access = default_class_access;
 
     base_symbol_expr.id(ID_base);
@@ -89,7 +81,7 @@ void cpp_typecheckt::typecheck_compound_bases(struct_typet &type)
     if(virtual_base)
       base_symbol_expr.set(ID_virtual, true);
 
-    base_it->swap(base_symbol_expr);
+    base.swap(base_symbol_expr);
 
     // Add base scopes as parents to the current scope
     cpp_scopes.current_scope().add_secondary_scope(
@@ -111,32 +103,18 @@ void cpp_typecheckt::typecheck_compound_bases(struct_typet &type)
   {
     // add a flag to determine
     // if this is the most-derived-object
-    struct_typet::componentt most_derived;
+    struct_typet::componentt most_derived(
+      cpp_scopes.current_scope().prefix + "::" + "@most_derived", bool_typet());
 
-    most_derived.type()=bool_typet();
     most_derived.set_access(ID_public);
-    most_derived.set(ID_base_name, "@most_derived");
-    most_derived.set_name(language_prefix+
-                     cpp_scopes.current_scope().prefix+"::"+"@most_derived");
-    most_derived.set(ID_pretty_name, "@most_derived");
+    most_derived.set_base_name("@most_derived");
+    most_derived.set_pretty_name("@most_derived");
     most_derived.add_source_location()=type.source_location();
     put_compound_into_scope(most_derived);
 
     to_struct_type(type).components().push_back(most_derived);
   }
 }
-
-/*******************************************************************\
-
-Function: cpp_typecheckt::add_base_components
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_typecheckt::add_base_components(
   const struct_typet &from,
@@ -153,9 +131,9 @@ void cpp_typecheckt::add_base_components(
 
   if(bases.find(from_name)!=bases.end())
   {
-    err_location(to);
-    str << "error: non-virtual base class " << from_name
-        << " inherited multiple times";
+    error().source_location=to.source_location();
+    error() << "error: non-virtual base class " << from_name
+            << " inherited multiple times" << eom;
     throw 0;
   }
 
@@ -165,19 +143,18 @@ void cpp_typecheckt::add_base_components(
     vbases.insert(from_name);
 
   // look at the the parents of the base type
-  forall_irep(it, from.find(ID_bases).get_sub())
+  for(const auto &b : from.bases())
   {
-    irep_idt sub_access=it->get(ID_access);
+    irep_idt sub_access = b.get(ID_access);
 
     if(access==ID_private)
       sub_access=ID_private;
     else if(access==ID_protected && sub_access!=ID_private)
       sub_access=ID_protected;
 
-    const symbolt &symb=
-      lookup(it->find(ID_type).get(ID_identifier));
+    const symbolt &symb = lookup(b.type());
 
-    bool is_virtual=it->get_bool(ID_virtual);
+    const bool is_virtual_base = b.get_bool(ID_virtual);
 
     // recursive call
     add_base_components(
@@ -186,24 +163,20 @@ void cpp_typecheckt::add_base_components(
       to,
       bases,
       vbases,
-      is_virtual);
+      is_virtual_base);
   }
 
   // add the components
-  const struct_typet::componentst &src_c=from.components();
   struct_typet::componentst &dest_c=to.components();
 
-  for(struct_typet::componentst::const_iterator
-      it=src_c.begin();
-      it!=src_c.end();
-      it++)
+  for(const auto &c : from.components())
   {
-    if(it->get_bool(ID_from_base))
+    if(c.get_bool(ID_from_base))
       continue;
 
     // copy the component
-    dest_c.push_back(*it);
-    
+    dest_c.push_back(c);
+
     // now twiddle the copy
     struct_typet::componentt &component=dest_c.back();
     component.set(ID_from_base, true);
@@ -213,28 +186,25 @@ void cpp_typecheckt::add_base_components(
     if(access==ID_public)
     {
       if(comp_access==ID_private)
-        component.set_access("noaccess");
+        component.set_access(ID_noaccess);
     }
     else if(access == ID_protected)
     {
       if(comp_access==ID_private)
-        component.set_access("noaccess");
+        component.set_access(ID_noaccess);
       else
         component.set_access(ID_private);
     }
     else if(access == ID_private)
     {
-      if(comp_access == "noaccess" || comp_access == ID_private)
-        component.set_access("noaccess");
+      if(comp_access == ID_noaccess || comp_access == ID_private)
+        component.set_access(ID_noaccess);
       else
         component.set_access(ID_private);
     }
     else
-      assert(false);
-      
+      UNREACHABLE;
+
     // put into scope
-    
   }
 }
-
-

@@ -7,64 +7,66 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/std_code.h>
+/// \file
+/// Value Set Domain (Flow Insensitive)
 
 #include "value_set_domain_fi.h"
 
-/*******************************************************************\
-
-Function: value_set_domain_fit::transform
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/std_code.h>
 
 bool value_set_domain_fit::transform(
   const namespacet &ns,
+  const irep_idt &function_from,
   locationt from_l,
+  const irep_idt &function_to,
   locationt to_l)
-{ 
+{
   value_set.changed = false;
-  
-  value_set.set_from(from_l->function, from_l->location_number);
-  value_set.set_to(to_l->function, to_l->location_number);
-  
-//  std::cout << "transforming: " << 
-//      from_l->function << " " << from_l->location_number << " to " << 
-//      to_l->function << " " << to_l->location_number << std::endl;
-  
-  switch(from_l->type)
+
+  value_set.set_from(function_from, from_l->location_number);
+  value_set.set_to(function_to, to_l->location_number);
+
+  //  std::cout << "transforming: " <<
+  //      from_l->function << " " << from_l->location_number << " to " <<
+  //      to_l->function << " " << to_l->location_number << '\n';
+
+  switch(from_l->type())
   {
   case GOTO:
     // ignore for now
     break;
 
-  case END_FUNCTION:    
+  case END_FUNCTION:
     value_set.do_end_function(get_return_lhs(to_l), ns);
     break;
-  
-  case RETURN:
+
+  case SET_RETURN_VALUE:
   case OTHER:
   case ASSIGN:
-    value_set.apply_code(from_l->code, ns);
+    value_set.apply_code(from_l->code(), ns);
     break;
 
   case FUNCTION_CALL:
-    {
-      const code_function_callt &code=
-        to_code_function_call(from_l->code);
-
-      value_set.do_function_call(to_l->function, code.arguments(), ns);
-    }
+    value_set.do_function_call(function_to, from_l->call_arguments(), ns);
     break;
-  
-  default:;
+
+  case CATCH:
+  case THROW:
+  case DECL:
+  case DEAD:
+  case ATOMIC_BEGIN:
+  case ATOMIC_END:
+  case START_THREAD:
+  case END_THREAD:
+  case LOCATION:
+  case SKIP:
+  case ASSERT:
+  case ASSUME:
+  case INCOMPLETE_GOTO:
+  case NO_INSTRUCTION_TYPE:
     // do nothing
+    break;
   }
-  
+
   return (value_set.changed);
 }

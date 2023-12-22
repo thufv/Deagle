@@ -8,27 +8,19 @@ Date: November 2005
 
 \*******************************************************************/
 
-#ifndef CPROVER_GOTO_SYMEX_XML_GOTO_TRACE_H
-#define CPROVER_GOTO_SYMEX_XML_GOTO_TRACE_H
+/// \file
+/// Traces of GOTO Programs
 
-#include <util/xml.h>
+#ifndef CPROVER_GOTO_PROGRAMS_XML_GOTO_TRACE_H
+#define CPROVER_GOTO_PROGRAMS_XML_GOTO_TRACE_H
 
-#include <xmllang/graphml.h>
-
-#include "goto_trace.h"
-#include "cfg.h"
+class goto_tracet;
+class namespacet;
+class xmlt;
 
 void convert(
   const namespacet &ns,
   const goto_tracet &goto_trace,
   xmlt &xml);
 
-void convert(
-  const namespacet &ns,
-  const goto_tracet &goto_trace,
-#if 0
-  const cfg_baset<empty_cfg_nodet> &cfg,
-#endif
-  graphmlt &graphml);
-
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_XML_GOTO_TRACE_H

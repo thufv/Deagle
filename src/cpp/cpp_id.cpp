@@ -6,22 +6,14 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <ostream>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_id.h"
-#include "cpp_scope.h"
 
-/*******************************************************************\
+#include <ostream>
 
-Function: cpp_idt::cpp_idt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/invariant.h>
 
 cpp_idt::cpp_idt():
   is_member(false),
@@ -29,24 +21,12 @@ cpp_idt::cpp_idt():
   is_static_member(false),
   is_scope(false),
   is_constructor(false),
-  id_class(UNKNOWN),
+  id_class(id_classt::UNKNOWN),
   this_expr(static_cast<const exprt &>(get_nil_irep())),
   compound_counter(0),
-  parent(NULL)
+  parent(nullptr)
 {
 }
-
-/*******************************************************************\
-
-Function: cpp_idt::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_idt::print(std::ostream &out, unsigned indent) const
 {
@@ -54,85 +34,60 @@ void cpp_idt::print(std::ostream &out, unsigned indent) const
 
   if(!sub.empty())
   {
-    for(cpp_id_mapt::const_iterator it=sub.begin();
-        it!=sub.end();
-        it++)
-      it->second.print(out, indent+2);
+    for(const auto &s : sub)
+      s.second.print(out, indent + 2);
 
-    out << std::endl;
+    out << '\n';
   }
 }
-
-/*******************************************************************\
-
-Function: cpp_idt::print_fields
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void cpp_idt::print_fields(std::ostream &out, unsigned indent) const
 {
-  for(unsigned i=0; i<indent; i++) out << ' ';
-  out << "**identifier=" << identifier << std::endl;
+  out << std::string(indent, ' ');
+  out << "**identifier=" << identifier << '\n';
 
-  for(unsigned i=0; i<indent; i++) out << ' ';
-  out << "  prefix=" << prefix << std::endl;
+  out << std::string(indent, ' ');
+  out << "  prefix=" << prefix << '\n';
 
-  for(unsigned i=0; i<indent; i++) out << ' ';
-  out << "  base_name=" << base_name << std::endl;
+  out << std::string(indent, ' ');
+  out << "  suffix=" << suffix << '\n';
 
-  for(unsigned i=0; i<indent; i++) out << ' ';
-  out << "  method=" << is_method << std::endl;
+  out << std::string(indent, ' ');
+  out << "  base_name=" << base_name << '\n';
 
-  for(unsigned i=0; i<indent; i++) out << ' ';
-  out << "  class_identifier=" << class_identifier << std::endl;
+  out << std::string(indent, ' ');
+  out << "  method=" << is_method << '\n';
 
-  for(scope_listt::const_iterator
-      it=secondary_scopes.begin();
-      it!=secondary_scopes.end();
-      it++)
+  out << std::string(indent, ' ');
+  out << "  class_identifier=" << class_identifier << '\n';
+
+  for(const auto &s : secondary_scopes)
   {
-    for(unsigned i=0; i<indent; i++) out << ' ';
-    out << "  secondary_scope=" << (*it)->identifier << std::endl;
+    out << std::string(indent, ' ');
+    out << "  secondary_scope=" << s->identifier << '\n';
   }
 
-  for(scope_listt::const_iterator
-      it=using_scopes.begin();
-      it!=using_scopes.end();
-      it++)
+  for(const auto &s : using_scopes)
   {
-    for(unsigned i=0; i<indent; i++) out << ' ';
-    out << "  using_scope=" << (*it)->identifier << std::endl;
+    out << std::string(indent, ' ');
+    out << "  using_scope=" << s->identifier << '\n';
   }
 
-  for(unsigned i=0; i<indent; i++) out << ' ';
+  out << std::string(indent, ' ');
   out << "  flags:";
-  if(is_constructor) out << " constructor";
-  if(is_scope) out << " scope";
-  if(is_member) out << " member";
-  if(is_static_member) out << " static_member";
-  out << std::endl;
+  if(is_constructor)
+    out << " constructor";
+  if(is_scope)
+    out << " scope";
+  if(is_member)
+    out << " member";
+  if(is_static_member)
+    out << " static_member";
+  out << '\n';
 
-  for(unsigned i=0; i<indent; i++) out << ' ';
-  out << "  id_class=" << id_class << std::endl;
+  out << std::string(indent, ' ');
+  out << "  id_class=" << id_class << '\n';
 }
-
-/*******************************************************************\
-
-Function: operator<<
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 std::ostream &operator<<(std::ostream &out, const cpp_idt &cpp_id)
 {
@@ -140,36 +95,24 @@ std::ostream &operator<<(std::ostream &out, const cpp_idt &cpp_id)
   return out;
 }
 
-/*******************************************************************\
-
-Function: operator<<
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 std::ostream &operator<<(std::ostream &out, const cpp_idt::id_classt &id_class)
 {
+  // clang-format off
   switch(id_class)
   {
-   case cpp_idt::UNKNOWN:            out << "UNKNOWN"; break;
-   case cpp_idt::SYMBOL:             out << "SYMBOL"; break;
-   case cpp_idt::TYPEDEF:            out << "TYPEDEF"; break;
-   case cpp_idt::CLASS:              out << "CLASS"; break;
-   case cpp_idt::TEMPLATE:           out << "TEMPLATE"; break;
-   case cpp_idt::TEMPLATE_PARAMETER: out << "TEMPLATE_PARAMETER"; break;
-   case cpp_idt::ROOT_SCOPE:         out << "ROOT_SCOPE"; break;
-   case cpp_idt::BLOCK_SCOPE:        out << "BLOCK_SCOPE"; break;
-   case cpp_idt::TEMPLATE_SCOPE:     out << "TEMPLATE_SCOPE"; break;
-   case cpp_idt::NAMESPACE:          out << "NAMESPACE"; break;
-
-   default:
-    out << "(OTHER)";
+  case cpp_idt::id_classt::UNKNOWN:           return out<<"UNKNOWN";
+  case cpp_idt::id_classt::SYMBOL:            return out<<"SYMBOL";
+  case cpp_idt::id_classt::TYPEDEF:           return out<<"TYPEDEF";
+  case cpp_idt::id_classt::CLASS:             return out<<"CLASS";
+  case cpp_idt::id_classt::TEMPLATE:          return out<<"TEMPLATE";
+  case cpp_idt::id_classt::TEMPLATE_PARAMETER:return out<<"TEMPLATE_PARAMETER";
+  case cpp_idt::id_classt::ROOT_SCOPE:        return out<<"ROOT_SCOPE";
+  case cpp_idt::id_classt::BLOCK_SCOPE:       return out<<"BLOCK_SCOPE";
+  case cpp_idt::id_classt::TEMPLATE_SCOPE:    return out<<"TEMPLATE_SCOPE";
+  case cpp_idt::id_classt::NAMESPACE:         return out<<"NAMESPACE";
+  case cpp_idt::id_classt::ENUM:              return out<<"ENUM";
   }
+  // clang-format on
 
-  return out;
+  UNREACHABLE;
 }

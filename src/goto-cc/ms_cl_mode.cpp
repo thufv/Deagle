@@ -6,71 +6,81 @@ Author: CM Wintersteiger, 2006
 
 \*******************************************************************/
 
-#include <iostream>
-
-#include <util/string2int.h>
-#include <util/message.h>
-#include <util/prefix.h>
-#include <util/config.h>
-
-#include <cbmc/version.h>
+/// \file
+/// Visual Studio CL Mode
 
 #include "ms_cl_mode.h"
+
+#ifdef _WIN32
+#define EX_OK 0
+#define EX_USAGE 64
+#define EX_SOFTWARE 70
+#else
+#include <sysexits.h>
+#endif
+
+#include <iostream>
+
+#include <util/config.h>
+#include <util/file_util.h>
+#include <util/get_base_name.h>
+#include <util/message.h>
+
 #include "compile.h"
+#include "ms_cl_version.h"
 
-/*******************************************************************\
-
-Function: ms_cl_modet::doit
-
-  Inputs:
-
- Outputs:
-
- Purpose: does it.
-
-\*******************************************************************/
-
-static bool is_directory(const std::string &s)
+static bool has_directory_suffix(const std::string &path)
 {
-  if(s.size()<1) return false;
-  char last_char=s[s.size()-1];
-  // Visual CL recognizes both
-  return last_char=='\\' || last_char=='/';
+  // MS CL decides whether a parameter is a directory on the
+  // basis of the / or \\ suffix; it doesn't matter
+  // whether the directory actually exists.
+  return path.empty() ? false :
+                        path.back()=='/' || path.back()=='\\';
 }
 
-bool ms_cl_modet::doit()
+/// does it.
+int ms_cl_modet::doit()
 {
-  if(cmdline.isset('?') || 
+  if(cmdline.isset('?') ||
      cmdline.isset("help"))
   {
     help();
-    return false;
+    return EX_OK;
   }
 
-  int verbosity=1;
+  compilet compiler(cmdline, message_handler, cmdline.isset("WX"));
 
-  compilet compiler(cmdline);
-
-  #if 0  
+  #if 0
   bool act_as_ld=
     has_prefix(base_name, "link") ||
     has_prefix(base_name, "goto-link");
   #endif
 
-  if(cmdline.isset("verbosity"))
-    verbosity=unsafe_string2int(cmdline.getval("verbosity"));
+  const auto verbosity = messaget::eval_verbosity(
+    cmdline.get_value("verbosity"), messaget::M_ERROR, message_handler);
 
-  compiler.ui_message_handler.set_verbosity(verbosity);
-  ui_message_handler.set_verbosity(verbosity);
+  ms_cl_versiont ms_cl_version;
+  ms_cl_version.get("cl.exe");
 
-  debugx("Visual Studio mode");
-  
+  messaget log{message_handler};
+  log.debug() << "Visual Studio mode " << ms_cl_version << messaget::eom;
+
+  // model validation
+  compiler.validate_goto_model = cmdline.isset("validate-goto-model");
+
   // get configuration
   config.set(cmdline);
 
-  config.ansi_c.mode=configt::ansi_ct::MODE_VISUAL_STUDIO_C_CPP;
+  if(ms_cl_version.target == ms_cl_versiont::targett::x86)
+    config.ansi_c.set_32();
+  else if(ms_cl_version.target == ms_cl_versiont::targett::ARM)
+    config.ansi_c.set_32();
+  else if(ms_cl_version.target == ms_cl_versiont::targett::x86)
+    config.ansi_c.set_64();
+
+  config.ansi_c.mode=configt::ansi_ct::flavourt::VISUAL_STUDIO;
   compiler.object_file_extension="obj";
-  
+
   // determine actions to be undertaken
 
   if(cmdline.isset('E') || cmdline.isset('P'))
@@ -79,30 +89,79 @@ bool ms_cl_modet::doit()
     compiler.mode=compilet::COMPILE_ONLY;
   else
     compiler.mode=compilet::COMPILE_LINK_EXECUTABLE;
-                     
+
+  if(cmdline.isset("std"))
+  {
+    const std::string std_string = cmdline.get_value("std");
+
+    if(
+      std_string == ":c++14" || std_string == "=c++14" ||
+      std_string == ":c++17" || std_string == "=c++17" ||
+      std_string == ":c++latest" || std_string == "=c++latest")
+    {
+      // we don't have any newer version at the moment
+      config.cpp.set_cpp14();
+    }
+    else if(std_string == ":c++11" || std_string == "=c++11")
+    {
+      // this isn't really a Visual Studio variant, we just do this for GCC
+      // command-line compatibility
+      config.cpp.set_cpp11();
+    }
+    else
+    {
+      log.warning() << "unknown language standard " << std_string
+                    << messaget::eom;
+    }
+  }
+  else
+    config.cpp.set_cpp14();
+
   compiler.echo_file_name=true;
 
   if(cmdline.isset("Fo"))
   {
-    compiler.output_file_object=cmdline.getval("Fo");
+    std::string Fo_value = cmdline.get_value("Fo");
 
-    // this could be a directory
-    if(is_directory(compiler.output_file_object))
+    // this could be a directory or a file name
+    if(has_directory_suffix(Fo_value))
     {
-      if(cmdline.args.size()>=1)
-        compiler.output_file_object+=get_base_name(cmdline.args[0])+".obj";
+      compiler.output_directory_object = Fo_value;
+
+      if(!is_directory(Fo_value))
+        log.warning() << "not a directory: " << Fo_value << messaget::eom;
     }
+    else
+      compiler.output_file_object = Fo_value;
+  }
+
+  if(
+    compiler.mode == compilet::COMPILE_ONLY &&
+    cmdline.args.size() > 1 &&
+    compiler.output_directory_object.empty())
+  {
+    log.error() << "output directory required for /c with multiple input files"
+                << messaget::eom;
+    return EX_USAGE;
   }
 
   if(cmdline.isset("Fe"))
   {
-    compiler.output_file_executable=cmdline.getval("Fe");
+    compiler.output_file_executable=cmdline.get_value("Fe");
 
     // this could be a directory
-    if(is_directory(compiler.output_file_executable))
+    if(
+      has_directory_suffix(compiler.output_file_executable) &&
+      cmdline.args.size() >= 1)
     {
-      if(cmdline.args.size()>=1)
-        compiler.output_file_executable+=get_base_name(cmdline.args[0])+".exe";
+      if(!is_directory(compiler.output_file_executable))
+      {
+        log.warning() << "not a directory: " << compiler.output_file_executable
+                      << messaget::eom;
+      }
+
+      compiler.output_file_executable+=
+        get_base_name(cmdline.args[0], true) + ".exe";
     }
   }
   else
@@ -110,13 +169,14 @@ bool ms_cl_modet::doit()
     // We need at least one argument.
     // CL uses the first file name it gets!
     if(cmdline.args.size()>=1)
-      compiler.output_file_executable=get_base_name(cmdline.args[0])+".exe";
+      compiler.output_file_executable=
+        get_base_name(cmdline.args[0], true)+".exe";
   }
-  
+
   if(cmdline.isset('J'))
     config.ansi_c.char_is_unsigned=true;
 
-  if(verbosity>8)
+  if(verbosity > messaget::M_STATISTICS)
   {
     std::list<std::string>::iterator it;
 
@@ -125,7 +185,7 @@ bool ms_cl_modet::doit()
         it!=config.ansi_c.defines.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Undefines:\n";
@@ -133,7 +193,7 @@ bool ms_cl_modet::doit()
         it!=config.ansi_c.undefines.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Preprocessor Options:\n";
@@ -141,7 +201,7 @@ bool ms_cl_modet::doit()
         it!=config.ansi_c.preprocessor_options.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Include Paths:\n";
@@ -149,7 +209,7 @@ bool ms_cl_modet::doit()
         it!=config.ansi_c.include_paths.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
     std::cout << "Library Paths:\n";
@@ -157,32 +217,21 @@ bool ms_cl_modet::doit()
         it!=compiler.library_paths.end();
         it++)
     {
-      std::cout << "  " << (*it) << std::endl;
+      std::cout << "  " << (*it) << '\n';
     }
 
-    std::cout << "Output file (object): " << compiler.output_file_object << std::endl;
-    std::cout << "Output file (executable): " << compiler.output_file_executable << std::endl;
+    std::cout << "Output file (object): "
+              << compiler.output_file_object << '\n';
+    std::cout << "Output file (executable): "
+              << compiler.output_file_executable << '\n';
   }
 
   // Parse input program, convert to goto program, write output
-  return compiler.doit();
+  return compiler.doit() ? EX_USAGE : EX_OK;
 }
 
-/*******************************************************************\
-
-Function: ms_cl_modet::help_mode
-
-  Inputs:
-
- Outputs:
-
- Purpose: display command line help
-
-\*******************************************************************/
-
+/// display command line help
 void ms_cl_modet::help_mode()
 {
   std::cout << "goto-cl understands the options of CL plus the following.\n\n";
 }
-
-

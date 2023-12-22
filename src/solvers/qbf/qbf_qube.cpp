@@ -6,107 +6,43 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#include <cassert>
+#include "qbf_qube.h"
+
 #include <cstdlib>
 #include <fstream>
 
-#include <util/i2string.h>
+#include <util/invariant.h>
 
-#include "qbf_qube.h"
-
-/*******************************************************************\
-
-Function: qbf_qubet::qbf_qubet
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-qbf_qubet::qbf_qubet()
+qbf_qubet::qbf_qubet(message_handlert &message_handler)
+  : qdimacs_cnft(message_handler)
 {
   // skizzo crashes on broken lines
   break_lines=false;
 }
 
-/*******************************************************************\
-
-Function: qbf_qubet::~qbf_qubet
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 qbf_qubet::~qbf_qubet()
 {
 }
 
-/*******************************************************************\
-
-Function: qbf_qubet::l_get
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-tvt qbf_qubet::l_get(literalt a) const
+tvt qbf_qubet::l_get(literalt) const
 {
-  assert(false);
-  return tvt(false);
+  UNREACHABLE;
 }
-
-/*******************************************************************\
-
-Function: qbf_qubet::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const std::string qbf_qubet::solver_text()
 {
   return "QuBE";
 }
 
-/*******************************************************************\
-
-Function: qbf_qubet::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 propt::resultt qbf_qubet::prop_solve()
 {
   // sKizzo crashes on empty instances
   if(no_clauses()==0)
-    return P_SATISFIABLE;
+    return resultt::P_SATISFIABLE;
 
   {
-    std::string msg=
-      "QuBE: "+
-      i2string(no_variables())+" variables, "+
-      i2string(no_clauses())+" clauses";
-    messaget::status(msg);
+    log.status() << "QuBE: " << no_variables() << " variables, " << no_clauses()
+                 << " clauses" << messaget::eom;
   }
 
   std::string qbf_tmp_file="qube.qdimacs";
@@ -119,14 +55,12 @@ propt::resultt qbf_qubet::prop_solve()
     write_qdimacs_cnf(out);
   }
 
-  //std::string options=" --equivalences=0";
-  std::string options="";
+  std::string options;
 
   // solve it
-  int res=system(("QuBE "+qbf_tmp_file+
-         options+
-         " > "+result_tmp_file).c_str());
-  assert(0 == res);
+  int res=system(
+    ("QuBE "+qbf_tmp_file+options+" > "+result_tmp_file).c_str());
+  CHECK_RETURN(0==res);
 
   bool result=false;
 
@@ -141,7 +75,7 @@ propt::resultt qbf_qubet::prop_solve()
 
       std::getline(in, line);
 
-      if(line!="" && line[line.size()-1]=='\r')
+      if(!line.empty() && line[line.size() - 1] == '\r')
         line.resize(line.size()-1);
 
       if(line=="s cnf 0")
@@ -160,22 +94,21 @@ propt::resultt qbf_qubet::prop_solve()
 
     if(!result_found)
     {
-      messaget::error("QuBE failed: unknown result");
-      return P_ERROR;
+      log.error() << "QuBE failed: unknown result" << messaget::eom;
+      return resultt::P_ERROR;
     }
   }
 
   if(result)
   {
-    messaget::status("QuBE: TRUE");
-    return P_SATISFIABLE;
+    log.status() << "QuBE: TRUE" << messaget::eom;
+    return resultt::P_SATISFIABLE;
   }
   else
   {
-    messaget::status("QuBE: FALSE");
-    return P_UNSATISFIABLE;
+    log.status() << "QuBE: FALSE" << messaget::eom;
+    return resultt::P_UNSATISFIABLE;
   }
 
-  return P_ERROR;
+  return resultt::P_ERROR;
 }
-

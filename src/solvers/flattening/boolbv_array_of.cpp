@@ -6,62 +6,52 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/arith_tools.h>
-#include <util/std_types.h>
-
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/arith_tools.h>
+#include <util/invariant.h>
+#include <util/std_types.h>
 
-Function: boolbvt::convert_array_of
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_array_of(const exprt &expr, bvt &bv)
+/// Flatten arrays constructed from a single element.
+bvt boolbvt::convert_array_of(const array_of_exprt &expr)
 {
-  if(expr.operands().size()!=1)
-    throw "array_of takes one operand";
+  DATA_INVARIANT(
+    expr.type().id() == ID_array, "array_of expression shall have array type");
 
-  if(expr.type().id()!=ID_array)
-    throw "array_of takes array-typed operand";
-  
-  const array_typet &array_type=to_array_type(expr.type());
-  
+  const array_typet &array_type = expr.type();
+
   if(is_unbounded_array(array_type))
-    return conversion_failed(expr, bv);
+    return conversion_failed(expr);
 
-  unsigned width=boolbv_width(array_type);
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
+  std::size_t width=boolbv_width(array_type);
+  if(width == 0)
+    return bvt{};
 
   const exprt &array_size=array_type.size();
 
-  mp_integer size;
+  const auto size = numeric_cast_v<mp_integer>(to_constant_expr(array_size));
 
-  if(to_integer(array_size, size))
-    return conversion_failed(expr, bv);
-    
-  const bvt &tmp=convert_bv(expr.op0());
-    
+  const bvt &tmp = convert_bv(expr.what());
+
+  INVARIANT(
+    size * tmp.size() == width,
+    "total array bit width shall equal the number of elements times the "
+    "element bit with");
+
+  bvt bv;
   bv.resize(width);
 
-  if(size*tmp.size()!=width)
-    throw "convert_array_of: unexpected operand width";
-    
-  unsigned offset=0;
+  auto b_it = tmp.begin();
 
-  for(mp_integer i=0; i<size; i=i+1)
+  for(auto &b : bv)
   {
-    for(unsigned j=0; j<tmp.size(); j++, offset++)
-      bv[offset]=tmp[j];
+    b = *b_it;
+
+    b_it++;
+
+    if(b_it == tmp.end())
+      b_it = tmp.begin();
   }
-  
-  assert(offset==bv.size());
+
+  return bv;
 }

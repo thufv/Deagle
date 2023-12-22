@@ -6,59 +6,40 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef _MSC_VER
-#include <inttypes.h>
-#endif
-
-#include <cassert>
-#include <stack>
-
-#include <util/i2string.h>
-#include <util/threeval.h>
-
 #include "satcheck_minisat2.h"
 
-#include <core/Solver.h>
-#include <simp/SimpSolver.h>
-#include <core/ClosureSolver.h>
-#include <core/ICDSolver.h>
+#ifndef _WIN32
+#  include <signal.h>
+#  include <unistd.h>
+#endif
+
+#include <limits>
+
+#include <util/invariant.h>
+#include <util/make_unique.h>
+#include <util/threeval.h>
+
+#include <minisat/core/Solver.h>
+#include <minisat/simp/SimpSolver.h>
+#include "../minisat-2.2.1/minisat/core/ClosureSolver.h"
+#include "../minisat-2.2.1/minisat/core/MemoryModelSolver.h"
 
 #ifndef HAVE_MINISAT2
-//#error "Expected HAVE_MINISAT2"
+#error "Expected HAVE_MINISAT2"
 #endif
-#include <iostream>
-/*******************************************************************\
-
-Function: convert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void convert(const bvt &bv, Minisat::vec<Minisat::Lit> &dest)
 {
-  dest.capacity(bv.size());
+  PRECONDITION(
+    bv.size() <= static_cast<std::size_t>(std::numeric_limits<int>::max()));
+  dest.capacity(static_cast<int>(bv.size()));
 
-  forall_literals(it, bv)
-    if(!it->is_false())
-      dest.push(Minisat::mkLit(it->var_no(), it->sign()));
+  for(const auto &literal : bv)
+  {
+    if(!literal.is_false())
+      dest.push(Minisat::mkLit(literal.var_no(), literal.sign()));
+  }
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::l_get
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 template<typename T>
 tvt satcheck_minisat2_baset<T>::l_get(literalt a) const
@@ -71,7 +52,7 @@ tvt satcheck_minisat2_baset<T>::l_get(literalt a) const
   tvt result;
 
   if(a.var_no()>=(unsigned)solver->model.size())
-    return tvt(tvt::TV_UNKNOWN);
+    return tvt::unknown();
 
   using Minisat::lbool;
 
@@ -80,70 +61,67 @@ tvt satcheck_minisat2_baset<T>::l_get(literalt a) const
   else if(solver->model[a.var_no()]==l_False)
     result=tvt(false);
   else
-    return tvt(tvt::TV_UNKNOWN);
-  
-  if(a.sign()) result=!result;
+    return tvt::unknown();
+
+  if(a.sign())
+    result=!result;
 
   return result;
 }
 
-/*******************************************************************\
+template<typename T>
+void satcheck_minisat2_baset<T>::set_polarity(literalt a, bool value)
+{
+  PRECONDITION(!a.is_constant());
 
-Function: satcheck_minisat_no_simplifiert::solver_text
+  using Minisat::lbool;
 
-  Inputs:
+  try
+  {
+    add_variables();
+    solver->setPolarity(a.var_no(), value ? l_True : l_False);
+  }
+  catch(Minisat::OutOfMemoryException)
+  {
+    log.error() << "SAT checker ran out of memory" << messaget::eom;
+    status = statust::ERROR;
+    throw std::bad_alloc();
+  }
+}
 
- Outputs:
+template<typename T>
+void satcheck_minisat2_baset<T>::interrupt()
+{
+  solver->interrupt();
+}
 
- Purpose:
-
-\*******************************************************************/
+template<typename T>
+void satcheck_minisat2_baset<T>::clear_interrupt()
+{
+  solver->clearInterrupt();
+}
 
 const std::string satcheck_minisat_no_simplifiert::solver_text()
 {
-  return "MiniSAT 2.2.0 without simplifier";
+  return "MiniSAT 2.2.1 without simplifier";
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat_simplifiert::solver_text
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const std::string satcheck_minisat_simplifiert::solver_text()
 {
-  return "MiniSAT 2.2.0 with simplifier";
+  return "MiniSAT 2.2.1 with simplifier";
 }
 
 // __SZH_ADD_BEGIN__
-const std::string satcheck_minisat_closuret::solver_text()
+const std::string deagle_solvert::solver_text()
 {
-  return "A magical closure modication of MiniSAT by super noob SZH";
+  return "Deagle's Closure Solver";
 }
 
-const std::string satcheck_minisat_ICDt::solver_text()
+const std::string memory_model_solvert::solver_text()
 {
-  return "A magical ICD modication of MiniSAT by super noob SZH";
+  return "Deagle's Memory Model Solver";
 }
 // __SZH_ADD_END__
-
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::add_variables
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 template<typename T>
 void satcheck_minisat2_baset<T>::add_variables()
@@ -152,317 +130,208 @@ void satcheck_minisat2_baset<T>::add_variables()
     solver->newVar();
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::lcnf
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 template<typename T>
 void satcheck_minisat2_baset<T>::lcnf(const bvt &bv)
 {
-//	unsigned i;
-//	for (i = 0; i < bv.size(); i++)
-//	{
-//		if (bv[i].is_true())
-//			break;
-//	}
-//	if (i == bv.size())
-//	{
-//		for (i = 0; i < bv.size(); i++)
-//		{
-//			if (!bv[i].is_false())
-//				std::cout << bv[i].dimacs() << " ";
-//		}
-//		std::cout << "\n";
-//	}
-
-  add_variables();
-
-  forall_literals(it, bv)
+  try
   {
-    if(it->is_true())
-      return;
-    else if(!it->is_false())
-      assert(it->var_no()<(unsigned)solver->nVars());
-  }
-    
-  Minisat::vec<Minisat::Lit> c;
-
-  convert(bv, c);
-
-  // Note the underscore.
-  // Add a clause to the solver without making superflous internal copy.
-
-  solver->addClause_(c);
-
-  clause_counter++;
-//  std::cout << clause_counter << "\n";
-}
-
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-template<typename T>
-propt::resultt satcheck_minisat2_baset<T>::prop_solve()
-{
-  assert(status!=ERROR);
-
-  {
-    std::string msg=
-      i2string(_no_variables)+" variables, "+
-      i2string(solver->nClauses())+" clauses";
-    messaget::status(msg);
-      std::cout << msg << "\n";
-  }
-  
-  add_variables();
-  
-  std::string msg;
-
-  if(!solver->okay())
-  {
-    msg="SAT checker inconsistent: negated claim is UNSATISFIABLE, i.e., holds";
-    messaget::status(msg);
-  }
-  else
-  {
-    Minisat::vec<Minisat::Lit> MiniSat_assumptions;
-    convert(assumptions, MiniSat_assumptions);
-
-    if(solver->solve(MiniSat_assumptions))
-    {
-      msg="SAT checker: negated claim is SATISFIABLE, i.e., does not hold";
-      messaget::status(msg);
-      assert(solver->model.size()!=0);
-      status=SAT;
-      return P_SATISFIABLE;
-    }
-    else
-    {
-      msg="SAT checker: negated claim is UNSATISFIABLE, i.e., holds";
-      messaget::status(msg);
-    }
-  }
-
-  status=UNSAT;
-  return P_UNSATISFIABLE;
-}
-
-// __SZH_ADD_BEGIN__: my specialized version!
-template<>
-propt::resultt satcheck_minisat2_baset<Minisat::ClosureSolver>::prop_solve()
-{
-    std::cout << "call our own prop_solve of satcheck_minisat2_baset!\n";
-
-    assert(status!=ERROR);
-
-    {
-        std::string msg=
-                i2string(_no_variables)+" variables, "+
-                i2string(solver->nClauses())+" clauses";
-        messaget::status(msg);
-        std::cout << msg << "\n";
-    }
-
     add_variables();
 
-    std::string msg;
+    for(const auto &literal : bv)
+    {
+      if(literal.is_true())
+        return;
+      else if(!literal.is_false())
+      {
+        INVARIANT(
+          literal.var_no() < (unsigned)solver->nVars(),
+          "variable not added yet");
+      }
+    }
 
-    solver->init();
-    solver->set_graph();
+    Minisat::vec<Minisat::Lit> c;
+
+    convert(bv, c);
+
+    // Note the underscore.
+    // Add a clause to the solver without making superflous internal copy.
+
+    solver->addClause_(c);
+
+    if(solver_hardness)
+    {
+      // To map clauses to lines of program code, track clause indices in the
+      // dimacs cnf output. Dimacs output is generated after processing
+      // clauses to remove duplicates and clauses that are trivially true.
+      // Here, a clause is checked to see if it can be thus eliminated. If
+      // not, add the clause index to list of clauses in
+      // solver_hardnesst::register_clause().
+      static size_t cnf_clause_index = 0;
+      bvt cnf;
+      bool clause_removed = process_clause(bv, cnf);
+
+      if(!clause_removed)
+        cnf_clause_index++;
+
+      solver_hardness->register_clause(
+        bv, cnf, cnf_clause_index, !clause_removed);
+    }
+
+    clause_counter++;
+  }
+  catch(const Minisat::OutOfMemoryException &)
+  {
+    log.error() << "SAT checker ran out of memory" << messaget::eom;
+    status = statust::ERROR;
+    throw std::bad_alloc();
+  }
+}
+
+#ifndef _WIN32
+
+static Minisat::Solver *solver_to_interrupt=nullptr;
+
+static void interrupt_solver(int signum)
+{
+  (void)signum; // unused parameter -- just removing the name trips up cpplint
+  solver_to_interrupt->interrupt();
+}
+
+#endif
+
+template <typename T>
+propt::resultt satcheck_minisat2_baset<T>::do_prop_solve()
+{
+  PRECONDITION(status != statust::ERROR);
+
+  log.statistics() << (no_variables() - 1) << " variables, "
+                   << solver->nClauses() << " clauses" << messaget::eom;
+
+  try
+  {
+    add_variables();
 
     if(!solver->okay())
     {
-        msg="SAT checker inconsistent: negated claim is UNSATISFIABLE, i.e., holds";
-        messaget::status(msg);
+      log.status() << "SAT checker inconsistent: instance is UNSATISFIABLE"
+                   << messaget::eom;
+      status = statust::UNSAT;
+      return resultt::P_UNSATISFIABLE;
     }
-    else
+
+    // if assumptions contains false, we need this to be UNSAT
+    for(const auto &assumption : assumptions)
     {
-        std::cout << "start to solve\n";
-        Minisat::vec<Minisat::Lit> MiniSat_assumptions;
-        convert(assumptions, MiniSat_assumptions);
-
-        if(solver->solve(MiniSat_assumptions))
-        {
-            msg="SAT checker: negated claim is SATISFIABLE, i.e., does not hold";
-            messaget::status(msg);
-            std::cout << msg << "\n";
-            assert(solver->model.size()!=0);
-            status=SAT;
-            return P_SATISFIABLE;
-        }
-        else
-        {
-            msg="SAT checker: negated claim is UNSATISFIABLE, i.e., holds";
-            messaget::status(msg);
-        }
+      if(assumption.is_false())
+      {
+        log.status() << "got FALSE as assumption: instance is UNSATISFIABLE"
+                     << messaget::eom;
+        status = statust::UNSAT;
+        return resultt::P_UNSATISFIABLE;
+      }
     }
 
-    status=UNSAT;
-    return P_UNSATISFIABLE;
+    Minisat::vec<Minisat::Lit> solver_assumptions;
+    convert(assumptions, solver_assumptions);
+
+    using Minisat::lbool;
+
+#ifndef _WIN32
+
+    void (*old_handler)(int) = SIG_ERR;
+
+    if(time_limit_seconds != 0)
+    {
+      solver_to_interrupt = solver.get();
+      old_handler = signal(SIGALRM, interrupt_solver);
+      if(old_handler == SIG_ERR)
+        log.warning() << "Failed to set solver time limit" << messaget::eom;
+      else
+        alarm(time_limit_seconds);
+    }
+
+    lbool solver_result = solver->solveLimited(solver_assumptions);
+
+    if(old_handler != SIG_ERR)
+    {
+      alarm(0);
+      signal(SIGALRM, old_handler);
+      solver_to_interrupt = solver.get();
+    }
+
+#else // _WIN32
+
+    if(time_limit_seconds != 0)
+    {
+      log.warning() << "Time limit ignored (not supported on Win32 yet)"
+                    << messaget::eom;
+    }
+
+    lbool solver_result = solver->solve(solver_assumptions) ? l_True : l_False;
+
+#endif
+
+    if(solver_result == l_True)
+    {
+      log.status() << "SAT checker: instance is SATISFIABLE" << messaget::eom;
+      CHECK_RETURN(solver->model.size() > 0);
+      status = statust::SAT;
+      return resultt::P_SATISFIABLE;
+    }
+
+    if(solver_result == l_False)
+    {
+      log.status() << "SAT checker: instance is UNSATISFIABLE" << messaget::eom;
+      status = statust::UNSAT;
+      return resultt::P_UNSATISFIABLE;
+    }
+
+    log.status() << "SAT checker: timed out or other error" << messaget::eom;
+    status = statust::ERROR;
+    return resultt::P_ERROR;
+  }
+  catch(const Minisat::OutOfMemoryException &)
+  {
+    log.error() << "SAT checker ran out of memory" << messaget::eom;
+    status=statust::ERROR;
+    return resultt::P_ERROR;
+  }
 }
-
-template<>
-propt::resultt satcheck_minisat2_baset<Minisat::ICDSolver>::prop_solve()
-{
-    std::cout << "call our own prop_solve of satcheck_minisat2_baset!\n";
-
-    assert(status!=ERROR);
-
-    {
-        std::string msg=
-                i2string(_no_variables)+" variables, "+
-                i2string(solver->nClauses())+" clauses";
-        messaget::status(msg);
-        std::cout << msg << "\n";
-    }
-
-    add_variables();
-
-    std::string msg;
-
-    solver->init();
-    solver->set_graph();
-
-    if(!solver->okay())
-    {
-        msg="SAT checker inconsistent: negated claim is UNSATISFIABLE, i.e., holds";
-        messaget::status(msg);
-    }
-    else
-    {
-        std::cout << "start to solve\n";
-        Minisat::vec<Minisat::Lit> MiniSat_assumptions;
-        convert(assumptions, MiniSat_assumptions);
-
-        if(solver->solve(MiniSat_assumptions))
-        {
-            msg="SAT checker: negated claim is SATISFIABLE, i.e., does not hold";
-            messaget::status(msg);
-            std::cout << msg << "\n";
-            assert(solver->model.size()!=0);
-            status=SAT;
-            return P_SATISFIABLE;
-        }
-        else
-        {
-            msg="SAT checker: negated claim is UNSATISFIABLE, i.e., holds";
-            messaget::status(msg);
-        }
-    }
-
-    status=UNSAT;
-    return P_UNSATISFIABLE;
-}
-// __SZH_ADD_END__
-
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::set_assignment
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 template<typename T>
 void satcheck_minisat2_baset<T>::set_assignment(literalt a, bool value)
 {
-  assert(!a.is_constant());
+  PRECONDITION(!a.is_constant());
 
-  unsigned v=a.var_no();
-  bool sign=a.sign();
+  try
+  {
+    unsigned v = a.var_no();
+    bool sign = a.sign();
 
-  // MiniSat2 kills the model in case of UNSAT
-  solver->model.growTo(v+1);
-  value^=sign;
-  solver->model[v]=Minisat::lbool(value);
+    // MiniSat2 kills the model in case of UNSAT
+    solver->model.growTo(v + 1);
+    value ^= sign;
+    solver->model[v] = Minisat::lbool(value);
+  }
+  catch(const Minisat::OutOfMemoryException &)
+  {
+    log.error() << "SAT checker ran out of memory" << messaget::eom;
+    status = statust::ERROR;
+    throw std::bad_alloc();
+  }
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::satcheck_minisat2_baset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-template<typename T>
-satcheck_minisat2_baset<T>::satcheck_minisat2_baset(T *_solver):
-  solver(_solver)
+template <typename T>
+satcheck_minisat2_baset<T>::satcheck_minisat2_baset(
+  message_handlert &message_handler)
+  : cnf_solvert(message_handler),
+    solver(util_make_unique<T>()),
+    time_limit_seconds(0)
 {
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::~satcheck_minisat2_baset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-template<>
-satcheck_minisat2_baset<Minisat::Solver>::~satcheck_minisat2_baset()
-{
-  delete solver;
-}
-
-template<>
-satcheck_minisat2_baset<Minisat::SimpSolver>::~satcheck_minisat2_baset()
-{
-  delete solver;
-}
-
-template<>
-satcheck_minisat2_baset<Minisat::ClosureSolver>::~satcheck_minisat2_baset()
-{
-    delete solver;
-}
-
-template<>
-satcheck_minisat2_baset<Minisat::ICDSolver>::~satcheck_minisat2_baset()
-{
-    delete solver;
-}
-
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::is_in_conflict
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+template <typename T>
+satcheck_minisat2_baset<T>::~satcheck_minisat2_baset() = default;
 
 template<typename T>
 bool satcheck_minisat2_baset<T>::is_in_conflict(literalt a) const
@@ -476,108 +345,62 @@ bool satcheck_minisat2_baset<T>::is_in_conflict(literalt a) const
   return false;
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat2_baset::set_assumptions
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 template<typename T>
 void satcheck_minisat2_baset<T>::set_assumptions(const bvt &bv)
 {
-  assumptions=bv;
-
-  forall_literals(it, assumptions)
-    assert(!it->is_constant());
+  // We filter out 'true' assumptions which cause an assertion violation
+  // in Minisat2.
+  assumptions.clear();
+  for(const auto &assumption : bv)
+  {
+    if(!assumption.is_true())
+    {
+      assumptions.push_back(assumption);
+    }
+  }
 }
 
-/*******************************************************************\
-
-Function: satcheck_minisat_no_simplifiert::satcheck_minisat_no_simplifiert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-satcheck_minisat_no_simplifiert::satcheck_minisat_no_simplifiert():
-  satcheck_minisat2_baset<Minisat::Solver>(new Minisat::Solver)
-{
-}
-
-/*******************************************************************\
-
-Function: satcheck_minisat_simplifiert::satcheck_minisat_simplifiert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-satcheck_minisat_simplifiert::satcheck_minisat_simplifiert():
-  satcheck_minisat2_baset<Minisat::SimpSolver>(new Minisat::SimpSolver)
-{
-}
-
-// __SZH_ADD_BEGIN__
-satcheck_minisat_closuret::satcheck_minisat_closuret():
-  satcheck_minisat2_baset<Minisat::ClosureSolver>(new Minisat::ClosureSolver)
-{
-}
-
-satcheck_minisat_ICDt::satcheck_minisat_ICDt():
-  satcheck_minisat2_baset<Minisat::ICDSolver>(new Minisat::ICDSolver)
-{
-}
-// __SZH_ADD_END__
-
-/*******************************************************************\
-
-Function: satcheck_minisat_simplifiert::set_frozen
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+template class satcheck_minisat2_baset<Minisat::Solver>;
+template class satcheck_minisat2_baset<Minisat::SimpSolver>;
+template class satcheck_minisat2_baset<Minisat::ClosureSolver>;
+template class satcheck_minisat2_baset<Minisat::MemoryModelSolver>;
 
 void satcheck_minisat_simplifiert::set_frozen(literalt a)
 {
-  assert(!a.is_constant());
-  add_variables();
-  solver->setFrozen(a.var_no(), true);
+  try
+  {
+    if(!a.is_constant())
+    {
+      add_variables();
+      solver->setFrozen(a.var_no(), true);
+    }
+  }
+  catch(const Minisat::OutOfMemoryException &)
+  {
+    log.error() << "SAT checker ran out of memory" << messaget::eom;
+    status = statust::ERROR;
+    throw std::bad_alloc();
+  }
 }
-
-/*******************************************************************\
-
-Function: satcheck_minisat_simplifiert::is_eliminated
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bool satcheck_minisat_simplifiert::is_eliminated(literalt a) const
 {
-  assert(!a.is_constant());
+  PRECONDITION(!a.is_constant());
 
   return solver->isEliminated(a.var_no());
 }
 
+void deagle_solvert::save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_guard_mapt& _oc_guard_map, oc_location_mapt& _oc_location_map, std::map<std::string, int>& _oc_result_order)
+{
+  solver->save_raw_graph(_oc_edge_table, _oc_guard_map, _oc_location_map, _oc_result_order);
+}
+
+void deagle_solvert::init()
+{
+  solver->init();
+}
+
+void memory_model_solvert::save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_label_tablet& _oc_label_table, oc_location_mapt& _oc_location_map, std::map<std::string, int>& _oc_result_order, cat_modulet& _cat_module, std::map<std::string, unsigned>& _oc_thread_map)
+{
+  solver->save_raw_graph(_oc_edge_table, _oc_label_table, _oc_location_map, _oc_result_order, _cat_module, _oc_thread_map);
+}

@@ -6,197 +6,99 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <algorithm>
+/// \file
+/// Namespace
 
-#include <cassert>
-
-#include "string2int.h"
-#include "symbol_table.h"
-#include "prefix.h"
-#include "std_types.h"
 #include "namespace.h"
 
-/*******************************************************************\
+#include <algorithm>
 
-Function: get_max
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned get_max(
-  const std::string &prefix,
-  const symbol_tablet::symbolst &symbols)
-{
-  unsigned max_nr=0;
-
-  forall_symbols(it, symbols)
-    if(has_prefix(id2string(it->first), prefix))
-      max_nr=
-        std::max(unsafe_str2unsigned(it->first.c_str()+prefix.size()),
-                 max_nr);
-
-  return max_nr;
-}
-
-/*******************************************************************\
-
-Function: namespace_baset::~namespace_baset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "c_types.h"
+#include "std_expr.h"
+#include "symbol_table.h"
 
 namespace_baset::~namespace_baset()
 {
 }
 
-/*******************************************************************\
-
-Function: namespace_baset::follow_symbol
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void namespace_baset::follow_symbol(irept &irep) const
+/// Generic lookup function for a symbol expression in a symbol table.
+/// \param expr: The symbol expression to lookup.
+/// \return The symbol found in the namespace.
+/// \remarks The lookup function called assumes that the symbol we are
+/// looking for exists in the symbol table. If it doesn't, it hits an
+/// INVARIANT.
+const symbolt &namespace_baset::lookup(const symbol_exprt &expr) const
 {
-  while(irep.id()==ID_symbol)
-  {
-    const symbolt &symbol=lookup(irep);
-
-    if(symbol.is_type)
-    {
-      if(symbol.type.is_nil())
-        return;
-      else
-        irep=symbol.type;
-    }
-    else
-    {
-      if(symbol.value.is_nil())
-        return;
-      else
-        irep=symbol.value;
-    }
-  }
+  return lookup(expr.get_identifier());
 }
 
-/*******************************************************************\
+/// Generic lookup function for a tag type in a symbol table.
+/// \param type: The tag type to lookup.
+/// \return The symbol found in the namespace.
+/// \remarks The lookup function called assumes that the tag symbol we are
+/// looking for exists in the symbol table. If it doesn't, it hits an
+/// INVARIANT.
+const symbolt &namespace_baset::lookup(const tag_typet &type) const
+{
+  return lookup(type.get_identifier());
+}
 
-Function: namespace_baset::follow
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Resolve type symbol to the type it points to.
+/// \param src: The type we want to resolve in the symbol table.
+/// \return The resolved type.
 const typet &namespace_baset::follow(const typet &src) const
 {
-  if(src.id()!=ID_symbol) return src;
+  if(src.id() == ID_union_tag)
+    return follow_tag(to_union_tag_type(src));
 
-  const symbolt *symbol=&lookup(src);
+  if(src.id() == ID_struct_tag)
+    return follow_tag(to_struct_tag_type(src));
 
-  // let's hope it's not cyclic...
-  while(true)
-  {
-    assert(symbol->is_type);
-    if(symbol->type.id()!=ID_symbol) return symbol->type;
-    symbol=&lookup(symbol->type);
-  }
+  return src;
 }
 
-/*******************************************************************\
-
-Function: namespace_baset::follow_tag
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Follow type tag of union type.
+/// \param src: The union tag type to dispatch on.
+/// \return The type of the union tag in the symbol table.
 const union_typet &namespace_baset::follow_tag(const union_tag_typet &src) const
 {
   const symbolt &symbol=lookup(src.get_identifier());
-  assert(symbol.is_type);
-  assert(symbol.type.id()==ID_union);
+  CHECK_RETURN(symbol.is_type);
+  CHECK_RETURN(symbol.type.id() == ID_union);
   return to_union_type(symbol.type);
 }
 
-/*******************************************************************\
-
-Function: namespace_baset::follow_tag
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-const struct_typet &namespace_baset::follow_tag(const struct_tag_typet &src) const
+/// Follow type tag of struct type.
+/// \param src: The struct tag type to dispatch on.
+/// \return The type of the struct tag in the symbol table.
+const struct_typet &
+namespace_baset::follow_tag(const struct_tag_typet &src) const
 {
   const symbolt &symbol=lookup(src.get_identifier());
-  assert(symbol.is_type);
-  assert(symbol.type.id()==ID_struct);
+  CHECK_RETURN(symbol.is_type);
+  CHECK_RETURN(symbol.type.id() == ID_struct);
   return to_struct_type(symbol.type);
 }
 
-/*******************************************************************\
-
-Function: namespace_baset::follow_tag
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-const typet &namespace_baset::follow_tag(const c_enum_tag_typet &src) const
+/// Follow type tag of enum type.
+/// \param src: The enum tag type to dispatch on.
+/// \return The type of the enum tag in the symbol table.
+const c_enum_typet &
+namespace_baset::follow_tag(const c_enum_tag_typet &src) const
 {
   const symbolt &symbol=lookup(src.get_identifier());
-  assert(symbol.is_type);
-  return symbol.type;
+  CHECK_RETURN(symbol.is_type);
+  CHECK_RETURN(symbol.type.id() == ID_c_enum);
+  return to_c_enum_type(symbol.type);
 }
 
-/*******************************************************************\
-
-Function: namespace_baset::follow_macros
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Follow macros to their values in a given expression.
+/// \param expr: The expression to follow macros in.
 void namespace_baset::follow_macros(exprt &expr) const
 {
   if(expr.id()==ID_symbol)
   {
-    const symbolt &symbol=lookup(expr);
+    const symbolt &symbol = lookup(to_symbol_expr(expr));
 
     if(symbol.is_macro && !symbol.value.is_nil())
     {
@@ -211,50 +113,35 @@ void namespace_baset::follow_macros(exprt &expr) const
     follow_macros(*it);
 }
 
-/*******************************************************************\
-
-Function: namespace_baset::get_max
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned namespacet::get_max(const std::string &prefix) const
+/// Find smallest unused suffix in the two symbol tables, assuming they
+/// are present.
+/// \param prefix: The prefix to find smallest unused suffix of.
+/// \return The smallest prefix size.
+std::size_t namespacet::smallest_unused_suffix(const std::string &prefix) const
 {
-  unsigned m=0;
+  std::size_t m = 0;
 
-  if(symbol_table1!=NULL)
-    m=std::max(m, ::get_max(prefix, symbol_table1->symbols));
+  if(symbol_table1!=nullptr)
+    m = std::max(m, symbol_table1->next_unused_suffix(prefix));
 
-  if(symbol_table2!=NULL)
-    m=std::max(m, ::get_max(prefix, symbol_table2->symbols));
+  if(symbol_table2!=nullptr)
+    m = std::max(m, symbol_table2->next_unused_suffix(prefix));
 
   return m;
 }
 
-/*******************************************************************\
-
-Function: namespacet::lookup
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Search for a given symbol by name, in the two symbol tables, if present.
+/// \param name: The name of the symbol to be looked up.
+/// \param symbol: The const pointer to the reference of the symbol
+///   if it's found during lookup.
+/// \return False if the symbol was found, True otherwise.
 bool namespacet::lookup(
   const irep_idt &name,
-  const symbolt *&symbol) const  
+  const symbolt *&symbol) const
 {
   symbol_tablet::symbolst::const_iterator it;
 
-  if(symbol_table1!=NULL)
+  if(symbol_table1!=nullptr)
   {
     it=symbol_table1->symbols.find(name);
 
@@ -265,7 +152,7 @@ bool namespacet::lookup(
     }
   }
 
-  if(symbol_table2!=NULL)
+  if(symbol_table2!=nullptr)
   {
     it=symbol_table2->symbols.find(name);
 
@@ -279,88 +166,29 @@ bool namespacet::lookup(
   return true;
 }
 
-/*******************************************************************\
-
-Function: namespacet::lookup
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool namespacet::get_symbol(
-  const irep_idt &name,
-  symbolt *&symbol) const
+/// Find smallest unused suffix in the all the symbol tables.
+/// \param prefix: The prefix to find smallest unused suffix of.
+/// \return The smallest prefix size.
+std::size_t
+multi_namespacet::smallest_unused_suffix(const std::string &prefix) const
 {
-	symbol_tablet::symbolst::iterator it;
-  if(symbol_table1!=NULL)
-  {
-	  for (it = symbol_table1->symbols.begin(); it != symbol_table1->symbols.end(); it++)
-	  {
-		  if (it->first == name) {
-			  symbol=&(it->second);
-			  return false;
-		  }
-	  }
-  }
+  std::size_t m = 0;
 
-  if(symbol_table2!=NULL)
-  {
-	  for (it = symbol_table2->symbols.begin(); it != symbol_table2->symbols.end(); it++)
-	  {
-		  if (it->first == name) {
-			  symbol=&(it->second);
-			  return false;
-		  }
-	  }
-  }
-
-  return true;
-}
-
-/*******************************************************************\
-
-Function: multi_namespacet::get_max
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned multi_namespacet::get_max(const std::string &prefix) const
-{
-  unsigned m=0;
-
-  for(symbol_table_listt::const_iterator
-      it=symbol_table_list.begin();
-      it!=symbol_table_list.end();
-      it++)
-    m=std::max(m, ::get_max(prefix, (*it)->symbols));
+  for(const auto &st : symbol_table_list)
+    m = std::max(m, st->next_unused_suffix(prefix));
 
   return m;
 }
 
-/*******************************************************************\
-
-Function: multi_namespacet::lookup
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Iterate through the symbol tables in the multi-namespace
+/// and lookup the symbol.
+/// \param name: The name of the symbol to be looked up.
+/// \param symbol: The const pointer to the reference of the symbol
+///   if it's found during lookup.
+/// \return False if the symbol was found, True otherwise.
 bool multi_namespacet::lookup(
   const irep_idt &name,
-  const symbolt *&symbol) const  
+  const symbolt *&symbol) const
 {
   symbol_tablet::symbolst::const_iterator s_it;
 

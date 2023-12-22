@@ -6,23 +6,20 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_GOTO_PROGRAMS_SHOW_VALUE_SETS_H
-#define CPROVER_GOTO_PROGRAMS_SHOW_VALUE_SETS_H
+/// \file
+/// Show Value Sets
 
+#ifndef CPROVER_POINTER_ANALYSIS_SHOW_VALUE_SETS_H
+#define CPROVER_POINTER_ANALYSIS_SHOW_VALUE_SETS_H
+
+#include <pointer-analysis/value_set_analysis.h>
 #include <util/ui_message.h>
 
-class goto_functionst;
-class goto_programt;
-class value_set_analysist;
+class goto_modelt;
 
 void show_value_sets(
-  ui_message_handlert::uit ui,
-  const goto_functionst &goto_functions,
-  const value_set_analysist &value_set_analysis);
+  ui_message_handlert::uit,
+  const goto_modelt &,
+  const value_set_analysist &);
 
-void show_value_sets(
-  ui_message_handlert::uit ui,
-  const goto_programt &goto_program,
-  const value_set_analysist &value_set_analysis);
-
-#endif
+#endif // CPROVER_POINTER_ANALYSIS_SHOW_VALUE_SETS_H

@@ -6,291 +6,164 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
-
-#include <util/i2string.h>
-#include <util/arith_tools.h>
-#include <util/std_expr.h>
-#include <util/prefix.h>
-#include <util/pointer_offset_size.h>
-#include <langapi/language_util.h>
+/// \file
+/// Pointer Logic
 
 #include "pointer_logic.h"
 
-/*******************************************************************\
-
-Function: pointer_logict::is_dynamic_object
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/arith_tools.h>
+#include <util/byte_operators.h>
+#include <util/c_types.h>
+#include <util/invariant.h>
+#include <util/pointer_expr.h>
+#include <util/pointer_offset_size.h>
+#include <util/pointer_predicates.h>
+#include <util/prefix.h>
+#include <util/simplify_expr.h>
+#include <util/std_expr.h>
 
 bool pointer_logict::is_dynamic_object(const exprt &expr) const
 {
-  if(expr.type().get_bool("#dynamic")) return true;
-  
-  if(expr.id()==ID_symbol)
-    if(has_prefix(id2string(to_symbol_expr(expr).get_identifier()),
-                  "symex_dynamic::"))
-      return true;
-
-  return false;
+  return expr.type().get_bool(ID_C_dynamic) ||
+         (expr.id() == ID_symbol &&
+          has_prefix(
+            id2string(to_symbol_expr(expr).get_identifier()),
+            SYMEX_DYNAMIC_PREFIX));
 }
 
-/*******************************************************************\
-
-Function: pointer_logict::get_dynamic_objects
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void pointer_logict::get_dynamic_objects(std::vector<unsigned> &o) const
+void pointer_logict::get_dynamic_objects(std::vector<mp_integer> &o) const
 {
   o.clear();
-  unsigned nr=0;
-  
-  for(pointer_logict::objectst::const_iterator
-      it=objects.begin();
-      it!=objects.end();
-      it++, nr++)
+  mp_integer nr = 0;
+
+  for(auto it = objects.cbegin(); it != objects.cend(); ++it, ++nr)
     if(is_dynamic_object(*it))
       o.push_back(nr);
 }
 
-/*******************************************************************\
-
-Function: pointer_logict::add_object
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned pointer_logict::add_object(const exprt &expr)
+mp_integer pointer_logict::add_object(const exprt &expr)
 {
   // remove any index/member
-  
+
   if(expr.id()==ID_index)
   {
-    assert(expr.operands().size()==2);
-    return add_object(expr.op0());
+    return add_object(to_index_expr(expr).array());
   }
   else if(expr.id()==ID_member)
   {
-    assert(expr.operands().size()==1);
-    return add_object(expr.op0());
+    return add_object(to_member_expr(expr).compound());
   }
-  
+
   return objects.number(expr);
 }
 
-/*******************************************************************\
-
-Function: pointer_logict::pointer_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 exprt pointer_logict::pointer_expr(
-  unsigned object,
-  const typet &type) const
+  const mp_integer &object,
+  const pointer_typet &type) const
 {
-  pointert pointer(object, 0);
-  return pointer_expr(pointer, type);
+  return pointer_expr({object, 0}, type);
 }
-
-/*******************************************************************\
-
-Function: pointer_logict::pointer_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 exprt pointer_logict::pointer_expr(
   const pointert &pointer,
-  const typet &type) const
+  const pointer_typet &type) const
 {
   if(pointer.object==null_object) // NULL?
   {
     if(pointer.offset==0)
     {
-      constant_exprt result(type);
-      result.set_value(ID_NULL);
-      return result;
+      return null_pointer_exprt(type);
     }
     else
     {
-      constant_exprt null(type);
-      null.set_value(ID_NULL);
+      null_pointer_exprt null(type);
       return plus_exprt(null,
-        from_integer(pointer.offset, integer_typet()));
+        from_integer(pointer.offset, pointer_diff_type()));
     }
   }
   else if(pointer.object==invalid_object) // INVALID?
   {
-    constant_exprt result(type);
-    result.set_value("INVALID");
-    return result;
+    return constant_exprt("INVALID", type);
   }
-  
+
   if(pointer.object>=objects.size())
   {
-    constant_exprt result(type);
-    result.set_value("INVALID-"+i2string(pointer.object));
-    return result;
+    return constant_exprt("INVALID-" + integer2string(pointer.object), type);
   }
 
-  const exprt &object_expr=objects[pointer.object];
+  const exprt &object_expr =
+    objects[numeric_cast_v<std::size_t>(pointer.object)];
 
-  exprt deep_object=object_rec(pointer.offset, type, object_expr);
-  
-  exprt result;
-  
-  if(type.id()==ID_pointer)
-    result=exprt(ID_address_of, type);
-  else if(type.id()==ID_reference)
-    result=exprt("reference_to", type);
-  else
-    assert(0);
-
-  result.copy_to_operands(deep_object);
-  return result;
-}
-
-/*******************************************************************\
-
-Function: pointer_logict::object_rec
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-exprt pointer_logict::object_rec(
-  const mp_integer &offset,
-  const typet &pointer_type,
-  const exprt &src) const
-{
-  if(src.type().id()==ID_array)
+  typet subtype = type.base_type();
+  // This is a gcc extension.
+  // https://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Pointer-Arith.html
+  if(subtype.id() == ID_empty)
+    subtype = char_type();
+  if(object_expr.id() == ID_string_constant)
   {
-    mp_integer size=
-      pointer_offset_size(ns, src.type().subtype());
+    subtype = object_expr.type();
 
-    if(size==0) return src;
-    
-    mp_integer index=offset/size;
-    mp_integer rest=offset%size;
-    if(rest<0) rest=-rest;
-
-    index_exprt tmp(src.type().subtype());
-    tmp.index()=from_integer(index, typet(ID_integer));
-    tmp.array()=src;
-    
-    return object_rec(rest, pointer_type, tmp);
-  }
-  else if(src.type().id()==ID_struct)
-  {
-    const struct_typet::componentst &components=
-      to_struct_type(src.type()).components();
-
-    if(offset<0) return src;
-
-    mp_integer current_offset=0;
-
-    for(struct_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
+    // a string constant must be array-typed with fixed size
+    const array_typet &array_type = to_array_type(object_expr.type());
+    mp_integer array_size =
+      numeric_cast_v<mp_integer>(to_constant_expr(array_type.size()));
+    if(array_size > pointer.offset)
     {
-      assert(offset>=current_offset);
-
-      const typet &subtype=it->type();
-
-      mp_integer sub_size=pointer_offset_size(ns, subtype);
-      mp_integer new_offset=current_offset+sub_size;
-
-      if(new_offset>offset)
-      {
-        // found it
-        member_exprt tmp(subtype);
-        tmp.set_component_name(it->get_name());
-        tmp.op0()=src;
-        
-        return object_rec(
-          offset-current_offset, pointer_type, tmp);
-      }
-      
-      assert(new_offset<=offset);
-      current_offset=new_offset;
-      assert(current_offset<=offset);
+      to_array_type(subtype).size() =
+        from_integer(array_size - pointer.offset, array_type.size().type());
     }
-    
-    return src;
   }
-  else if(src.type().id()==ID_union)
-    return src;
-  
-  return src;
+  auto deep_object_opt =
+    get_subexpression_at_offset(object_expr, pointer.offset, subtype, ns);
+  CHECK_RETURN(deep_object_opt.has_value());
+  exprt deep_object = deep_object_opt.value();
+  simplify(deep_object, ns);
+  if(
+    deep_object.id() != ID_byte_extract_little_endian &&
+    deep_object.id() != ID_byte_extract_big_endian)
+  {
+    return typecast_exprt::conditional_cast(
+      address_of_exprt(deep_object), type);
+  }
+
+  const byte_extract_exprt &be = to_byte_extract_expr(deep_object);
+  const address_of_exprt base(be.op());
+  if(be.offset().is_zero())
+    return typecast_exprt::conditional_cast(base, type);
+
+  const auto object_size = pointer_offset_size(be.op().type(), ns);
+  if(object_size.has_value() && *object_size <= 1)
+  {
+    return typecast_exprt::conditional_cast(
+      plus_exprt(base, from_integer(pointer.offset, pointer_diff_type())),
+      type);
+  }
+  else if(object_size.has_value() && pointer.offset % *object_size == 0)
+  {
+    return typecast_exprt::conditional_cast(
+      plus_exprt(
+        base, from_integer(pointer.offset / *object_size, pointer_diff_type())),
+      type);
+  }
+  else
+  {
+    return typecast_exprt::conditional_cast(
+      plus_exprt(
+        typecast_exprt(base, pointer_type(char_type())),
+        from_integer(pointer.offset, pointer_diff_type())),
+      type);
+  }
 }
-
-/*******************************************************************\
-
-Function: pointer_logict::pointer_logict
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 pointer_logict::pointer_logict(const namespacet &_ns):ns(_ns)
 {
   // add NULL
   null_object=objects.number(exprt(ID_NULL));
-  assert(null_object==0);
+  CHECK_RETURN(null_object == 0);
 
   // add INVALID
   invalid_object=objects.number(exprt("INVALID"));
 }
-
-/*******************************************************************\
-
-Function: pointer_logict::~pointer_logict
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 pointer_logict::~pointer_logict()
 {

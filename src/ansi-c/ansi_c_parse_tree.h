@@ -6,10 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_ANSI_C_PARSE_TREE_H
-#define CPROVER_ANSI_C_PARSE_TREE_H
+
+#ifndef CPROVER_ANSI_C_ANSI_C_PARSE_TREE_H
+#define CPROVER_ANSI_C_ANSI_C_PARSE_TREE_H
 
 #include "ansi_c_declaration.h"
+
+#include <list>
 
 class ansi_c_parse_treet
 {
@@ -23,4 +26,4 @@ public:
   void output(std::ostream &out) const;
 };
 
-#endif
+#endif // CPROVER_ANSI_C_ANSI_C_PARSE_TREE_H

@@ -6,1455 +6,1396 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
+/// \file
+/// Symbolic Execution
+/// Implementation of functions to build SSA equation.
 
-#include <util/i2string.h>
-#include <util/std_expr.h>
-#include <util/expr_util.h>
-
-#include <langapi/language_util.h>
-#include <solvers/prop/prop_conv.h>
-#include <solvers/prop/prop.h>
-#include <solvers/prop/literal_expr.h>
-
-#include "goto_symex_state.h"
 #include "symex_target_equation.h"
 
-#include <iostream>
-#include <algorithm>
+#include <chrono>
 
-/*******************************************************************\
+#include <util/std_expr.h>
+#include <util/find_symbols.h>
 
-Function: symex_target_equationt::symex_target_equationt
+#include "solver_hardness.h"
+#include "ssa_step.h"
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-symex_target_equationt::symex_target_equationt(
-        const namespacet &_ns):
-        ns(_ns),
-        mutex_flag(true),
-        order_flag(false),
-        symmetry_flag(false),
-        events_num(0),
-        maximum_events_limit(1000)
+static std::function<void(solver_hardnesst &)>
+hardness_register_ssa(std::size_t step_index, const SSA_stept &step)
 {
-
+  return [step_index, &step](solver_hardnesst &hardness) {
+    hardness.register_ssa(step_index, step.cond_expr, step.source.pc);
+  };
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::~symex_target_equationt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-symex_target_equationt::~symex_target_equationt()
-{
-}
-
-/*******************************************************************\
-
-Function: symex_target_equationt::shared_read
-
-  Inputs:
-
- Outputs:
-
- Purpose: read from a shared variable
-
-\*******************************************************************/
 
 void symex_target_equationt::shared_read(
-        const exprt &guard,
-        const symbol_exprt &ssa_object,
-        const symbol_exprt &original_object,
-        unsigned atomic_section_id,
-        const sourcet &source,
-        const bool array_assign,
-        const bool struct_assign)
+  const exprt &guard,
+  const ssa_exprt &ssa_object,
+  unsigned atomic_section_id,
+  const sourcet &source)
 {
-//	std::cout << "R: " << ssa_object.get_identifier() << "\n";
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::SHARED_READ);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.ssa_lhs=ssa_object;
-    SSA_step.original_lhs_object=original_object;
-    SSA_step.type=goto_trace_stept::SHARED_READ;
-    SSA_step.atomic_section_id=atomic_section_id;
-    SSA_step.source=source;
-    SSA_step.array_assign = array_assign;
-    SSA_step.struct_assign = struct_assign;
+  SSA_step.guard=guard;
+  SSA_step.ssa_lhs=ssa_object;
+  SSA_step.atomic_section_id=atomic_section_id;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::shared_write
-
-  Inputs:
-
- Outputs:
-
- Purpose: write to a sharedvariable
-
-\*******************************************************************/
 
 void symex_target_equationt::shared_write(
-        const exprt &guard,
-        const symbol_exprt &ssa_object,
-        const symbol_exprt &original_object,
-        unsigned atomic_section_id,
-        const sourcet &source)
+  const exprt &guard,
+  const ssa_exprt &ssa_object,
+  unsigned atomic_section_id,
+  const sourcet &source)
 {
-//	std::cout << "W: " << ssa_object.get_identifier() << "\n";
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::SHARED_WRITE);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.ssa_lhs=ssa_object;
-    SSA_step.original_lhs_object=original_object;
-    SSA_step.type=goto_trace_stept::SHARED_WRITE;
-    SSA_step.atomic_section_id=atomic_section_id;
-    SSA_step.source=source;
+  SSA_step.guard=guard;
+  SSA_step.ssa_lhs=ssa_object;
+  SSA_step.atomic_section_id=atomic_section_id;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::spawn
-
-  Inputs:
-
- Outputs:
-
- Purpose: spawn a new thread
-
-\*******************************************************************/
-
+/// spawn a new thread
 void symex_target_equationt::spawn(
-        const exprt &guard,
-        const sourcet &source)
+  const exprt &guard,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::SPAWN;
-    SSA_step.source=source;
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::SPAWN);
+  SSA_stept &SSA_step=SSA_steps.back();
+  SSA_step.guard=guard;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::memory_barrier
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void symex_target_equationt::memory_barrier(
-        const exprt &guard,
-        const sourcet &source)
+  const exprt &guard,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::MEMORY_BARRIER;
-    SSA_step.source=source;
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::MEMORY_BARRIER);
+  SSA_stept &SSA_step=SSA_steps.back();
+  SSA_step.guard=guard;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::atomic_begin
-
-  Inputs:
-
- Outputs:
-
- Purpose: start an atomic section
-
-\*******************************************************************/
-
+/// start an atomic section
 void symex_target_equationt::atomic_begin(
-        const exprt &guard,
-        unsigned atomic_section_id,
-        const sourcet &source)
+  const exprt &guard,
+  unsigned atomic_section_id,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::ATOMIC_BEGIN;
-    SSA_step.atomic_section_id=atomic_section_id;
-    SSA_step.source=source;
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::ATOMIC_BEGIN);
+  SSA_stept &SSA_step=SSA_steps.back();
+  SSA_step.guard=guard;
+  SSA_step.atomic_section_id=atomic_section_id;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::atomic_end
-
-  Inputs:
-
- Outputs:
-
- Purpose: end an atomic section
-
-\*******************************************************************/
-
+/// end an atomic section
 void symex_target_equationt::atomic_end(
-        const exprt &guard,
-        unsigned atomic_section_id,
-        const sourcet &source)
+  const exprt &guard,
+  unsigned atomic_section_id,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::ATOMIC_END;
-    SSA_step.atomic_section_id=atomic_section_id;
-    SSA_step.source=source;
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::ATOMIC_END);
+  SSA_stept &SSA_step=SSA_steps.back();
+  SSA_step.guard=guard;
+  SSA_step.atomic_section_id=atomic_section_id;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::assignment
-
-  Inputs:
-
- Outputs:
-
- Purpose: write to a variable
-
-\*******************************************************************/
 
 void symex_target_equationt::assignment(
-        const exprt &guard,
-        const symbol_exprt &ssa_lhs,
-        const symbol_exprt &original_lhs_object,
-        const exprt &ssa_full_lhs,
-        const exprt &original_full_lhs,
-        const exprt &ssa_rhs,
-        const sourcet &source,
-        assignment_typet assignment_type)
+  const exprt &guard,
+  const ssa_exprt &ssa_lhs,
+  const exprt &ssa_full_lhs,
+  const exprt &original_full_lhs,
+  const exprt &ssa_rhs,
+  const sourcet &source,
+  assignment_typet assignment_type)
 {
-//	std::cout << "Assignment: " << ssa_lhs.get_identifier() << " = " << from_expr(ns, "", ssa_rhs) << "\n";
-    assert(ssa_lhs.is_not_nil());
+  PRECONDITION(ssa_lhs.is_not_nil());
 
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(SSA_assignment_stept{source,
+                                              guard,
+                                              ssa_lhs,
+                                              ssa_full_lhs,
+                                              original_full_lhs,
+                                              ssa_rhs,
+                                              assignment_type});
 
-    SSA_step.guard=guard;
-    SSA_step.ssa_lhs=ssa_lhs;
-    SSA_step.original_lhs_object=original_lhs_object;
-    SSA_step.ssa_full_lhs=ssa_full_lhs;
-    SSA_step.original_full_lhs=original_full_lhs;
-    SSA_step.ssa_rhs=ssa_rhs;
-    SSA_step.assignment_type=assignment_type;
-
-    SSA_step.cond_expr=equal_exprt(SSA_step.ssa_lhs, SSA_step.ssa_rhs);
-    SSA_step.type=goto_trace_stept::ASSIGNMENT;
-    SSA_step.source=source;
-
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_steps.back());
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::decl
-
-  Inputs:
-
- Outputs:
-
- Purpose: declare a fresh variable
-
-\*******************************************************************/
 
 void symex_target_equationt::decl(
-        const exprt &guard,
-        const symbol_exprt &ssa_lhs,
-        const symbol_exprt &original_lhs_object,
-        const sourcet &source)
+  const exprt &guard,
+  const ssa_exprt &ssa_lhs,
+  const exprt &initializer,
+  const sourcet &source,
+  assignment_typet assignment_type)
 {
-    assert(ssa_lhs.is_not_nil());
+  PRECONDITION(ssa_lhs.is_not_nil());
 
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::DECL);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.ssa_lhs=ssa_lhs;
-    SSA_step.ssa_full_lhs=ssa_lhs;
-    SSA_step.original_lhs_object=original_lhs_object;
-    SSA_step.original_full_lhs=original_lhs_object;
-    SSA_step.type=goto_trace_stept::DECL;
-    SSA_step.source=source;
+  SSA_step.guard=guard;
+  SSA_step.ssa_lhs=ssa_lhs;
+  SSA_step.ssa_full_lhs = initializer;
+  SSA_step.original_full_lhs=ssa_lhs.get_original_expr();
+  SSA_step.hidden=(assignment_type!=assignment_typet::STATE);
 
-    // the condition is trivially true, and only
-    // there so we see the symbols
-    SSA_step.cond_expr=equal_exprt(SSA_step.ssa_lhs, SSA_step.ssa_lhs);
+  // the condition is trivially true, and only
+  // there so we see the symbols
+  SSA_step.cond_expr=equal_exprt(SSA_step.ssa_lhs, SSA_step.ssa_lhs);
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::dead
-
-  Inputs:
-
- Outputs:
-
- Purpose: declare a fresh variable
-
-\*******************************************************************/
-
+/// declare a fresh variable
 void symex_target_equationt::dead(
-        const exprt &guard,
-        const symbol_exprt &ssa_lhs,
-        const symbol_exprt &original_lhs_object,
-        const sourcet &source)
+  const exprt &,
+  const ssa_exprt &,
+  const sourcet &)
 {
-    // we currently don't record these
+  // we currently don't record these
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::location
-
-  Inputs:
-
- Outputs:
-
- Purpose: just record a location
-
-\*******************************************************************/
 
 void symex_target_equationt::location(
-        const exprt &guard,
-        const sourcet &source)
+  const exprt &guard,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::LOCATION);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::LOCATION;
-    SSA_step.source=source;
+  SSA_step.guard=guard;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::function_call
-
-  Inputs:
-
- Outputs:
-
- Purpose: just record a location
-
-\*******************************************************************/
 
 void symex_target_equationt::function_call(
-        const exprt &guard,
-        const irep_idt &identifier,
-        const sourcet &source,
-        const irep_idt pthread_join_id)
+  const exprt &guard,
+  const irep_idt &function_id,
+  const std::vector<renamedt<exprt, L2>> &function_arguments,
+  const sourcet &source,
+  const bool hidden)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::FUNCTION_CALL);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::FUNCTION_CALL;
-    SSA_step.source=source;
-    SSA_step.identifier=identifier;
-    SSA_step.pthread_join_id = pthread_join_id;
+  SSA_step.guard = guard;
+  SSA_step.called_function = function_id;
+  for(const auto &arg : function_arguments)
+    SSA_step.ssa_function_arguments.emplace_back(arg.get());
+  SSA_step.hidden = hidden;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::function_return
-
-  Inputs:
-
- Outputs:
-
- Purpose: just record a location
-
-\*******************************************************************/
 
 void symex_target_equationt::function_return(
-        const exprt &guard,
-        const irep_idt &identifier,
-        const sourcet &source)
+  const exprt &guard,
+  const irep_idt &function_id,
+  const sourcet &source,
+  const bool hidden)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::FUNCTION_RETURN);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::FUNCTION_RETURN;
-    SSA_step.source=source;
-    SSA_step.identifier=identifier;
+  SSA_step.guard = guard;
+  SSA_step.called_function = function_id;
+  SSA_step.hidden = hidden;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::output
-
-  Inputs:
-
- Outputs:
-
- Purpose: just record output
-
-\*******************************************************************/
 
 void symex_target_equationt::output(
-        const exprt &guard,
-        const sourcet &source,
-        const irep_idt &output_id,
-        const std::list<exprt> &args)
+  const exprt &guard,
+  const sourcet &source,
+  const irep_idt &output_id,
+  const std::list<renamedt<exprt, L2>> &args)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::OUTPUT);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::OUTPUT;
-    SSA_step.source=source;
-    SSA_step.io_args=args;
-    SSA_step.io_id=output_id;
+  SSA_step.guard=guard;
+  for(const auto &arg : args)
+    SSA_step.io_args.emplace_back(arg.get());
+  SSA_step.io_id=output_id;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::output_fmt
-
-  Inputs:
-
- Outputs:
-
- Purpose: just record formatted output
-
-\*******************************************************************/
 
 void symex_target_equationt::output_fmt(
-        const exprt &guard,
-        const sourcet &source,
-        const irep_idt &output_id,
-        const irep_idt &fmt,
-        const std::list<exprt> &args)
+  const exprt &guard,
+  const sourcet &source,
+  const irep_idt &output_id,
+  const irep_idt &fmt,
+  const std::list<exprt> &args)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::OUTPUT);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::OUTPUT;
-    SSA_step.source=source;
-    SSA_step.io_args=args;
-    SSA_step.io_id=output_id;
-    SSA_step.formatted=true;
-    SSA_step.format_string=fmt;
+  SSA_step.guard=guard;
+  SSA_step.io_args=args;
+  SSA_step.io_id=output_id;
+  SSA_step.formatted=true;
+  SSA_step.format_string=fmt;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::input
-
-  Inputs:
-
- Outputs:
-
- Purpose: just record input
-
-\*******************************************************************/
 
 void symex_target_equationt::input(
-        const exprt &guard,
-        const sourcet &source,
-        const irep_idt &input_id,
-        const std::list<exprt> &args)
+  const exprt &guard,
+  const sourcet &source,
+  const irep_idt &input_id,
+  const std::list<exprt> &args)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::INPUT);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.type=goto_trace_stept::INPUT;
-    SSA_step.source=source;
-    SSA_step.io_args=args;
-    SSA_step.io_id=input_id;
+  SSA_step.guard=guard;
+  SSA_step.io_args=args;
+  SSA_step.io_id=input_id;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::assumption
-
-  Inputs: 
-
- Outputs:
-
- Purpose: record an assumption
-
-\*******************************************************************/
 
 void symex_target_equationt::assumption(
-        const exprt &guard,
-        const exprt &cond,
-        const sourcet &source)
+  const exprt &guard,
+  const exprt &cond,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::ASSUME);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.cond_expr=cond;
-    SSA_step.type=goto_trace_stept::ASSUME;
-    SSA_step.source=source;
+  SSA_step.guard=guard;
+  SSA_step.cond_expr=cond;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::assertion
-
-  Inputs:
-
- Outputs:
-
- Purpose: record an assertion
-
-\*******************************************************************/
 
 void symex_target_equationt::assertion(
-        const exprt &guard,
-        const exprt &cond,
-        const std::string &msg,
-        const sourcet &source)
+  const exprt &guard,
+  const exprt &cond,
+  const std::string &msg,
+  const sourcet &source)
 {
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::ASSERT);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=guard;
-    SSA_step.cond_expr=cond;
-    SSA_step.type=goto_trace_stept::ASSERT;
-    SSA_step.source=source;
-    SSA_step.comment=msg;
+  SSA_step.guard=guard;
+  SSA_step.cond_expr=cond;
+  SSA_step.comment=msg;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
 
-/*******************************************************************\
+void symex_target_equationt::goto_instruction(
+  const exprt &guard,
+  const renamedt<exprt, L2> &cond,
+  const sourcet &source)
+{
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::GOTO);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-Function: symex_target_equationt::constraint
+  SSA_step.guard=guard;
+  SSA_step.cond_expr = cond.get();
 
-  Inputs: 
-
- Outputs:
-
- Purpose: record a constraint
-
-\*******************************************************************/
+  merge_ireps(SSA_step);
+}
 
 void symex_target_equationt::constraint(
-        const exprt &cond,
-        const std::string &msg,
-        const sourcet &source)
+  const exprt &cond,
+  const std::string &msg,
+  const sourcet &source)
 {
-    // like assumption, but with global effect
-    SSA_steps.push_back(SSA_stept());
-    SSA_stept &SSA_step=SSA_steps.back();
+  // like assumption, but with global effect
+  SSA_steps.emplace_back(source, goto_trace_stept::typet::CONSTRAINT);
+  SSA_stept &SSA_step=SSA_steps.back();
 
-    SSA_step.guard=true_exprt();
-    SSA_step.cond_expr=cond;
-    SSA_step.type=goto_trace_stept::CONSTRAINT;
-    SSA_step.source=source;
-    SSA_step.comment=msg;
+  SSA_step.guard=true_exprt();
+  SSA_step.cond_expr=cond;
+  SSA_step.comment=msg;
 
-    merge_ireps(SSA_step);
+  merge_ireps(SSA_step);
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::convert
-
-  Inputs: converter
-
- Outputs: 
-
- Purpose:
-
-\*******************************************************************/
-
-void symex_target_equationt::convert(
-        prop_convt &prop_conv)
+void symex_target_equationt::convert_without_assertions(
+  decision_proceduret &decision_procedure)
 {
-    convert_guards(prop_conv);
-    convert_assignments(prop_conv);
-//  convert_decls(prop_conv);
-    convert_assumptions(prop_conv);
-    convert_assertions(prop_conv);
-    convert_io(prop_conv);
-    convert_constraints(prop_conv);
+  with_solver_hardness(decision_procedure, [&](solver_hardnesst &hardness) {
+    hardness.register_ssa_size(SSA_steps.size());
+  });
+
+  convert_guards(decision_procedure);
+  convert_assignments(decision_procedure);
+  convert_decls(decision_procedure);
+  convert_assumptions(decision_procedure);
+  convert_goto_instructions(decision_procedure);
+  convert_function_calls(decision_procedure);
+  convert_io(decision_procedure);
+  convert_constraints(decision_procedure);
 }
 
-/*******************************************************************\
+void symex_target_equationt::convert(decision_proceduret &decision_procedure)
+{
+  const auto convert_SSA_start = std::chrono::steady_clock::now();
 
-Function: symex_target_equationt::convert_assignments
+  convert_without_assertions(decision_procedure);
+  convert_assertions(decision_procedure);
 
-  Inputs: decision procedure
-
- Outputs: -
-
- Purpose: converts assignments
-
-\*******************************************************************/
+  const auto convert_SSA_stop = std::chrono::steady_clock::now();
+  std::chrono::duration<double> convert_SSA_runtime =
+    std::chrono::duration<double>(convert_SSA_stop - convert_SSA_start);
+  log.status() << "Runtime Convert SSA: " << convert_SSA_runtime.count() << "s"
+               << messaget::eom;
+}
 
 void symex_target_equationt::convert_assignments(
-        decision_proceduret &decision_procedure) const
+  decision_proceduret &decision_procedure)
 {
-    for(SSA_stepst::const_iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(step.is_assignment() && !step.ignore && !step.converted)
     {
-        if(it->is_assignment() && !it->ignore && it->rely) {
-//          std::cout << "assignment: " << from_expr(ns, "", it->cond_expr) << "\n";
-            decision_procedure.set_to_true(it->cond_expr);
-        }
-//        if(it->is_assignment() && !it->ignore ) {
-//            std::cout << "assignment: " << from_expr(ns, "", it->cond_expr) << "\n";
-//            decision_procedure.set_to_true(it->cond_expr);
-//        }
+      log.conditional_output(log.debug(), [&step](messaget::mstreamt &mstream) {
+        step.output(mstream);
+        mstream << messaget::eom;
+      });
 
+      decision_procedure.set_to_true(step.cond_expr);
+      step.converted = true;
+      with_solver_hardness(
+        decision_procedure, hardness_register_ssa(step_index, step));
     }
+    ++step_index;
+  }
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::convert_decls
-
-  Inputs: converter
-
- Outputs: -
-
- Purpose: converts declarations
-
-\*******************************************************************/
 
 void symex_target_equationt::convert_decls(
-        prop_convt &prop_conv) const
+  decision_proceduret &decision_procedure)
 {
-    for(SSA_stepst::const_iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(step.is_decl() && !step.ignore && !step.converted)
     {
-        if(it->is_decl() && !it->ignore)
-        {
-            // The result is not used, these have no impact on
-            // the satisfiability of the formula.
-            prop_conv.convert(it->cond_expr);
-        }
+      // The result is not used, these have no impact on
+      // the satisfiability of the formula.
+      decision_procedure.handle(step.cond_expr);
+      decision_procedure.handle(
+        equal_exprt{step.ssa_full_lhs, step.ssa_full_lhs});
+      step.converted = true;
+      with_solver_hardness(
+        decision_procedure, hardness_register_ssa(step_index, step));
     }
+    ++step_index;
+  }
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::convert_guards
-
-  Inputs: converter
-
- Outputs: -
-
- Purpose: converts guards
-
-\*******************************************************************/
-
-//// __FHY_ADD_BEGIN__
 void symex_target_equationt::convert_guards(
-        prop_convt &prop_conv)
+  decision_proceduret &decision_procedure)
 {
-    for(SSA_stepst::iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(step.ignore)
+      step.guard_handle = false_exprt();
+    else
     {
-        if(it->ignore)
-            it->guard_literal=const_literal(false);
-        else {
-            it->guard_literal=prop_conv.convert(it->guard);
-//            std::cout << "guard literal: " << it->guard_literal << "\n";
-//            std::cout << "guard: " << from_expr(ns, "", it->guard) << "\n\n";
-        }
+      log.conditional_output(log.debug(), [&step](messaget::mstreamt &mstream) {
+        step.output(mstream);
+        mstream << messaget::eom;
+      });
+
+      step.guard_handle = decision_procedure.handle(step.guard);
+      with_solver_hardness(
+        decision_procedure, hardness_register_ssa(step_index, step));
     }
+    ++step_index;
+  }
 }
-//// __FHY_ADD_END__
-
-/*******************************************************************\
-
-Function: symex_target_equationt::convert_assumptions
-
-  Inputs: converter
-
- Outputs: -
-
- Purpose: converts assumptions
-
-\*******************************************************************/
 
 void symex_target_equationt::convert_assumptions(
-        prop_convt &prop_conv)
+  decision_proceduret &decision_procedure)
 {
-    for(SSA_stepst::iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(step.is_assume())
     {
-        if(it->is_assume())
-        {
-            if(it->ignore)
-                it->cond_literal=const_literal(true);
-            else
-            {
-                it->cond_literal=prop_conv.convert(it->cond_expr);
-//                std::cout << "cond literal: " << it->cond_literal << "\n";
-//                std::cout << "assumption: " << from_expr(ns, "", it->cond_expr) << "\n\n";
-            }
-        }
+      if(step.ignore)
+        step.cond_handle = true_exprt();
+      else
+      {
+        log.conditional_output(
+          log.debug(), [&step](messaget::mstreamt &mstream) {
+            step.output(mstream);
+            mstream << messaget::eom;
+          });
+
+        step.cond_handle = decision_procedure.handle(step.cond_expr);
+
+        with_solver_hardness(
+          decision_procedure, hardness_register_ssa(step_index, step));
+      }
     }
+    ++step_index;
+  }
 }
 
-/*******************************************************************\
+void symex_target_equationt::convert_goto_instructions(
+  decision_proceduret &decision_procedure)
+{
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(step.is_goto())
+    {
+      if(step.ignore)
+        step.cond_handle = true_exprt();
+      else
+      {
+        log.conditional_output(
+          log.debug(), [&step](messaget::mstreamt &mstream) {
+            step.output(mstream);
+            mstream << messaget::eom;
+          });
 
-Function: symex_target_equationt::convert_constraints
-
-  Inputs: decision procedure
-
- Outputs: -
-
- Purpose: converts constraints
-
-\*******************************************************************/
+        step.cond_handle = decision_procedure.handle(step.cond_expr);
+        with_solver_hardness(
+          decision_procedure, hardness_register_ssa(step_index, step));
+      }
+    }
+    ++step_index;
+  }
+}
 
 void symex_target_equationt::convert_constraints(
-        decision_proceduret &decision_procedure) const
+  decision_proceduret &decision_procedure)
 {
-    for(SSA_stepst::const_iterator it=SSA_steps.begin();
-        it!=SSA_steps.end();
-        it++)
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(step.is_constraint() && !step.ignore && !step.converted)
     {
-        if(it->is_constraint())
-        {
-            if(it->ignore)
-                continue;
-            decision_procedure.set_to_true(it->cond_expr);
-//            std::cout << "constraint: " << from_expr(ns, "", it->cond_expr) << "\n";
-        }
+      log.conditional_output(log.debug(), [&step](messaget::mstreamt &mstream) {
+        step.output(mstream);
+        mstream << messaget::eom;
+      });
+
+      decision_procedure.set_to_true(step.cond_expr);
+      step.converted = true;
+
+      with_solver_hardness(
+        decision_procedure, hardness_register_ssa(step_index, step));
     }
+    ++step_index;
+  }
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::convert_assertions
-
-  Inputs: converter
-
- Outputs: -
-
- Purpose: converts assertions
-
-\*******************************************************************/
 
 void symex_target_equationt::convert_assertions(
-        prop_convt &prop_conv)
+  decision_proceduret &decision_procedure,
+  bool optimized_for_single_assertions)
 {
-    // we find out if there is only _one_ assertion,
-    // which allows for a simpler formula
+  // we find out if there is only _one_ assertion,
+  // which allows for a simpler formula
 
-    unsigned number_of_assertions=count_assertions();
+  std::size_t number_of_assertions=count_assertions();
 
-    if(number_of_assertions==0)
-        return;
+  if(number_of_assertions==0)
+    return;
 
-    if(number_of_assertions==1)
+  if(number_of_assertions == 1 && optimized_for_single_assertions)
+  {
+    std::size_t step_index = 0;
+    for(auto &step : SSA_steps)
     {
-        for(SSA_stepst::iterator it=SSA_steps.begin();
-            it!=SSA_steps.end(); it++)
-        {
-            if(it->is_assert())
-            {
-                prop_conv.set_to_false(it->cond_expr);
-                it->cond_literal=const_literal(false);
-                return; // prevent further assumptions!
-            }
-            else if(it->is_assume())
-                prop_conv.set_to_true(it->cond_expr);
-        }
+      // hide already converted assertions in the error trace
+      if(step.is_assert() && step.converted)
+        step.hidden = true;
 
-        assert(false); // unreachable
+      if(step.is_assert() && !step.ignore && !step.converted)
+      {
+        step.converted = true;
+        decision_procedure.set_to_false(step.cond_expr);
+        step.cond_handle = false_exprt();
+
+        with_solver_hardness(
+          decision_procedure, hardness_register_ssa(step_index, step));
+        return; // prevent further assumptions!
+      }
+      else if(step.is_assume())
+      {
+        decision_procedure.set_to_true(step.cond_expr);
+
+        with_solver_hardness(
+          decision_procedure, hardness_register_ssa(step_index, step));
+      }
+      ++step_index;
     }
 
-    // We do (NOT a1) OR (NOT a2) ...
-    // where the a's are the assertions
-    or_exprt::operandst disjuncts;
-    disjuncts.reserve(number_of_assertions);
+    UNREACHABLE; // unreachable
+  }
 
-    exprt assumption=true_exprt();
+  // We do (NOT a1) OR (NOT a2) ...
+  // where the a's are the assertions
+  or_exprt::operandst disjuncts;
+  disjuncts.reserve(number_of_assertions);
 
-    for(SSA_stepst::iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
+  exprt assumption=true_exprt();
+
+  std::vector<goto_programt::const_targett> involved_steps;
+
+  for(auto &step : SSA_steps)
+  {
+    // hide already converted assertions in the error trace
+    if(step.is_assert() && step.converted)
+      step.hidden = true;
+
+    if(step.is_assert() && !step.ignore && !step.converted)
     {
-        if(it->is_assert())
-        {
-//            std::cout << "assert: " << from_expr(ns, "", it->cond_expr) << "\n";
-            implies_exprt implication(
-                    assumption,
-                    it->cond_expr);
+      step.converted = true;
 
-            // do the conversion
-            it->cond_literal=prop_conv.convert(implication);
+      log.conditional_output(log.debug(), [&step](messaget::mstreamt &mstream) {
+        step.output(mstream);
+        mstream << messaget::eom;
+      });
 
-            // store disjunct
-            disjuncts.push_back(literal_exprt(!it->cond_literal));
-        }
-        else if(it->is_assume())
-        {
-            //// __FHY_ADD_BEGIN__
-            if(it->cond_expr.is_false())
-                continue;
-            //// __FHY_ADD_END__
-//    	    std::cout << "assume: " << from_expr(ns, "", it->cond_expr) << "\n";
-            // the assumptions have been converted before
-            // avoid deep nesting of ID_and expressions
-            if(assumption.id()==ID_and)
-                assumption.copy_to_operands(literal_exprt(it->cond_literal));
-            else
-                assumption=
-                        and_exprt(assumption, literal_exprt(it->cond_literal));
-        }
+      implies_exprt implication(
+        assumption,
+        step.cond_expr);
+
+      // do the conversion
+      step.cond_handle = decision_procedure.handle(implication);
+
+      with_solver_hardness(
+        decision_procedure,
+        [&involved_steps, &step](solver_hardnesst &hardness) {
+          involved_steps.push_back(step.source.pc);
+        });
+
+      // store disjunct
+      disjuncts.push_back(not_exprt(step.cond_handle));
     }
+    else if(step.is_assume())
+    {
+      // the assumptions have been converted before
+      // avoid deep nesting of ID_and expressions
+      if(assumption.id()==ID_and)
+        assumption.copy_to_operands(step.cond_handle);
+      else
+        assumption = and_exprt(assumption, step.cond_handle);
 
-    // the below is 'true' if there are no assertions
-    prop_conv.set_to_true(disjunction(disjuncts));
+      with_solver_hardness(
+        decision_procedure,
+        [&involved_steps, &step](solver_hardnesst &hardness) {
+          involved_steps.push_back(step.source.pc);
+        });
+    }
+  }
+
+  const auto assertion_disjunction = disjunction(disjuncts);
+  // the below is 'true' if there are no assertions
+  decision_procedure.set_to_true(assertion_disjunction);
+
+  with_solver_hardness(
+    decision_procedure,
+    [&assertion_disjunction, &involved_steps](solver_hardnesst &hardness) {
+      hardness.register_assertion_ssas(assertion_disjunction, involved_steps);
+    });
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::convert_io
-
-  Inputs: decision procedure
-
- Outputs: -
-
- Purpose: converts I/O
-
-\*******************************************************************/
-
-void symex_target_equationt::convert_io(
-        decision_proceduret &dec_proc)
+void symex_target_equationt::convert_function_calls(
+  decision_proceduret &decision_procedure)
 {
-    unsigned io_count=0;
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(!step.ignore)
+    {
+      and_exprt::operandst conjuncts;
+      step.converted_function_arguments.reserve(step.ssa_function_arguments.size());
 
-    for(SSA_stepst::iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
-        if(!it->ignore)
+      for(const auto &arg : step.ssa_function_arguments)
+      {
+        if(arg.is_constant() ||
+           arg.id()==ID_string_constant)
+          step.converted_function_arguments.push_back(arg);
+        else
         {
-            for(std::list<exprt>::const_iterator
-                        o_it=it->io_args.begin();
-                o_it!=it->io_args.end();
-                o_it++)
-            {
-                exprt tmp=*o_it;
+          const irep_idt identifier="symex::args::"+std::to_string(argument_count++);
+          symbol_exprt symbol(identifier, arg.type());
 
-                if(tmp.is_constant() ||
-                   tmp.id()==ID_string_constant)
-                    it->converted_io_args.push_back(tmp);
-                else
-                {
-                    symbol_exprt symbol;
-                    symbol.type()=tmp.type();
-                    symbol.set_identifier("symex::io::"+i2string(io_count++));
+          equal_exprt eq(arg, symbol);
+          merge_irep(eq);
 
-                    equal_exprt eq(tmp, symbol);
-                    merge_irep(eq);
-
-                    dec_proc.set_to(eq, true);
-                    it->converted_io_args.push_back(symbol);
-                }
-            }
+          decision_procedure.set_to(eq, true);
+          conjuncts.push_back(eq);
+          step.converted_function_arguments.push_back(symbol);
         }
+      }
+      with_solver_hardness(
+        decision_procedure,
+        [step_index, &conjuncts, &step](solver_hardnesst &hardness) {
+          hardness.register_ssa(
+            step_index, conjunction(conjuncts), step.source.pc);
+        });
+    }
+    ++step_index;
+  }
 }
 
+void symex_target_equationt::convert_io(decision_proceduret &decision_procedure)
+{
+  std::size_t step_index = 0;
+  for(auto &step : SSA_steps)
+  {
+    if(!step.ignore)
+    {
+      and_exprt::operandst conjuncts;
+      for(const auto &arg : step.io_args)
+      {
+        if(arg.is_constant() ||
+           arg.id()==ID_string_constant)
+          step.converted_io_args.push_back(arg);
+        else
+        {
+          const irep_idt identifier =
+            "symex::io::" + std::to_string(io_count++);
+          symbol_exprt symbol(identifier, arg.type());
 
-/*******************************************************************\
+          equal_exprt eq(arg, symbol);
+          merge_irep(eq);
 
-Function: symex_target_equationt::merge_ireps
+          decision_procedure.set_to(eq, true);
+          conjuncts.push_back(eq);
+          step.converted_io_args.push_back(symbol);
+        }
+      }
+      with_solver_hardness(
+        decision_procedure,
+        [step_index, &conjuncts, &step](solver_hardnesst &hardness) {
+          hardness.register_ssa(
+            step_index, conjunction(conjuncts), step.source.pc);
+        });
+    }
+    ++step_index;
+  }
+}
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Merging causes identical ireps to be shared.
+/// This is only enabled if the definition SHARING is defined.
+/// \param SSA_step The step you want to have shared values.
 void symex_target_equationt::merge_ireps(SSA_stept &SSA_step)
 {
-    merge_irep(SSA_step.guard);
+  merge_irep(SSA_step.guard);
 
-    merge_irep(SSA_step.ssa_lhs);
-    merge_irep(SSA_step.original_lhs_object);
-    merge_irep(SSA_step.ssa_full_lhs);
-    merge_irep(SSA_step.original_full_lhs);
-    merge_irep(SSA_step.ssa_rhs);
+  merge_irep(SSA_step.ssa_lhs);
+  merge_irep(SSA_step.ssa_full_lhs);
+  merge_irep(SSA_step.original_full_lhs);
+  merge_irep(SSA_step.ssa_rhs);
 
-    merge_irep(SSA_step.cond_expr);
+  merge_irep(SSA_step.cond_expr);
 
-    for(std::list<exprt>::iterator
-                it=SSA_step.io_args.begin();
-        it!=SSA_step.io_args.end();
-        ++it)
-        merge_irep(*it);
-    // converted_io_args is merged in convert_io
+  for(auto &step : SSA_step.io_args)
+    merge_irep(step);
+
+  for(auto &arg : SSA_step.ssa_function_arguments)
+    merge_irep(arg);
+
+  // converted_io_args is merged in convert_io
 }
-
-/*******************************************************************\
-
-Function: symex_target_equationt::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void symex_target_equationt::output(std::ostream &out) const
 {
-    for(SSA_stepst::const_iterator
-                it=SSA_steps.begin();
-        it!=SSA_steps.end();
-        it++)
-    {
-        it->output(ns, out);
-//    out << "--------------" << std::endl;
-    }
+  for(const auto &step : SSA_steps)
+  {
+    step.output(out);
+    out << "--------------\n";
+  }
 }
 
-char xrc_hash(void* ptr, int len)
+// __SZH_ADD_BEGIN__
+
+#include <iostream>
+#include <regex>
+#include <util/arith_tools.h>
+
+#include <util/format_expr.h>
+
+std::string get_addr(std::string name)
 {
-    char ret = 0;
-    for(int i = 0; i < len; i++)
-    {
-        ret ^= ((char *)ptr)[i];
-    }
-    return ret;
+  std::regex pattern("([^\\#]*)#\\d+([^\\d].*)");
+  std::smatch results;
+  if(regex_match(name, results, pattern))
+    return results[1].str() + results[2].str();
+  return name.substr(0, name.find_first_of('#'));
 }
 
-int symex_target_equationt::hash() const
+std::string get_addr_prefix(std::string name)
 {
-    char ret = 0;
-    for(SSA_stepst::const_iterator
-                it=SSA_steps.begin();
-        it!=SSA_steps.end();
-        it++)
-    {
-        auto& step = *it;
-        ret ^= xrc_hash((void*)&step, sizeof(step));
-    }
-    return int(ret);
+  return name.substr(0, name.find_first_of('#'));
 }
 
-/*******************************************************************\
-
-Function: symex_target_equationt::SSA_stept::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void symex_target_equationt::SSA_stept::output_backup(
-        const namespacet &ns,
-        std::ostream &out) const
+struct expr_condt
 {
-//  if(source.is_set)
-//  {
-//    out << "Thread " << source.thread_nr;
-//
-//    if(source.pc->source_location.is_not_nil())
-//      out << " " << source.pc->source_location << std::endl;
-//    else
-//      out << std::endl;
-//  }
+  exprt expr;
+  exprt::operandst condition; //conjunction
+  bool is_trivial_assign;
 
-    switch(type)
-    {
-//  case goto_trace_stept::ASSERT: out << "ASSERT" << std::endl; break;
-//  case goto_trace_stept::ASSUME: out << "ASSUME" << std::endl; break;
-//  case goto_trace_stept::LOCATION: out << "LOCATION" << std::endl; break;
-//  case goto_trace_stept::INPUT: out << "INPUT" << std::endl; break;
-//  case goto_trace_stept::OUTPUT: out << "OUTPUT" << std::endl; break;
-//
-//  case goto_trace_stept::DECL:
-//    out << "DECL" << std::endl;
-//    out << from_expr(ns, "", ssa_lhs) << std::endl;
-//    break;
+  expr_condt() {}
+  expr_condt(exprt _expr, exprt::operandst _cond, bool _flag) :
+    expr(_expr), condition(_cond), is_trivial_assign(_flag) {}
+};
 
-//  case goto_trace_stept::ASSIGNMENT:
-//    out << "ASSIGNMENT (";
-//    switch(assignment_type)
-//    {
-//    case HIDDEN: out << "HIDDEN"; break;
-//    case STATE: out << "STATE"; break;
-//    case PHI: out << "PHI"; break;
-//    case GUARD: out << "GUARD"; break;
-//    default:;
-//    }
-//
-//    out << ")" << std::endl;
-//    break;
-//
-//  case goto_trace_stept::DEAD: out << "DEAD" << std::endl; break;
-//  case goto_trace_stept::FUNCTION_CALL: out << "FUNCTION_CALL" << std::endl; break;
-//  case goto_trace_stept::FUNCTION_RETURN: out << "FUNCTION_RETURN" << std::endl; break;
-//  case goto_trace_stept::CONSTRAINT: out << "CONSTRAINT" << std::endl; break;
-        case goto_trace_stept::SHARED_READ: out << "SHARED READ" << std::endl; break;
-        case goto_trace_stept::SHARED_WRITE: out << "SHARED WRITE" << std::endl; break;
-//  case goto_trace_stept::ATOMIC_BEGIN: out << "ATOMIC_BEGIN" << std::endl; break;
-//  case goto_trace_stept::ATOMIC_END: out << "AUTOMIC_END" << std::endl; break;
-        case goto_trace_stept::SPAWN: out << "SPAWN" << std::endl; break;
-        case goto_trace_stept::MEMORY_BARRIER: out << "MEMORY_BARRIER" << std::endl; break;
-
-//  default: assert(false);
-    }
-
-//  if(is_assert() || is_assume() || is_assignment() || is_constraint())
-//    out << from_expr(ns, "", cond_expr) << std::endl;
-//
-//  if(is_assert() || is_constraint())
-//    out << comment << std::endl;
-
-    if(is_shared_read() || is_shared_write())
-        out << from_expr(ns, "", ssa_lhs) << std::endl;
-
-//  out << "Guard: " << from_expr(ns, "", guard) << std::endl;
-}
-
-void symex_target_equationt::SSA_stept::output(
-        const namespacet &ns,
-        std::ostream &out) const
+struct index_or_membert
 {
-    if(source.is_set)
-//  if(source.is_set && (type == goto_trace_stept::SHARED_READ || type == goto_trace_stept::SHARED_WRITE))
-    {
-        out << "Thread " << source.thread_nr;
-
-        if(source.pc->source_location.is_not_nil())
-            out << " " << source.pc->source_location << std::endl;
-        else
-            out << std::endl;
-    }
-
-//  if (type == goto_trace_stept::FUNCTION_CALL && identifier == "c::__VERIFIER_atomic_begin")
-//	  std::cout << "===================================\n";
-//  if (type == goto_trace_stept::FUNCTION_CALL && identifier == "c::__VERIFIER_atomic_end")
-//  	  std::cout << "###################################\n";
-
-    switch(type)
-    {
-        case goto_trace_stept::SHARED_READ: out << "SHARED READ " << from_expr(ns, "", ssa_lhs) << std::endl; break;
-        case goto_trace_stept::SHARED_WRITE: out << "SHARED WRITE " << from_expr(ns, "", ssa_lhs) << std::endl; break;
-        case goto_trace_stept::ATOMIC_BEGIN: out << "ATOMIC_BEGIN" << std::endl; break;
-        case goto_trace_stept::ATOMIC_END: out << "AUTOMIC_END" << std::endl; break;
-
-        case goto_trace_stept::ASSERT: out << "ASSERT "; break;
-        case goto_trace_stept::ASSUME: out << "ASSUME "; break;
-        case goto_trace_stept::ASSIGNMENT: out << "ASSIGNMENT "; break;
-        case goto_trace_stept::CONSTRAINT: out << "CONSTRAINT "; break;
-//
-//   case goto_trace_stept::DEAD: out << "DEAD" << std::endl; break;
-//   case goto_trace_stept::FUNCTION_CALL:
-//	   if (is_verify_atomic_begin())
-//		   out << "ATOMIC_BEGIN " << std::endl;
-//	   if (is_verify_atomic_end())
-//		   out << "ATOMIC_END " << std::endl;
-//	   break;
-        case goto_trace_stept::FUNCTION_CALL: out << "FUNCTION_CALL " << identifier << std::endl; break;
-        case goto_trace_stept::FUNCTION_RETURN: out << "FUNCTION_RETURN " << identifier << std::endl; break;
-//   case goto_trace_stept::SHARED_READ: out << "SHARED READ " << atomic_section_id << ": " << from_expr(ns, "", ssa_lhs) << std::endl; break;
-//   case goto_trace_stept::SHARED_WRITE: out << "SHARED WRITE " << atomic_section_id << ": " << from_expr(ns, "", ssa_lhs) << std::endl; break;
-        case goto_trace_stept::SPAWN: out << "SPAWN" << std::endl; break;
-        case goto_trace_stept::MEMORY_BARRIER: out << "MEMORY_BARRIER" << std::endl; break;
-
-        default: break;
-    }
-
-    if(is_assert() || is_assume() || is_assignment() || is_constraint())
-        out << from_expr(ns, "", cond_expr) << std::endl;
-    if (!guard.is_true())
-        out << "Guard: " << from_expr(ns, "", guard) << std::endl;
-}
-
-/*******************************************************************\
-
-Function: operator <<
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-std::ostream &operator<<(
-        std::ostream &out,
-        const symex_target_equationt &equation)
-{
-    equation.output(out);
+  bool is_index;
+  exprt index;
+  irep_idt member;
+  index_or_membert() {}
+  index_or_membert(const exprt& _index) : is_index(true), index(_index) {}
+  index_or_membert(const irep_idt& _member) : is_index(false), member(_member) {}
+  friend std::ostream& operator<<(std::ostream& out, const index_or_membert& elem)
+  {
+    if(elem.is_index)
+      out << "index " << format(elem.index);
+    else
+      out << "member " << elem.member;
     return out;
+  }
+};
+
+#include <regex>
+
+std::string get_component_name(std::string str)
+{
+  static std::regex pattern(".*\\.\\.([A-Za-z0-9_]+)");
+  std::smatch result;
+  bool ret = std::regex_match(str, result, pattern);
+  if(!ret)
+    return "";
+  return result[1];
 }
 
-/*******************************************************************\
-
-Function: operator <<
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-std::ostream &operator<<(
-        std::ostream &out,
-        const symex_target_equationt::SSA_stept &step)
+void build_expr_conds_indices_members(std::vector<expr_condt>& expr_conds, const exprt& array_struct, std::vector<index_or_membert>& indices_members, exprt::operandst& conds, bool is_trivial_assign)
 {
-    // may cause lookup failures, since it's blank
-    symbol_tablet symbol_table;
-    namespacet ns(symbol_table);
-    step.output(ns, out);
-    return out;
-}
+  if(indices_members.empty())
+  {
+    expr_conds.push_back(expr_condt(array_struct, conds, is_trivial_assign));
+    return;
+  }
+  
+  auto index_member = indices_members.back();
+  indices_members.pop_back();
 
-/*******************************************************************\
-
-Function: slice
-
-  Inputs:
-
- Outputs:
-
- Purpose: delete unrelated assignments and variables
-
-\*******************************************************************/
-void symex_target_equationt::slice()
-{
-    compute_maps();
-
-    compute_address_map();
-
-    initial_rely_symbols();
-
-//	std::cout << "\n\n Initial Rely_Symbols: \n";
-//	for (unsigned i = 0; i < rely_symbols.size(); i++)
-//	{
-//		std::cout << rely_symbols[i] << "\n";
-//	}
-
-    compute_rely_symbols();
-}
-
-/*******************************************************************\
-
-Function: slice
-
-  Inputs:
-
- Outputs:
-
- Purpose: delete unrelated assignments and variables
-
-\*******************************************************************/
-void symex_target_equationt::compute_maps()
-{
-    for(SSA_stepst::iterator
-                it=SSA_steps.begin();
-        it!=SSA_steps.end();
-        it++)
+  if(index_member.is_index)
+  {
+    assert(array_struct.id() == ID_array);
+    auto array = to_array_expr(array_struct);
+    auto index = index_member.index;
+    for(int i = 0; i < int(array.operands().size()); i++)
     {
-        if (it->is_assignment())
-        {
-            const irep_idt ssa_lhs = it->ssa_lhs.get_identifier();
-            assignment_map[ssa_lhs] = &(*it);
-        }
-        else if (it->is_shared_read())
-        {
-            const irep_idt ssa_lhs = it->ssa_lhs.get_identifier();
-            shared_read_map[ssa_lhs] = &(*it);
-        }
-        else if (it->is_shared_write())
-        {
-            const irep_idt ssa_lhs = it->ssa_lhs.get_identifier();
-            shared_write_map[ssa_lhs] = &(*it);
-        }
+      auto& operand = array.operands()[i];
+      constant_exprt const_expr = from_integer(i, index.type());
+      conds.push_back(equal_exprt(index, const_expr));
+      build_expr_conds_indices_members(expr_conds, operand, indices_members, conds, is_trivial_assign);
+      conds.pop_back();
     }
-}
-
-/*******************************************************************\
-
-Function: initial_rely_symbols
-
-  Inputs:
-
- Outputs:
-
- Purpose: initial rely_symbols, it is all the symbols in the assert
-
-\*******************************************************************/
-void symex_target_equationt::initial_rely_symbols()
-{
-    for(SSA_stepst::const_iterator it=SSA_steps.begin();
-        it!=SSA_steps.end(); it++)
+  }
+  else
+  {
+    assert(array_struct.id() == ID_struct);
+    auto structure = to_struct_expr(array_struct);
+    std::string expected_component_name = index_member.member.c_str();
+    for(auto& operand : structure.operands())
     {
-        //// __FHY_ADD_BEGIN__
-        /*
-         * change:
-         *  if (it->is_assert())
-         * to:
-         *  if ( it->is_assert() || it->is_assume() )
-         */
-        //// __FHY_ADD_END__
-        if ( it->is_assert() || it->is_assume())
-//        if (it->is_assert())
-        {
-            std::vector<exprt> symbols;
-            (it->cond_expr).get_symbols(symbols);
+      std::string operand_name = to_symbol_expr(operand).get_identifier().c_str();
+      std::string component_name = get_component_name(operand_name);
 
-            for (unsigned i = 0; i < symbols.size(); i++)
-            {
-                const irep_idt symbol = (to_symbol_expr(symbols[i])).get_identifier();
-                rely_symbols.push_back(symbol);
-            }
-        }
+      if(expected_component_name == component_name)
+        expr_conds.push_back(expr_condt(operand, conds, is_trivial_assign));
     }
+  }
+
+  indices_members.push_back(index_member);
 }
 
-/*******************************************************************\
-
-Function: compute_rely_symbols
-
-  Inputs:
-
- Outputs:
-
- Purpose: compute all rely_symbols
-
-\*******************************************************************/
-void symex_target_equationt::compute_rely_symbols()
+std::map<std::string, std::set<std::string>> build_assignment_phi(symex_target_equationt& equation)
 {
-    for (unsigned i = 0; i < rely_symbols.size(); i++)
+  std::map<std::string, std::set<std::string>> ret;
+  for(auto& step : equation.SSA_steps)
+  {
+    if(step.is_assignment() && step.assignment_type == symex_targett::assignment_typet::PHI)
     {
-        irep_idt rely_var = rely_symbols[i];
-
-        if (is_shared_read(rely_var))
-        {
-            assert(shared_read_map.find(rely_var) != shared_read_map.end());
-            SSA_stept* r = shared_read_map[rely_var];
-            if (r->rely == false)
-            {
-                r->rely = true;
-                irep_idt address = r->original_lhs_object.get_identifier();
-                const a_rect &a_rec=address_map[address];
-                for (unsigned i = 0; i < a_rec.writes.size(); i++)
-                {
-                    SSA_stept* w = a_rec.writes[i];
-                    w->rely = true;
-                    const irep_idt symbol = w->ssa_lhs.get_identifier();
-                    if (find(rely_symbols.begin(), rely_symbols.end(), symbol) == rely_symbols.end())
-                        rely_symbols.push_back(symbol);
-                }
-            }
-        }
-        else
-        {
-            if (assignment_map.find(rely_var) != assignment_map.end()) {
-                SSA_stept* assignment = assignment_map[rely_var];
-                if (assignment->rely == false)
-                {
-                    assignment->rely = true;
-                    std::vector<exprt> symbols;
-                    (assignment->ssa_rhs).get_symbols(symbols);
-                    (assignment->guard).get_symbols(symbols);
-
-                    for (unsigned i = 0; i < symbols.size(); i++)
-                    {
-                        const irep_idt symbol = (to_symbol_expr(symbols[i])).get_identifier();
-                        if (find(rely_symbols.begin(), rely_symbols.end(), symbol) == rely_symbols.end())
-                        {
-                            rely_symbols.push_back(symbol);
-                        }
-                    }
-                }
-            }
-        }
+      std::string lhs_name = step.ssa_lhs.get_identifier().c_str();
+      auto rhss = find_symbols(step.ssa_rhs);
+      std::set<std::string> rhs_names;
+      for(auto rhs : rhss)
+        rhs_names.insert(to_symbol_expr(rhs).get_identifier().c_str());
+      ret[lhs_name] = rhs_names;
     }
+  }
+  return ret;
 }
 
-
-/*******************************************************************\
-
-Function: is_shared_read
-
-  Inputs:
-
- Outputs:
-
- Purpose: judge if a symbol is shared read
-
-\*******************************************************************/
-bool symex_target_equationt::is_shared_read(irep_idt var)
+void symex_target_equationt::build_available_cond_map(std::map<std::string, exprt>& available_cond_map)
 {
-    return shared_read_map.find(var) != shared_read_map.end();
-}
-
-
-/*******************************************************************\
-
-Function: compute_address_map
-
-  Inputs:
-
- Outputs:
-
- Purpose: compute address map
-
-\*******************************************************************/
-void symex_target_equationt::compute_address_map()
-{
-    for(SSA_stepst::iterator
-                e_it=SSA_steps.begin();
-        e_it!=SSA_steps.end();
-        e_it++)
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
+      continue;
+    
+    auto& left = e_it->ssa_lhs;
+    auto& right = e_it->ssa_rhs;
+    std::vector<expr_condt> expr_conds{expr_condt(right, exprt::operandst(), true)};
+    while(!expr_conds.empty())
     {
-        if(e_it->is_shared_read() || e_it->is_shared_write())
-        {
-            irep_idt address = e_it->original_lhs_object.get_identifier();
-            a_rect &a_rec=address_map[address];
+      auto expr_cond = expr_conds.back();
+      auto& expr = expr_cond.expr;
+      auto& cond = expr_cond.condition;
+      auto is_trivial_assign = expr_cond.is_trivial_assign;
 
-            if(e_it->is_shared_read())
-            {
-                a_rec.reads.push_back(&(*e_it));
-            }
-            else
-            {
-                a_rec.writes.push_back(&(*e_it));
-            }
+      expr_conds.pop_back();
+
+      // handle {arr[[0]], arr[[1]], arr[[2]], ...}[i]:
+      // not all of them take effect, depending on i
+      if(expr.id() == ID_index || expr.id() == ID_member)
+      {
+        auto curr_expr = expr;
+        std::vector<index_or_membert> indices_members;
+        while(curr_expr.id() == ID_index || curr_expr.id() == ID_member || curr_expr.id() == ID_byte_update_little_endian)
+        {
+          if(curr_expr.id() == ID_index)
+          {
+            indices_members.push_back(curr_expr.op1());
+            curr_expr = curr_expr.op0();
+          }
+          else if (curr_expr.id() == ID_member)
+          {
+            indices_members.push_back(to_member_expr(curr_expr).get_component_name());
+            curr_expr = curr_expr.op0();
+          }
+          else // ID_byte_update_little_endian
+          {
+            curr_expr = curr_expr.op0();
+          }
         }
+        if(curr_expr.id() == ID_array || curr_expr.id() == ID_struct)
+        {
+          auto curr_cond = cond;
+          build_expr_conds_indices_members(expr_conds, curr_expr, indices_members, curr_cond, is_trivial_assign);
+        }
+      }
+      // handle arr#i[[index]] = cond ? new_expr : arr#j[[index]]:
+      //if cond does not hold, arr#i[[index]] is dummy; arr#j[[index]] is dummy
+      else if(expr.id() == ID_if)
+      {
+        auto& if_cond = to_if_expr(expr).cond();
+        auto& true_case = to_if_expr(expr).true_case();
+        auto& false_case = to_if_expr(expr).false_case();
+
+        // todo: need to add if_cond to expr_conds?
+        
+        cond.push_back(if_cond);
+        expr_conds.push_back(expr_condt(true_case, cond, is_trivial_assign));
+        cond.pop_back();
+
+        cond.push_back(not_exprt(if_cond));
+        expr_conds.push_back(expr_condt(false_case, cond, is_trivial_assign));
+        cond.pop_back();
+
+        // bool true_trivial = false;
+        // if(true_case.id() == ID_symbol)
+        // {
+        //   std::string write_str = left.get_identifier().c_str();
+        //   std::string read_str = to_symbol_expr(true_case).get_identifier().c_str();
+        //   auto write_str_prefix = get_addr(write_str);
+        //   auto read_str_prefix = get_addr(read_str);
+        //   if(write_str_prefix == read_str_prefix) // self assignment
+        //     true_trivial = true;
+        //   else
+        //   {
+        //     cond.push_back(if_cond);
+        //     expr_conds.push_back(std::make_pair(true_case, cond));
+        //     cond.pop_back();
+        //   }
+        // }
+        // else
+        // {
+        //   cond.push_back(if_cond);
+        //   expr_conds.push_back(std::make_pair(true_case, cond));
+        //   cond.pop_back();
+        // }
+
+        // bool false_trivial = false;
+        // if(false_case.id() == ID_symbol)
+        // {
+        //   std::string write_str = left.get_identifier().c_str();
+        //   std::string read_str = to_symbol_expr(false_case).get_identifier().c_str();
+        //   auto write_str_prefix = get_addr(write_str);
+        //   auto read_str_prefix = get_addr(read_str);
+        //   if(write_str_prefix == read_str_prefix) // self assignment
+        //     false_trivial = true;
+        //   else
+        //   {
+        //     cond.push_back(not_exprt(if_cond));
+        //     expr_conds.push_back(std::make_pair(false_case, cond));
+        //     cond.pop_back();
+        //   }
+        // }
+        // else
+        // {
+        //   cond.push_back(not_exprt(if_cond));
+        //   expr_conds.push_back(std::make_pair(false_case, cond));
+        //   cond.pop_back();
+        // }
+
+        // if(true_trivial && !false_trivial)
+        // {
+        //   cond.push_back(not_exprt(if_cond));
+        //   expr_conds.push_back(std::make_pair(left, cond));
+        //   cond.pop_back();
+        // }
+        // if(!true_trivial && false_trivial)
+        // {
+        //   cond.push_back(if_cond);
+        //   expr_conds.push_back(std::make_pair(left, cond));
+        //   cond.pop_back();
+        // }
+        // if(!true_trivial && !false_trivial)
+        //   expr_conds.push_back(std::make_pair(left, cond));
+      }
+      else if(expr.id() == ID_byte_update_little_endian)
+      {
+        expr_conds.push_back(expr_condt(expr.op2(), cond, is_trivial_assign));
+      }
+      else if(expr.id() == ID_array || expr.id() == ID_struct)
+      {
+        for(auto& operand: expr.operands())
+          expr_conds.push_back(expr_condt(operand, cond, is_trivial_assign));
+      }
+      else if(expr.id() == ID_with)
+      {
+        expr_conds.push_back(expr_condt(expr.op2(), cond, is_trivial_assign));
+      }
+      else //normally add children, made non trivial
+      {
+        for(auto& operand: expr.operands())
+          expr_conds.push_back(expr_condt(operand, cond, false));
+      }
+
+      if(expr.id() == ID_symbol) //assign from symbol to symbol, trivial?
+      {
+        std::string write_str = left.get_identifier().c_str();
+        std::string read_str = to_symbol_expr(expr).get_identifier().c_str();
+
+        if(get_addr(write_str) != get_addr(read_str) &&
+          get_addr_prefix(write_str) != get_addr(read_str) &&
+          get_addr(write_str) != get_addr_prefix(read_str)) // not self assignment
+        {
+          is_trivial_assign = false;
+        }
+        if(!is_trivial_assign)
+        {
+          auto cond_conjunction = conjunction(cond);
+
+          if(available_cond_map.find(write_str) == available_cond_map.end())
+            available_cond_map[write_str] = cond_conjunction;
+          else if(available_cond_map[write_str] != cond_conjunction)
+            available_cond_map[write_str] = or_exprt(available_cond_map[write_str], cond_conjunction);
+
+          if(available_cond_map.find(read_str) == available_cond_map.end())
+            available_cond_map[read_str] = cond_conjunction;
+          else if(available_cond_map[read_str] != cond_conjunction)
+            available_cond_map[read_str] = or_exprt(available_cond_map[read_str], cond_conjunction);
+        }
+      }
+
+      if(expr.id() != ID_symbol && !expr.has_operands()) //assign from non-symbol to symbol, always not trivial
+      {
+        std::string write_str = left.get_identifier().c_str();
+        auto cond_conjunction = conjunction(cond);
+        if(available_cond_map.find(write_str) == available_cond_map.end())
+          available_cond_map[write_str] = cond_conjunction;
+        else if(available_cond_map[write_str] != cond_conjunction)
+          available_cond_map[write_str] = or_exprt(available_cond_map[write_str], cond_conjunction);
+      }
+
+      // if(expr.id() == ID_symbol && !cond.empty())
+      // {
+      //   std::string str = to_symbol_expr(expr).get_identifier().c_str();
+      //   auto cond_conjunction = conjunction(cond);
+
+      //   if(available_cond_map.find(str) == available_cond_map.end())
+      //   {
+      //     std::cout << str << " has brand new cond " << format(cond_conjunction) << "\n";
+      //     available_cond_map[str] = cond_conjunction;
+      //   }
+      //   else if(available_cond_map[str] != cond_conjunction)
+      //   {
+      //     std::cout << str << " has another cond " << format(cond_conjunction) << "\n";
+      //     available_cond_map[str] = or_exprt(available_cond_map[str], cond_conjunction);
+      //   }    
+      // }
     }
+  }
+
+  auto assignment_phi_map = build_assignment_phi(*this);
+  auto original_available_cond_map = available_cond_map;
+  for(auto& pair : original_available_cond_map)
+  {
+    if(assignment_phi_map.find(pair.first) != assignment_phi_map.end())
+      for(auto rhs_name : assignment_phi_map[pair.first])
+        available_cond_map.insert(std::make_pair(rhs_name, pair.second));
+  }
+
+  // std::cout << "viewing available cond map!\n";
+  // for(auto pair : available_cond_map)
+  //   std::cout << pair.first << "'s condition is " << format(pair.second) << "\n";
 }
 
-//void symex_target_equationt::guard_after_join()
-//{
-//    std::map<unsigned, std::vector<eventst::iterator> > per_thread_map;
-//    std::map<unsigned, eventst::iterator> last_event_per_thread;
-//
-//    for(eventst::iterator e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
-//    {
-//        per_thread_map[e_it->source.thread_nr].push_back(e_it);
-//        // concurreny-related?
-//        if(!e_it->is_shared_read() &&
-//           !e_it->is_shared_write() &&
-//           !e_it->is_spawn() &&
-//           !e_it->is_memory_barrier() &&
-//           !e_it->is_verify_atomic_begin(mutex_flag) &&
-//           !e_it->is_verify_atomic_end(mutex_flag) &&
-//           !e_it->is_thread_join())
-//            continue;
-//
-//        if (!e_it->is_verify_lock(mutex_flag) && !e_it->is_verify_unlock(mutex_flag) &&
-//            !e_it->is_thread_join() && e_it->guard_literal.is_true())
-//            continue;
-//
-//        if (!thread_malloc && aux_enable && e_it->is_aux_var())
-//            continue;
-//
-//        //// __FHY_ADD_BEGIN__
-//        if(e_it->is_redundant_var())
-//            continue;
-//        //// __FHY_ADD_END__
-//
-//        last_event_per_thread[e_it->source.thread_nr] = e_it;
-//    }
-//
-//    for(auto pair: last_event_per_thread)
-//    {
-//        std::cout << pair.first << "'s last event:\n";
-//        std::cout << *(pair.second) << "\n";
-//    }
-//
-//    auto& main_list = per_thread_map[0];
-//
-//    and_exprt joined_guard;
-//    for(auto& pair : last_event_per_thread)
-//    {
-//        if(pair.first == 0)
-//            continue;
-//        joined_guard.copy_to_operands(pair.second->guard);
-//    }
-//    std::cout << "joined guard is " << joined_guard << "\n";
-//
-//    int should_join_num = per_thread_map.size() - 1;
-//    int already_join_num = 0;
-//
-//    if(should_join_num == 0)
-//        return;
-//
-//    for(auto e_it : main_list)
-//    {
-////        if(e_it->is_thread_join()) {
-////            already_join_num++;
-////            if(already_join_num >= should_join_num)
-////            {
-////                assumption(true_exprt(), joined_guard, last_event_per_thread[0]->source);
-////            }
-////        }
-//
-////        if(already_join_num >= should_join_num)
-////        {
-////            exprt new_guard = and_exprt(e_it->guard, joined_guard);
-////            e_it->guard = new_guard;
-////            std::cout << "after join, make a guard fucking complex\n";
-////        }
-//    }
-//
-//}
+void symex_target_equationt::build_array_update_set(std::set<std::pair<std::string, std::string>>& array_update_set)
+{
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
+      continue;
+
+    auto& left = e_it->ssa_lhs;
+    auto& right = e_it->ssa_rhs;
+    if(right.id() != ID_with)
+      continue;
+
+    auto& old = to_with_expr(right).old();
+    if(old.id() != ID_symbol) // todo: more complex cases?
+      continue;
+
+    std::string left_str = left.get_identifier().c_str();
+    std::string right_str = to_symbol_expr(old).get_identifier().c_str();
+    array_update_set.insert(std::make_pair(right_str, left_str));
+  }
+}
+
+void symex_target_equationt::build_index_map(std::map<std::string, exprt>& index_map)
+{
+  // arr#2 = with(arr#1, i, value)
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
+      continue;
+
+    auto& left = e_it->ssa_lhs;
+    auto& right = e_it->ssa_rhs;
+    if(right.id() != ID_with)
+      continue;
+    auto& old = to_with_expr(right).old();
+    auto& index = to_with_expr(right).where();
+
+    std::string left_str = left.get_identifier().c_str();
+    index_map[left_str] = index;
+
+    if(old.id() != ID_symbol) // todo: more complex cases?
+      continue;
+    std::string right_str = to_symbol_expr(old).get_identifier().c_str();
+    index_map[right_str] = index;
+  }
+
+  // a single arr#1[i]
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
+      continue;
+
+    auto& right = e_it->ssa_rhs;
+    std::vector<exprt> exprs{right};
+    while(!exprs.empty())
+    {
+      auto expr = exprs.back();
+      exprs.pop_back();
+      if(expr.id() == ID_index && expr.op0().id() == ID_symbol) // todo: more complex cases?
+        index_map[to_symbol_expr(expr.op0()).get_identifier().c_str()] = expr.op1();
+      
+      for(auto& operand : expr.operands())
+        exprs.push_back(operand);
+    }
+  }
+}
+
+void symex_target_equationt::build_datarace(bool filter)
+{
+  typedef std::vector<event_it> event_listt;
+  typedef std::map<unsigned, event_listt> per_thread_mapt;
+  per_thread_mapt per_thread_map;
+
+  // build_per_thread_map
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    // concurreny-related?
+    if(!e_it->is_shared_read() && !e_it->is_shared_write() && !e_it->is_atomic_begin() && !e_it->is_atomic_end())
+      continue;
+
+    per_thread_map[e_it->source.thread_nr].push_back(e_it);
+  }
+
+  int races_before_filter = 0;
+  int races_after_filter = 0;
+
+  std::vector<std::pair<event_it, event_it>> races;
+
+  std::set<race_identifier_t> categories_before_filter;
+  std::set<race_identifier_t> categories_after_filter;
+
+  for(per_thread_mapt::const_iterator s_it = per_thread_map.begin(); s_it != per_thread_map.end(); s_it++)
+    for(per_thread_mapt::const_iterator t_it = s_it; ; )
+    {
+      t_it++;
+      if(t_it == per_thread_map.end())
+        break;
+
+      const event_listt& first_events = s_it->second;
+      const event_listt& second_events = t_it->second;
+
+      //szh: for those who use __VERIFIER_atomic_begin/end instead of mutex to synchronize
+      bool first_event_atomic = false;
+      bool second_event_atomic = false;
+
+      for(auto& first_event : first_events)
+      {
+        if(first_event->is_atomic_begin())
+        {
+          first_event_atomic = true;
+          continue;
+        }
+        if(first_event->is_atomic_end())
+        {
+          first_event_atomic = false;
+          continue;
+        }
+
+        for(auto& second_event : second_events)
+        {
+          if(second_event->is_atomic_begin())
+          {
+            second_event_atomic = true;
+            continue;
+          }
+          if(second_event->is_atomic_end())
+          {
+            second_event_atomic = false;
+            continue;
+          }
+
+          if(first_event_atomic && second_event_atomic) // it seems that a guarded and an unguarded event may race
+            continue;
+
+          std::string first_event_from = first_event->source.function_id.c_str();
+          std::string second_event_from = second_event->source.function_id.c_str();
+          if(first_event_from.find("__VERIFIER_atomic_CAS") != std::string::npos || second_event_from.find("__VERIFIER_atomic_CAS") != std::string::npos)
+            continue;
+
+          if( (first_event->is_shared_write() && second_event->is_shared_write()) ||
+              (first_event->is_shared_write() && second_event->is_shared_read()) ||
+              (first_event->is_shared_read() && second_event->is_shared_write()))
+          {
+            std::string first_event_line = first_event->source.pc->source_location().get_line().c_str();
+            std::string second_event_line = second_event->source.pc->source_location().get_line().c_str();
+
+            auto e1_str = id2string(first_event->ssa_lhs.get_identifier());
+            auto e2_str = id2string(second_event->ssa_lhs.get_identifier());
+
+            auto e1_str_prefix = get_addr(e1_str);
+            auto e2_str_prefix = get_addr(e2_str);
+
+            if(e1_str_prefix != e2_str_prefix)
+              continue;
+
+            if(e1_str.find("__CPROVER") != std::string::npos) //ignore __CPROVER trash
+              continue;
+
+            races_before_filter++;
+
+            // std::cout << "racing before goblint filter: " << e1_str << " " << e2_str << "\n";
+            // std::cout << "linenumber: " << first_event_line << " " << second_event_line << "\n";
+
+            std::string var_name = id2string(first_event->ssa_lhs.get_identifier());
+            var_name = var_name.substr(0, var_name.find_first_of('#'));
+            //var_name = ""; // try not to distinguish var
+
+            race_identifier_t race_id(var_name, first_event_line, second_event_line, true, true);
+            categories_before_filter.insert(race_id);
+
+            if(filter)
+              if( datarace_lines.find(first_event_line) == datarace_lines.end() || 
+                  datarace_lines.find(second_event_line) == datarace_lines.end())
+                continue;
+
+            // std::cout << "racing after goblint filter: " << e1_str << " " << e2_str << "\n";
+            races_after_filter++;
+
+            races.push_back(std::make_pair(first_event, second_event));
+            categories_after_filter.insert(race_id);
+          }
+        }
+      }
+    }
+  
+  if(filter)
+  {
+    std::cout << "Lines where datarace may occur: ";
+    for(auto line : datarace_lines)
+        std::cout << line << " ";
+    std::cout << "\n";
+    std::cout << "The number of races before filter: " << races_before_filter << "\n";
+    std::cout << "The number of races after filter: " << races.size() << "\n";
+    std::cout << "The number of race categories before filter: " << categories_before_filter.size() << "\n";
+    std::cout << "The number of race categories after filter: " << categories_after_filter.size() << "\n";
+  }
+  else
+  {
+    std::cout << "The number of races before filter: " << races_before_filter << "\n";
+    std::cout << "The number of races after filter: " << races.size() << "\n";
+    std::cout << "The number of race categories before filter: " << categories_before_filter.size() << "\n";
+    std::cout << "The number of race categories after filter: " << categories_after_filter.size() << "\n";
+  }
+
+
+  for(auto& race: races)
+  {
+    auto& first_event = race.first;
+    auto& second_event = race.second;
+
+    std::string var_name = id2string(first_event->ssa_lhs.get_identifier());
+    var_name = var_name.substr(0, var_name.find_first_of('#'));
+    //var_name = ""; // try not to distinguish var
+
+    std::string first_event_line = first_event->source.pc->source_location().get_line().c_str();
+    bool first_event_is_write = first_event->is_shared_write();
+    first_event_is_write = true; // try not to distinguish w/r
+    
+    std::string second_event_line = second_event->source.pc->source_location().get_line().c_str();
+    bool second_event_is_write = second_event->is_shared_write();
+    second_event_is_write = true; // try not to distinguish w/r
+
+    race_identifier_t race_id(var_name, first_event_line, second_event_line, first_event_is_write, second_event_is_write);
+
+    //if(linenumbers_to_races[race_id].size() < 5) //temporary
+      linenumbers_to_races[race_id].push_back(race);
+  }
+
+  for(auto& pair : linenumbers_to_races)
+  {
+    std::cout << "\t" << pair.first.first_linenumber << "(" << pair.first.first_is_write << ") - " << pair.first.second_linenumber << "(" << pair.first.second_is_write << ") " << pair.first.var_name << "\n";
+    // for(auto race : pair.second)
+    // {
+    //   std::string e1_str = id2string(race.first->ssa_lhs.get_identifier());
+    //   std::string e2_str = id2string(race.second->ssa_lhs.get_identifier());
+    //   std::cout << "\t\t" << e1_str << " " << e2_str << "\n";
+    // }
+  }
+
+  //next_races = linenumbers_to_races.begin();
+}
+
+bool symex_target_equationt::choose_datarace()
+{
+  // datarace_pairs.clear();
+
+  // auto& chosen_races_pair = *next_races;
+  // auto& chosen_races_identifier = chosen_races_pair.first;
+  // auto& chosen_races = chosen_races_pair.second;
+
+  // std::cout << "Solving races of variable " << chosen_races_identifier.var_name << " between " << chosen_races_identifier.first_linenumber << " and " << chosen_races_identifier.second_linenumber << "\n";
+
+  // for(auto& race : chosen_races)
+  // {
+  //     datarace_pairs.push_back(race);
+  //     std::cout << "\tIncluding " << id2string(race.first->ssa_lhs.get_identifier()) << " " << id2string(race.second->ssa_lhs.get_identifier()) << "\n";
+  // }
+
+  // next_races++;
+  // return next_races != linenumbers_to_races.end();
+
+  for(auto& races_it : linenumbers_to_races) // temporarily add all races in one pot
+  {
+    auto& races = races_it.second;
+    for(auto& race : races)
+      datarace_pairs.push_back(race);
+  }
+  return true;
+}
+
+void symex_target_equationt::remove_dummy_accesses()
+{
+  std::set<std::string> solid_accesses;
+
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    std::set<symbol_exprt> appeared_symbols;
+    find_symbols(e_it->guard, appeared_symbols);
+    find_symbols(e_it->cond_expr, appeared_symbols);
+
+    for(auto& appeared_symbol : appeared_symbols)
+    {
+      std::string appeared_str = appeared_symbol.get_identifier().c_str();
+      solid_accesses.insert(appeared_str);
+    }
+
+    if(e_it->is_assignment())
+    {
+      std::string left_str = e_it->ssa_lhs.get_identifier().c_str();
+      solid_accesses.insert(left_str);
+
+      auto right_symbols = find_symbols(e_it->ssa_rhs);
+      for(auto& right_symbol : right_symbols)
+      {
+        std::string right_str = right_symbol.get_identifier().c_str();
+        solid_accesses.insert(right_str);
+      }
+    }
+  }
+
+  std::set<std::pair<std::string, std::string>> goto_lines;
+
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(e_it->is_goto())
+    {
+      std::string file = e_it->source.pc->source_location().get_file().c_str();
+      std::string line = e_it->source.pc->source_location().get_line().c_str();
+      goto_lines.insert(std::make_pair(file, line));
+    }
+  }
+
+  std::cout << "Start removing dummy accesses: " << SSA_steps.size() << " steps before removal\n";
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end();)
+  {
+    // concurreny-related?
+    if(e_it->is_shared_read() || e_it->is_shared_write())
+    {
+      std::string shared_str = e_it->ssa_lhs.get_identifier().c_str();
+      if(solid_accesses.find(shared_str) == solid_accesses.end())
+      {
+        std::string file = e_it->source.pc->source_location().get_file().c_str();
+        std::string line = e_it->source.pc->source_location().get_line().c_str();
+        if(goto_lines.find(std::make_pair(file, line)) == goto_lines.end())
+        {
+          std::cout << shared_str << " is dummy and removed\n";
+          e_it = SSA_steps.erase(e_it);
+          continue;
+        }
+      }
+    }
+    e_it++;
+  }
+  std::cout << SSA_steps.size() << " steps after removal\n";
+}
+// __SZH_ADD_END__

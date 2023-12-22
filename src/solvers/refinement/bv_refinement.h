@@ -6,8 +6,11 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_SOLVER_BV_REFINEMENT_H
-#define CPROVER_SOLVER_BV_REFINEMENT_H
+/// \file
+/// Abstraction Refinement Loop
+
+#ifndef CPROVER_SOLVERS_REFINEMENT_BV_REFINEMENT_H
+#define CPROVER_SOLVERS_REFINEMENT_BV_REFINEMENT_H
 
 #include <solvers/flattening/bv_pointers.h>
 
@@ -15,90 +18,98 @@ Author: Daniel Kroening, kroening@kroening.com
 
 class bv_refinementt:public bv_pointerst
 {
+private:
+  struct configt
+  {
+    bool output_xml = false;
+    /// Max number of times we refine a formula node
+    unsigned max_node_refinement=5;
+    /// Enable array refinement
+    bool refine_arrays=true;
+    /// Enable arithmetic refinement
+    bool refine_arithmetic=true;
+  };
 public:
-  bv_refinementt(const namespacet &_ns, propt &_prop);
-  ~bv_refinementt();
+  struct infot:public configt
+  {
+    const namespacet *ns=nullptr;
+    propt *prop=nullptr;
+    message_handlert *message_handler = nullptr;
+  };
 
-  virtual decision_proceduret::resultt dec_solve();
+  explicit bv_refinementt(const infot &info);
 
-  virtual std::string decision_procedure_text() const
-  { return "refinement loop with "+prop.solver_text(); }
-  
-  typedef bv_pointerst SUB;
+  decision_proceduret::resultt dec_solve() override;
 
-  // maximal number of times we refine a formula node
-  unsigned max_node_refinement;
-  
-  using bv_pointerst::is_in_conflict;
+  std::string decision_procedure_text() const override
+  {
+    return "refinement loop with "+prop.solver_text();
+  }
 
 protected:
-  resultt prop_solve();
 
+  // Refine array
+  void finish_eager_conversion_arrays() override;
+
+  // Refine arithmetic
+  bvt convert_mult(const mult_exprt &expr) override;
+  bvt convert_div(const div_exprt &expr) override;
+  bvt convert_mod(const mod_exprt &expr) override;
+  bvt convert_floatbv_op(const ieee_float_op_exprt &) override;
+
+private:
   // the list of operator approximations
-  struct approximationt
+  struct approximationt final
   {
   public:
-    explicit approximationt(unsigned _id_nr):id_nr(_id_nr)
+    explicit approximationt(std::size_t _id_nr):
+      no_operands(0),
+      under_state(0),
+      over_state(0),
+      id_nr(_id_nr)
     {
     }
-  
+
     exprt expr;
-    unsigned no_operands;
+    std::size_t no_operands;
 
     bvt op0_bv, op1_bv, op2_bv, result_bv;
     mp_integer op0_value, op1_value, op2_value, result_value;
 
-    bvt under_assumptions;
-    bvt over_assumptions;
+    std::vector<exprt> under_assumptions;
+    std::vector<exprt> over_assumptions;
 
-    // the kind of under- or over-approximation    
+    // the kind of under- or over-approximation
     unsigned under_state, over_state;
-    
-    approximationt():under_state(0), over_state(0)
-    {
-    }
-    
+
     std::string as_string() const;
-    
+
     void add_over_assumption(literalt l);
     void add_under_assumption(literalt l);
-    
-    unsigned id_nr;
+
+    std::size_t id_nr;
   };
-  
-  typedef std::list<approximationt> approximationst;
-  approximationst approximations;
-  
+
+  resultt prop_solve();
   approximationt &add_approximation(const exprt &expr, bvt &bv);
+  bool conflicts_with(approximationt &approximation);
   void check_SAT(approximationt &approximation);
   void check_UNSAT(approximationt &approximation);
   void initialize(approximationt &approximation);
   void get_values(approximationt &approximation);
-  bool is_in_conflict(approximationt &approximation);
-  
   void check_SAT();
   void check_UNSAT();
-  bool progress;
-  
-  // we refine the theory of arrays
-  virtual void post_process_arrays();
   void arrays_overapproximated();
-  
-  // we refine expensive arithmetic
-  virtual void convert_mult(const exprt &expr, bvt &bv);
-  virtual void convert_div(const exprt &expr, bvt &bv);
-  virtual void convert_mod(const exprt &expr, bvt &bv);
-  virtual void convert_floatbv_op(const exprt &expr, bvt &bv);
+  void freeze_lazy_constraints();
 
-  // for collecting statistics
-  virtual void set_to(const exprt &expr, bool value);
+  // MEMBERS
 
-  // overloading
-  virtual void set_assumptions(const bvt &_assumptions);
+  bool progress;
+  std::list<approximationt> approximations;
 
- protected:
-  bvt parent_assumptions;
-
+protected:
+  // use gui format
+  configt config_;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_REFINEMENT_BV_REFINEMENT_H

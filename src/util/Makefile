@@ -1,61 +1,144 @@
-SRC = arith_tools.cpp base_type.cpp cmdline.cpp config.cpp symbol_table.cpp \
-      expr.cpp expr_util.cpp i2string.cpp irep.cpp language.cpp \
-      lispexpr.cpp lispirep.cpp source_location.cpp message.cpp language_file.cpp \
-      mp_arith.cpp namespace.cpp parseoptions.cpp rename.cpp \
-      replace_expr.cpp threeval.cpp typecheck.cpp graph.cpp \
-      type.cpp cnf_simplify.cpp pointer_predicates.cpp merge_irep.cpp \
-      bitvector.cpp parser.cpp map_util.cpp replace_symbol.cpp actuals.cpp \
-      get_module.cpp string_hash.cpp string_container.cpp identifier.cpp \
-      rational.cpp options.cpp c_misc.cpp simplify_expr.cpp dstring.cpp \
-      find_symbols.cpp rational_tools.cpp ui_message.cpp simplify_utils.cpp \
-      time_stopping.cpp symbol.cpp irep_hash_container.cpp cout_message.cpp \
-      type_eq.cpp guard.cpp array_name.cpp message_stream.cpp \
-      substitute.cpp decision_procedure.cpp union_find.cpp \
-      xml.cpp xml_irep.cpp xml_expr.cpp std_types.cpp std_code.cpp \
-      format_constant.cpp find_macros.cpp ref_expr_set.cpp std_expr.cpp \
-      irep_serialization.cpp fixedbv.cpp rename_symbol.cpp \
-      ieee_float.cpp signal_catcher.cpp pointer_offset_size.cpp \
-      bv_arithmetic.cpp tempdir.cpp tempfile.cpp timer.cpp unicode.cpp \
-      irep_ids.cpp byte_operators.cpp string2int.cpp file_util.cpp \
-      memory_info.cpp pipe_stream.cpp irep_hash.cpp
+SRC = arith_tools.cpp \
+      array_element_from_pointer.cpp \
+      array_name.cpp \
+      bitvector_expr.cpp \
+      bitvector_types.cpp \
+      bv_arithmetic.cpp \
+      byte_operators.cpp \
+      c_types.cpp \
+      cmdline.cpp \
+      config.cpp \
+      cout_message.cpp \
+      dstring.cpp \
+      endianness_map.cpp \
+      edit_distance.cpp \
+      expr.cpp \
+      expr_initializer.cpp \
+      expr_util.cpp \
+      exception_utils.cpp \
+      file_util.cpp \
+      find_macros.cpp \
+      find_symbols.cpp \
+      fixedbv.cpp \
+      floatbv_expr.cpp \
+      format_constant.cpp \
+      format_expr.cpp \
+      format_number_range.cpp \
+      format_type.cpp \
+      fresh_symbol.cpp \
+      get_base_name.cpp \
+      get_module.cpp \
+      identifier.cpp \
+      ieee_float.cpp \
+      interval_union.cpp \
+      invariant.cpp \
+      irep.cpp \
+      irep_hash.cpp \
+      irep_hash_container.cpp \
+      irep_ids.cpp \
+      irep_serialization.cpp \
+      interval_constraint.cpp \
+      invariant_utils.cpp \
+      json.cpp \
+      json_irep.cpp \
+      json_stream.cpp \
+      lispexpr.cpp \
+      lispirep.cpp \
+      mathematical_expr.cpp \
+      mathematical_types.cpp \
+      memory_info.cpp \
+      memory_units.cpp \
+      merge_irep.cpp \
+      message.cpp \
+      mp_arith.cpp \
+      namespace.cpp \
+      object_factory_parameters.cpp \
+      options.cpp \
+      parse_options.cpp \
+      parser.cpp \
+      piped_process.cpp \
+      pointer_expr.cpp \
+      pointer_offset_size.cpp \
+      pointer_offset_sum.cpp \
+      pointer_predicates.cpp \
+      prefix_filter.cpp \
+      rational.cpp \
+      rational_tools.cpp \
+      ref_expr_set.cpp \
+      refined_string_type.cpp \
+      rename.cpp \
+      rename_symbol.cpp \
+      replace_expr.cpp \
+      replace_symbol.cpp \
+      run.cpp \
+      signal_catcher.cpp \
+      simplify_expr.cpp \
+      simplify_expr_array.cpp \
+      simplify_expr_boolean.cpp \
+      simplify_expr_floatbv.cpp \
+      simplify_expr_if.cpp \
+      simplify_expr_int.cpp \
+      simplify_expr_pointer.cpp \
+      simplify_expr_struct.cpp \
+      simplify_utils.cpp \
+      source_location.cpp \
+      ssa_expr.cpp \
+      std_code.cpp \
+      std_expr.cpp \
+      std_types.cpp \
+      string2int.cpp \
+      string_constant.cpp \
+      string_container.cpp \
+      string_hash.cpp \
+      string_utils.cpp \
+      structured_data.cpp \
+      substitute_symbols.cpp \
+      symbol.cpp \
+      symbol_table_base.cpp \
+      symbol_table.cpp \
+      tempdir.cpp \
+      tempfile.cpp \
+      threeval.cpp \
+      timestamper.cpp \
+      type.cpp \
+      typecheck.cpp \
+      ui_message.cpp \
+      unicode.cpp \
+      union_find.cpp \
+      union_find_replace.cpp \
+      validate_expressions.cpp \
+      validate_types.cpp \
+      version.cpp \
+      xml.cpp \
+      xml_irep.cpp \
+      interval.cpp \
+      # Empty last line
 
 INCLUDES= -I ..
-
-LIBS = ../big-int/bigint$(OBJEXT) ../big-int/bigint-func$(OBJEXT)
 
 include ../config.inc
 include ../common
 
-CLEANFILES = util$(LIBEXT) \
-             irep_ids.h irep_ids.inc \
-             ieee_float_test$(EXEEXT) ieee_float_test$(OBJEXT) ieee_float_test.d \
-             irep_ids_convert$(EXEEXT) irep_ids_convert$(OBJEXT) irep_ids_convert.d
+# get version from git
+GIT_INFO = $(shell git describe --tags --always --dirty || echo "n/a")
+RELEASE_INFO = const char *CBMC_VERSION="$(CBMC_VERSION) ($(GIT_INFO))";
+GIT_INFO_FILE = version.cpp
 
-all: util$(LIBEXT) ieee_float_test$(EXEEXT)
+$(GIT_INFO_FILE):
+	echo '$(RELEASE_INFO)' > $@
 
-###############################################################################
+generated_files: $(GIT_INFO_FILE)
 
-irep_ids.h: irep_ids_convert$(EXEEXT) irep_ids.txt
-	./irep_ids_convert$(EXEEXT) header < irep_ids.txt > $@
+# mark the actually generated file as a phony target to enforce a rebuild - but
+# only if the version information has changed!
+KNOWN_RELEASE_INFO = $(shell cat $(GIT_INFO_FILE) 2>/dev/null)
+ifneq ($(RELEASE_INFO), $(KNOWN_RELEASE_INFO))
+.PHONY: $(GIT_INFO_FILE)
+endif
 
-irep_ids.inc: irep_ids_convert$(EXEEXT) irep_ids.txt
-	./irep_ids_convert$(EXEEXT) table < irep_ids.txt > $@
+CLEANFILES = $(GIT_INFO_FILE) util$(LIBEXT)
 
-irep_ids.cpp: irep_ids.inc irep_ids.h
-
-irep_ids_convert$(EXEEXT): irep_ids_convert.cpp
-	$(LINKNATIVE)
-
-generated_files: irep_ids.h irep_ids.inc
-
-# Most of the others will need irep_ids.h,
-# which we first need to generate.
-$(OBJ): irep_ids.h
+all: util$(LIBEXT) $(GIT_INFO_FILE)
 
 util$(LIBEXT): $(OBJ)
 	$(LINKLIB)
-
-ieee_float_test$(OBJEXT): irep_ids.h  
-
-ieee_float_test$(EXEEXT): ieee_float_test$(OBJEXT) util$(LIBEXT)
-	$(LINKBIN)

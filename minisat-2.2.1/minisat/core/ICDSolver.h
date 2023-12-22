@@ -13,7 +13,7 @@
 
 
 
-typedef std::vector<std::pair<std::pair<std::string, std::string>, std::pair<Minisat::Lit, std::string> > > oclt_convert_tablet;
+typedef std::vector<std::pair<std::pair<std::string, std::string>, std::pair<Minisat::Lit, std::string> > > oc_edge_tablet;
 
 namespace Minisat
 {
@@ -22,7 +22,7 @@ class ICDSolver : public Solver
 {
     ICD graph;
 
-    oclt_convert_tablet oclt_convert_table;
+    oc_edge_tablet oc_edge_table;
 
     std::vector<std::pair<Lit, literal_set>> literals_to_assign;
 
@@ -37,7 +37,7 @@ protected:
 public:
     ICDSolver();
     void init();
-    void save_raw_graph(oclt_convert_tablet& _oclt_convert_table);
+    void setRawGraph(oc_edge_tablet& _oc_edge_table);
     void set_graph();
 
     lbool solve_();

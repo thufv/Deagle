@@ -6,155 +6,187 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_FLOAT_BV_H
-#define CPROVER_FLOAT_BV_H
 
+#ifndef CPROVER_SOLVERS_FLOATBV_FLOAT_BV_H
+#define CPROVER_SOLVERS_FLOATBV_FLOAT_BV_H
+
+#include <util/ieee_float.h>
 #include <util/std_expr.h>
 
 class float_bvt
 {
 public:
-  explicit float_bvt()
-  {
-  }
-
-  ~float_bvt()
-  {
-  }
-
-  inline exprt operator()(const exprt &src)
+  exprt operator()(const exprt &src) const
   {
     return convert(src);
   }
-  
-protected:
-  exprt convert(const exprt &);
-  exprt convert_abs(const abs_exprt &);
-  exprt convert_unary_minus(const unary_minus_exprt &);
-  exprt convert_ieee_float_equal(const ieee_float_equal_exprt &);
-  //exprt convert_ieee_float_notequal(const ieee_float_notequal_exprt &);
 
-#if 0
-  // extraction
-  bvt get_exponent(const bvt &src); // still biased
-  bvt get_fraction(const bvt &src); // without hidden bit
-  literalt is_normal(const bvt &src);
-  literalt is_zero(const bvt &src); // this returns true on both 0 and -0
-  literalt is_infinity(const bvt &src);
-  literalt is_plus_inf(const bvt &src);
-  literalt is_minus_inf(const bvt &src);
-  literalt is_NaN(const bvt &src);
+  exprt convert(const exprt &) const;
+
+  static exprt negation(const exprt &, const ieee_float_spect &);
+  static exprt abs(const exprt &, const ieee_float_spect &);
+  static exprt is_equal(const exprt &, const exprt &, const ieee_float_spect &);
+  static exprt is_zero(const exprt &);
+  static exprt isnan(const exprt &, const ieee_float_spect &);
+  static exprt isinf(const exprt &, const ieee_float_spect &);
+  static exprt isnormal(const exprt &, const ieee_float_spect &);
+  static exprt isfinite(const exprt &, const ieee_float_spect &);
 
   // add/sub
-  virtual bvt add_sub(const bvt &src1, const bvt &src2, bool subtract);
-  bvt add(const bvt &src1, const bvt &src2) { return add_sub(src1, src2, false); }
-  bvt sub(const bvt &src1, const bvt &src2) { return add_sub(src1, src2, true); }
+  exprt add_sub(
+    bool subtract,
+    const exprt &,
+    const exprt &,
+    const exprt &rm,
+    const ieee_float_spect &) const;
 
   // mul/div
-  virtual bvt mul(const bvt &src1, const bvt &src2);
-  virtual bvt div(const bvt &src1, const bvt &src2);
-
-  bvt abs(const bvt &src);
-  bvt inverse(const bvt &src);
-  bvt negate(const bvt &src);
+  exprt
+  mul(const exprt &, const exprt &, const exprt &rm, const ieee_float_spect &)
+    const;
+  exprt
+  div(const exprt &, const exprt &, const exprt &rm, const ieee_float_spect &)
+    const;
 
   // conversion
-  bvt from_unsigned_integer(const bvt &src);
-  bvt from_signed_integer(const bvt &src);
-  bvt to_integer(const bvt &src, unsigned int_width, bool is_signed);
-  bvt to_signed_integer(const bvt &src, unsigned int_width);
-  bvt to_unsigned_integer(const bvt &src, unsigned int_width);
-  bvt conversion(const bvt &src, const ieee_float_spect &dest_spec);
+  exprt from_unsigned_integer(
+    const exprt &,
+    const exprt &rm,
+    const ieee_float_spect &) const;
+  exprt from_signed_integer(
+    const exprt &,
+    const exprt &rm,
+    const ieee_float_spect &) const;
+  static exprt to_signed_integer(
+    const exprt &src,
+    std::size_t dest_width,
+    const exprt &rm,
+    const ieee_float_spect &);
+  static exprt to_unsigned_integer(
+    const exprt &src,
+    std::size_t dest_width,
+    const exprt &rm,
+    const ieee_float_spect &);
+  static exprt to_integer(
+    const exprt &src,
+    std::size_t dest_width,
+    bool is_signed,
+    const exprt &rm,
+    const ieee_float_spect &);
+  exprt conversion(
+    const exprt &src,
+    const exprt &rm,
+    const ieee_float_spect &src_spec,
+    const ieee_float_spect &dest_spec) const;
 
   // relations
-  typedef enum { LT, LE, EQ, GT, GE } relt;
-  literalt relation(const bvt &src1, relt rel, const bvt &src2);
+  enum class relt { LT, LE, EQ, GT, GE };
+  static exprt
+  relation(const exprt &, relt rel, const exprt &, const ieee_float_spect &);
 
-  // constants
-  ieee_floatt get(const bvt &src) const;
-
+private:
   // helpers
-  literalt exponent_all_ones(const bvt &src);
-  literalt exponent_all_zeros(const bvt &src);
-  literalt fraction_all_zeros(const bvt &src);
-    
-  // debugging hooks
-  bvt debug1(const bvt &op0, const bvt &op1);
-  bvt debug2(const bvt &op0, const bvt &op1);
+  static ieee_float_spect get_spec(const exprt &);
+  // still biased
+  static exprt get_exponent(const exprt &, const ieee_float_spect &);
+  // without hidden bit
+  static exprt get_fraction(const exprt &, const ieee_float_spect &);
+  static exprt sign_bit(const exprt &);
 
-protected:
-  propt &prop;
-  bv_utilst bv_utils;
+  static exprt exponent_all_ones(const exprt &, const ieee_float_spect &);
+  static exprt exponent_all_zeros(const exprt &, const ieee_float_spect &);
+  static exprt fraction_all_zeros(const exprt &, const ieee_float_spect &);
+
+  struct rounding_mode_bitst
+  {
+    // these are mutually exclusive, obviously
+    exprt round_to_even;
+    exprt round_to_zero;
+    exprt round_to_plus_inf;
+    exprt round_to_minus_inf;
+
+    void get(const exprt &rm);
+    explicit rounding_mode_bitst(const exprt &rm) { get(rm); }
+  };
 
   // unpacked
-  virtual void normalization_shift(bvt &fraction, bvt &exponent);
-  void denormalization_shift(bvt &fraction, bvt &exponent);
+  static void normalization_shift(exprt &fraction, exprt &exponent);
+  static void denormalization_shift(
+    exprt &fraction,
+    exprt &exponent,
+    const ieee_float_spect &);
 
-  bvt add_bias(const bvt &exponent);
-  bvt sub_bias(const bvt &exponent);
+  static exprt add_bias(const exprt &exponent, const ieee_float_spect &);
+  static exprt sub_bias(const exprt &exponent, const ieee_float_spect &);
 
-  bvt limit_distance(const bvt &dist, mp_integer limit);
+  static exprt limit_distance(const exprt &dist, mp_integer limit);
 
   struct unpacked_floatt
   {
-    literalt sign;
-    literalt infinity;
-    literalt zero;
-    literalt NaN;
-    bvt fraction;
-    bvt exponent;
+    exprt sign, infinity, zero, NaN;
+    exprt fraction, exponent;
 
     unpacked_floatt():
-      sign(const_literal(false)),
-      infinity(const_literal(false)),
-      zero(const_literal(false)),
-      NaN(const_literal(false))
+      sign(false_exprt()),
+      infinity(false_exprt()),
+      zero(false_exprt()),
+      NaN(false_exprt())
     {
     }
   };
 
-  // this has a biased exponent
-  // and an _implicit_ hidden bit
+  // This has a biased exponent (unsigned)
+  // and an _implicit_ hidden bit.
   struct biased_floatt:public unpacked_floatt
   {
   };
 
-  // the hidden bit is explicit,
-  // and the exponent is not biased
+  // The hidden bit is explicit,
+  // and the exponent is not biased (signed)
   struct unbiased_floatt:public unpacked_floatt
   {
   };
 
-  biased_floatt bias(const unbiased_floatt &src);
+  static biased_floatt bias(const unbiased_floatt &, const ieee_float_spect &);
 
   // this takes unpacked format, and returns packed
-  virtual bvt rounder(const unbiased_floatt &src);
-  bvt pack(const biased_floatt &src);
-  unbiased_floatt unpack(const bvt &src);
+  exprt rounder(
+    const unbiased_floatt &,
+    const exprt &rm,
+    const ieee_float_spect &) const;
+  static exprt pack(const biased_floatt &, const ieee_float_spect &);
+  static unbiased_floatt unpack(const exprt &, const ieee_float_spect &);
 
-  void round_fraction(unbiased_floatt &result);
-  void round_exponent(unbiased_floatt &result);
-  
+  static void round_fraction(
+    unbiased_floatt &result,
+    const rounding_mode_bitst &,
+    const ieee_float_spect &);
+  static void round_exponent(
+    unbiased_floatt &result,
+    const rounding_mode_bitst &,
+    const ieee_float_spect &);
+
   // rounding decision for fraction
-  literalt fraction_rounding_decision(
-    const unsigned dest_bits,
-    const literalt sign,
-    const bvt &fraction);
+  static exprt fraction_rounding_decision(
+    const std::size_t dest_bits,
+    const exprt sign,
+    const exprt &fraction,
+    const rounding_mode_bitst &);
 
   // helpers for adder
 
   // computes src1.exponent-src2.exponent with extension
-  bvt subtract_exponents(
-    const unbiased_floatt &src1,
-    const unbiased_floatt &src2);
+  static exprt
+  subtract_exponents(const unbiased_floatt &src1, const unbiased_floatt &src2);
 
   // computes the "sticky-bit"
-  bvt sticky_right_shift(
-    const bvt &op,
-    const bv_utilst::shiftt shift_type,
-    const bvt &dist,
-    literalt &sticky);
-#endif
+  static exprt
+  sticky_right_shift(const exprt &op, const exprt &dist, exprt &sticky);
 };
 
-#endif
+inline exprt float_bv(const exprt &src)
+{
+  return float_bvt()(src);
+}
+
+#endif // CPROVER_SOLVERS_FLOATBV_FLOAT_BV_H

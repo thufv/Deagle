@@ -6,74 +6,152 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_MESSAGE_H
 
-#define CPROVER_MESSAGE_H
+#ifndef CPROVER_UTIL_MESSAGE_H
+#define CPROVER_UTIL_MESSAGE_H
 
-#include <string>
+#include <functional>
 #include <iosfwd>
 #include <sstream>
-#include <fstream>
+#include <string>
 
+#include "deprecate.h"
+#include "invariant.h"
 #include "source_location.h"
+
+class json_objectt;
+class jsont;
+class structured_datat;
+class xmlt;
 
 class message_handlert
 {
 public:
-  inline message_handlert():verbosity(10)
+  message_handlert():verbosity(10), message_count(10, 0)
   {
   }
 
-  virtual void print(unsigned level, const std::string &message) = 0;
+  virtual void print(unsigned level, const std::string &message)=0;
+
+  virtual void print(unsigned level, const xmlt &xml) = 0;
+
+  virtual void print(unsigned level, const jsont &json) = 0;
+
+  virtual void print(unsigned level, const structured_datat &data);
 
   virtual void print(
     unsigned level,
     const std::string &message,
-    int sequence_number,
     const source_locationt &location);
+
+  virtual void flush(unsigned) = 0;
 
   virtual ~message_handlert()
   {
   }
 
-  inline void set_verbosity(unsigned _verbosity) { verbosity=_verbosity; }
-  inline unsigned get_verbosity() const { return verbosity; }
-  
+  void set_verbosity(unsigned _verbosity) { verbosity=_verbosity; }
+  unsigned get_verbosity() const { return verbosity; }
+
+  std::size_t get_message_count(unsigned level) const
+  {
+    if(level>=message_count.size())
+      return 0;
+
+    return message_count[level];
+  }
+
+  /// \brief Create an ECMA-48 SGR (Select Graphic Rendition) command.
+  /// The default behavior is no action.
+  virtual std::string command(unsigned) const
+  {
+    return std::string();
+  }
+
 protected:
   unsigned verbosity;
+  std::vector<std::size_t> message_count;
 };
- 
+
 class null_message_handlert:public message_handlert
 {
 public:
-  virtual void print(unsigned level, const std::string &message)
+  null_message_handlert() : message_handlert()
+  {
+    verbosity = 0;
+  }
+
+  void print(unsigned level, const std::string &message) override
+  {
+    message_handlert::print(level, message);
+  }
+
+  void print(unsigned, const xmlt &) override
   {
   }
 
-  virtual void print(
+  void print(unsigned, const jsont &) override
+  {
+  }
+
+  void print(
     unsigned level,
     const std::string &message,
-    int sequence_number,
-    const source_locationt &location)
+    const source_locationt &) override
+  {
+    print(level, message);
+  }
+
+  void flush(unsigned) override
   {
   }
 };
- 
+
 class stream_message_handlert:public message_handlert
 {
 public:
-  explicit inline stream_message_handlert(std::ostream &_out):out(_out)
+  explicit stream_message_handlert(std::ostream &_out):out(_out)
   {
   }
 
-  virtual void print(unsigned level, const std::string &message)
-  { out << message << '\n'; }
-  
+  void print(unsigned level, const std::string &message) override
+  {
+    message_handlert::print(level, message);
+
+    if(verbosity>=level)
+      out << message << '\n';
+  }
+
+  void print(unsigned, const xmlt &) override
+  {
+  }
+
+  void print(unsigned, const jsont &) override
+  {
+  }
+
+  void flush(unsigned) override
+  {
+    out << std::flush;
+  }
+
 protected:
   std::ostream &out;
 };
 
-class message_clientt
+/// \brief Class that provides messages with a built-in verbosity 'level'.
+/// These messages are then processed by a subclass of \ref message_handlert -
+/// which filters out all messages above a set verbosity level. By default the
+/// verbosity filtering level is set to the maximum level (10) - all messages
+/// printed (level 10 messages are debug information).
+/// Common practice is to inherit from the \ref messaget class, to provide
+/// local infrastructure for messaging, by calling one of the utility
+/// methods, e.g. `debug()`, `warning()` etc. - which return a reference to a
+/// new instance of `mstreamt` set with the appropriate level.
+/// Individual messages are stored in \ref mstreamt - an `ostringstream`
+/// subtype. \ref eomt is used to flush the internal string of \ref mstreamt.
+/// A static member `eom`, of \ref eomt type is provided.
+class messaget
 {
 public:
   // Standard message levels:
@@ -86,198 +164,280 @@ public:
   //  8 + statistical information
   //  9 + progress information
   // 10 + debug info
-    
-  enum message_levelt { 
-    M_ERROR=1, M_WARNING=2, M_RESULT=4, M_STATUS=6, M_STATISTICS=8, M_DEBUG=10
+
+  enum message_levelt
+  {
+    M_ERROR=1, M_WARNING=2, M_RESULT=4, M_STATUS=6,
+    M_STATISTICS=8, M_PROGRESS=9, M_DEBUG=10
   };
 
-  virtual ~message_clientt();
+  static unsigned eval_verbosity(
+    const std::string &user_input,
+    const message_levelt default_verbosity,
+    message_handlert &dest);
 
-  virtual void set_message_handler(message_handlert &_message_handler);
+  virtual void set_message_handler(message_handlert &_message_handler)
+  {
+    message_handler=&_message_handler;
+  }
 
-  inline message_clientt():message_handler(NULL)
+  message_handlert &get_message_handler()
   {
-  }
-   
-  inline explicit message_clientt(message_handlert &_message_handler):
-    message_handler(&_message_handler)
-  {
-  }
-   
-  inline message_handlert &get_message_handler()
-  {
+    INVARIANT(
+      message_handler!=nullptr,
+      "message handler should be set before calling get_message_handler");
     return *message_handler;
   }
 
-protected:
-  message_handlert *message_handler;
-};
-
-class messaget:public message_clientt
-{
-public:
   // constructors, destructor
-  
-  inline messaget():
-    mstream(M_DEBUG, &message_handler)
+
+  DEPRECATED(SINCE(2019, 1, 7, "use messaget(message_handler) instead"))
+  messaget():
+    message_handler(nullptr),
+    mstream(M_DEBUG, *this)
   {
   }
-  
-  inline messaget(const messaget &other):
-    message_clientt(other),
-    mstream(M_DEBUG, &message_handler)
+
+  messaget(const messaget &other):
+    message_handler(other.message_handler),
+    mstream(other.mstream, *this)
   {
   }
-   
-  inline explicit messaget(message_handlert &_message_handler):
-    message_clientt(_message_handler),
-    mstream(M_DEBUG, &message_handler)
+
+  messaget &operator=(const messaget &other)
   {
-  }
-   
-  virtual ~messaget() { }
-  
-  // old interface, will go away
-
-  inline void print(const std::string &message)
-  { print(1, message); }
-
-  inline void status(const std::string &message)
-  { print(6, message); }
-  
-  inline void result(const std::string &message)
-  { print(4, message); }
-   
-  inline void warning(const std::string &message)
-  { print(2, message); }
-   
-  inline void debugx(const std::string &message)
-  { print(9, message); }
-   
-  inline void status(
-    const std::string &message,
-    const std::string &file)
-  {
-    source_locationt location;
-    location.set_file(file);
-    print(6, message, -1, location);
-  }
-   
-  inline void error(const std::string &message)
-  { print(1, message); }
-
-  inline void statistics(const std::string &message)
-  { print(8, message); }
-
-  inline void error(
-    const std::string &message,
-    const std::string &file)
-  {
-    source_locationt location;
-    location.set_file(file);
-    print(1, message, -1, location);
+    message_handler=other.message_handler;
+    mstream.assign_from(other.mstream);
+    return *this;
   }
 
-  virtual void print(unsigned level, const std::string &message);
+  explicit messaget(message_handlert &_message_handler):
+    message_handler(&_message_handler),
+    mstream(M_DEBUG, *this)
+  {
+  }
 
-  virtual void print(
-    unsigned level,
-    const std::string &message,
-    int sequence_number, // -1: no sequence information
-    const source_locationt &location);
-  
-  // New interface
-  
+  virtual ~messaget();
+
+  // \brief Class that stores an individual 'message' with a verbosity 'level'.
   class mstreamt:public std::ostringstream
   {
   public:
-    inline mstreamt(
+    mstreamt(
       unsigned _message_level,
-      message_handlert **_message_handler):
+      messaget &_message):
       message_level(_message_level),
-      message_handler(_message_handler)
+      message(_message)
     {
     }
 
+    mstreamt(const mstreamt &other)=delete;
+
+    mstreamt(const mstreamt &other, messaget &_message):
+      message_level(other.message_level),
+      message(_message),
+      source_location(other.source_location)
+    {
+    }
+
+    mstreamt &operator=(const mstreamt &other)=delete;
+
     unsigned message_level;
-    message_handlert **message_handler;
+    messaget &message;
+    source_locationt source_location;
+
+    mstreamt &operator << (const xmlt &data)
+    {
+      if(this->tellp() > 0)
+        *this << eom; // force end of previous message
+      if(message.message_handler)
+      {
+        message.message_handler->print(message_level, data);
+      }
+      return *this;
+    }
+
+    mstreamt &operator<<(const json_objectt &data);
+
+    mstreamt &operator<<(const structured_datat &data)
+    {
+      if(this->tellp() > 0)
+        *this << eom; // force end of previous message
+      if(message.message_handler)
+      {
+        message.message_handler->print(message_level, data);
+      }
+      return *this;
+    }
 
     template <class T>
-    inline mstreamt &operator << (const T &x)
+    mstreamt &operator << (const T &x)
     {
       static_cast<std::ostream &>(*this) << x;
       return *this;
     }
 
-    // for feeding in manipulator functions such as eom
-    inline mstreamt &operator << (mstreamt &(*func)(mstreamt &))
+  private:
+    void assign_from(const mstreamt &other)
     {
-      return func(*this);
+      message_level=other.message_level;
+      source_location=other.source_location;
+      // message, the pointer to my enclosing messaget, remains unaltered.
     }
+
+    friend class messaget;
   };
 
-  // Feeding 'eom' into the stream triggers
-  // the printing of the message
-  static inline mstreamt &eom(mstreamt &m)
+  // Feeding 'eom' into the stream triggers the printing of the message
+  // This is implemented as an I/O manipulator (compare to STL's endl).
+  class eomt
   {
-    if((*m.message_handler)!=NULL)
-      (*m.message_handler)->print(m.message_level, m.str());
+  };
+
+  static eomt eom;
+
+  friend mstreamt &operator<<(mstreamt &m, eomt)
+  {
+    if(m.message.message_handler)
+    {
+      m.message.message_handler->print(
+        m.message_level,
+        m.str(),
+        m.source_location);
+      m.message.message_handler->flush(m.message_level);
+    }
     m.clear(); // clears error bits
     m.str(std::string()); // clears the string
+    m.source_location.clear();
     return m;
   }
 
-  // in lieu of std::endl
-  static inline mstreamt &endl(mstreamt &m)
+  // This is an I/O manipulator (compare to STL's set_precision).
+  class commandt
   {
-    static_cast<std::ostream &>(m) << std::endl;
-    return m;
-  }
-  
-  inline mstreamt &error()
+  public:
+    explicit commandt(unsigned _command) : command(_command)
+    {
+    }
+
+    unsigned command;
+  };
+
+  /// feed a command into an mstreamt
+  friend mstreamt &operator<<(mstreamt &m, const commandt &c)
   {
-    mstream.message_level=M_ERROR;
-    return mstream;
+    if(m.message.message_handler)
+      return m << m.message.message_handler->command(c.command);
+    else
+      return m;
   }
-  
-  inline mstreamt &warning()
+
+  /// \brief Create an ECMA-48 SGR (Select Graphic Rendition) command.
+  static commandt command(unsigned c)
   {
-    mstream.message_level=M_WARNING;
-    return mstream;
+    return commandt(c);
   }
-  
-  inline mstreamt &result()
-  {
-    mstream.message_level=M_RESULT;
-    return mstream;
-  }
-  
-  inline mstreamt &status()
-  {
-    mstream.message_level=M_STATUS;
-    return mstream;
-  }
-  
-  inline mstreamt &statistics()
-  {
-    mstream.message_level=M_STATISTICS;
-    return mstream;
-  }
-  
-  inline mstreamt &debugx()
-  {
-    mstream.message_level=M_DEBUG;
-    return mstream;
-  }
-  
-  inline mstreamt &get_mstream(unsigned message_level)
+
+  /// return to default formatting,
+  /// as defined by the terminal
+  static const commandt reset;
+
+  /// render text with red foreground color
+  static const commandt red;
+
+  /// render text with green foreground color
+  static const commandt green;
+
+  /// render text with yellow foreground color
+  static const commandt yellow;
+
+  /// render text with blue foreground color
+  static const commandt blue;
+
+  /// render text with magenta foreground color
+  static const commandt magenta;
+
+  /// render text with cyan foreground color
+  static const commandt cyan;
+
+  /// render text with bright red foreground color
+  static const commandt bright_red;
+
+  /// render text with bright green foreground color
+  static const commandt bright_green;
+
+  /// render text with bright yellow foreground color
+  static const commandt bright_yellow;
+
+  /// render text with bright blue foreground color
+  static const commandt bright_blue;
+
+  /// render text with bright magenta foreground color
+  static const commandt bright_magenta;
+
+  /// render text with bright cyan foreground color
+  static const commandt bright_cyan;
+
+  /// render text with bold font
+  static const commandt bold;
+
+  /// render text with faint font
+  static const commandt faint;
+
+  /// render italic text
+  static const commandt italic;
+
+  /// render underlined text
+  static const commandt underline;
+
+  mstreamt &get_mstream(unsigned message_level) const
   {
     mstream.message_level=message_level;
     return mstream;
   }
-  
+
+  mstreamt &error() const
+  {
+    return get_mstream(M_ERROR);
+  }
+
+  mstreamt &warning() const
+  {
+    return get_mstream(M_WARNING);
+  }
+
+  mstreamt &result() const
+  {
+    return get_mstream(M_RESULT);
+  }
+
+  mstreamt &status() const
+  {
+    return get_mstream(M_STATUS);
+  }
+
+  mstreamt &statistics() const
+  {
+    return get_mstream(M_STATISTICS);
+  }
+
+  mstreamt &progress() const
+  {
+    return get_mstream(M_PROGRESS);
+  }
+
+  mstreamt &debug() const
+  {
+    return get_mstream(M_DEBUG);
+  }
+
+  void conditional_output(
+    mstreamt &mstream,
+    const std::function<void(mstreamt &)> &output_generator) const;
+
 protected:
-  mstreamt mstream;
+  message_handlert *message_handler;
+  mutable mstreamt mstream;
 };
 
-#endif
+#endif // CPROVER_UTIL_MESSAGE_H

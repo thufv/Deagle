@@ -6,79 +6,71 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_BOOLBV_MAP_H
-#define CPROVER_BOOLBV_MAP_H
 
-#include <vector>
+#ifndef CPROVER_SOLVERS_FLATTENING_BOOLBV_MAP_H
+#define CPROVER_SOLVERS_FLATTENING_BOOLBV_MAP_H
 
-#include <util/hash_cont.h>
 #include <util/type.h>
-#include <util/namespace.h>
 
-#include <solvers/prop/prop.h>
+#include <solvers/prop/literal.h>
 
-#include "boolbv_type.h"
-#include "boolbv_width.h"
+#include <functional>
+#include <iosfwd>
+
+class propt;
 
 class boolbv_mapt
 {
 public:
-  boolbv_mapt(
-    propt &_prop,
-    const namespacet &_ns,
-    const boolbv_widtht &_boolbv_width):
-    prop(_prop), ns(_ns), boolbv_width(_boolbv_width)
+  explicit boolbv_mapt(propt &_prop) : prop(_prop)
   {
   }
-
-  struct map_bitt
-  {
-    map_bitt():is_set(false) { }
-    bool is_set;
-    literalt l;
-  };
-
-  typedef std::vector<map_bitt> literal_mapt;
 
   class map_entryt
   {
   public:
-    map_entryt():width(0), bvtype(IS_UNKNOWN)
-    {
-    }
-
-    unsigned width;
-    bvtypet bvtype;
     typet type;
-    literal_mapt literal_map;
-    
+    bvt literal_map;
+
     std::string get_value(const propt &) const;
   };
-  
-  typedef hash_map_cont<irep_idt, map_entryt, irep_id_hash> mappingt;  
-  mappingt mapping;
 
-  void show() const;
+  typedef std::unordered_map<irep_idt, map_entryt> mappingt;
 
-  map_entryt &get_map_entry(
-    const irep_idt &identifier,
-    const typet &type);
+  void show(std::ostream &out) const;
 
-  void get_literals(
+  const bvt &get_literals(
     const irep_idt &identifier,
     const typet &type,
-    const unsigned width,
-    bvt &literals);
+    std::size_t width);
 
   void set_literals(
     const irep_idt &identifier,
     const typet &type,
     const bvt &literals);
-    
+
+  void erase_literals(
+    const irep_idt &identifier,
+    const typet &type);
+
+  optionalt<std::reference_wrapper<const map_entryt>>
+  get_map_entry(const irep_idt &identifier) const
+  {
+    const auto entry = mapping.find(identifier);
+    if(entry == mapping.end())
+      return {};
+
+    return optionalt<std::reference_wrapper<const map_entryt>>(entry->second);
+  }
+
+  const mappingt &get_mapping() const
+  {
+    return mapping;
+  }
+
 protected:
+  mappingt mapping;
   propt &prop;
-  const namespacet &ns;
-  const boolbv_widtht &boolbv_width;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_FLATTENING_BOOLBV_MAP_H

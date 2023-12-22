@@ -23,16 +23,15 @@ typedef std::set<Lit> literal_set;
 
 enum edge_kindt
 {
-    OCLT_NA, //dynamical
-    OCLT_EPO, //initial
-    OCLT_PO, //initial
-    OCLT_RFI, //initial, dynamical
-    OCLT_RFE, //initial, dynamical
-
+    OC_NA,
+    OC_APO,
+    OC_PO,
+    OC_RF,
     // the following are exclusive for ICD
-    OCLT_COI,
-    OCLT_COE,
-    OCLT_FR
+    OC_WS,
+    OC_FR,
+    // the following is for data race
+    OC_RACE
 };
 
 edge_kindt str_to_kind(const std::string& str);

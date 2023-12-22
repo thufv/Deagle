@@ -6,11 +6,22 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_GOTO_PROGRAMS_STATIC_ANALYSIS_H
-#define CPROVER_GOTO_PROGRAMS_STATIC_ANALYSIS_H
+/// \file
+/// Static Analysis
 
-#include <map>
+#ifndef CPROVER_ANALYSES_STATIC_ANALYSIS_H
+#define CPROVER_ANALYSES_STATIC_ANALYSIS_H
+
+#ifndef USE_DEPRECATED_STATIC_ANALYSIS_H
+#error Deprecated, use ai.h instead
+#endif
+
 #include <iosfwd>
+#include <map>
+#include <memory>
+#include <unordered_set>
+
+#include <util/make_unique.h>
 
 #include <goto-programs/goto_functions.h>
 
@@ -26,14 +37,14 @@ public:
   virtual ~domain_baset()
   {
   }
-  
+
   typedef goto_programt::const_targett locationt;
 
   // will go away,
   // to be replaced by a factory class option to static_analysist
   virtual void initialize(
-    const namespacet &ns,
-    locationt l)
+    const namespacet &,
+    locationt)
   {
   }
 
@@ -47,37 +58,39 @@ public:
 
   virtual void transform(
     const namespacet &ns,
+    const irep_idt &function_from,
     locationt from,
-    locationt to)=0;
+    const irep_idt &function_to,
+    locationt to) = 0;
 
   virtual void output(
-    const namespacet &ns,
-    std::ostream &out) const
+    const namespacet &,
+    std::ostream &) const
   {
   }
-  
-  typedef hash_set_cont<exprt, irep_hash> expr_sett;
 
-  // will go away  
+  typedef std::unordered_set<exprt, irep_hash> expr_sett;
+
+  // will go away
   virtual void get_reference_set(
-    const namespacet &ns,
-    const exprt &expr,
+    const namespacet &,
+    const exprt &,
     std::list<exprt> &dest)
   {
     // dummy, overload me!
     dest.clear();
   }
-  
+
   // also add
   //
   //   bool merge(const T &b, locationt to);
   //
   // this computes the join between "this" and "b"
   // return true if "this" has changed
-  
+
 protected:
   bool seen;
-  
+
   friend class static_analysis_baset;
 };
 
@@ -94,7 +107,7 @@ public:
     initialized(false)
   {
   }
-  
+
   virtual void initialize(
     const goto_programt &goto_program)
   {
@@ -104,7 +117,7 @@ public:
       generate_states(goto_program);
     }
   }
-    
+
   virtual void initialize(
     const goto_functionst &goto_functions)
   {
@@ -114,13 +127,14 @@ public:
       generate_states(goto_functions);
     }
   }
-    
+
   virtual void update(const goto_programt &goto_program);
   virtual void update(const goto_functionst &goto_functions);
-    
+
   virtual void operator()(
+    const irep_idt &function_identifier,
     const goto_programt &goto_program);
-    
+
   virtual void operator()(
     const goto_functionst &goto_functions);
 
@@ -132,7 +146,7 @@ public:
   {
     initialized=false;
   }
-  
+
   virtual void output(
     const goto_functionst &goto_functions,
     std::ostream &out) const;
@@ -141,37 +155,37 @@ public:
     const goto_programt &goto_program,
     std::ostream &out) const
   {
-    output(goto_program, "", out);
+    output(goto_program, irep_idt(), out);
   }
 
   virtual bool has_location(locationt l) const=0;
-  
+
   void insert(locationt l)
   {
     generate_state(l);
   }
 
-  // utilities  
-  
+  // utilities
+
   // get guard of a conditional edge
   static exprt get_guard(locationt from, locationt to);
-  
+
   // get lhs that return value is assigned to
   // for an edge that returns from a function
   static exprt get_return_lhs(locationt to);
 
 protected:
   const namespacet &ns;
-  
+
   virtual void output(
     const goto_programt &goto_program,
     const irep_idt &identifier,
     std::ostream &out) const;
 
   typedef std::map<unsigned, locationt> working_sett;
-  
+
   locationt get_next(working_sett &working_set);
-  
+
   void put_in_working_set(
     working_sett &working_set,
     locationt l)
@@ -180,68 +194,77 @@ protected:
       std::pair<unsigned, locationt>(l->location_number, l));
   }
 
-  // true = found s.th. new
+  // true = found something new
   bool fixedpoint(
+    const irep_idt &function_identifier,
     const goto_programt &goto_program,
     const goto_functionst &goto_functions);
-    
-  bool fixedpoint(
-    goto_functionst::function_mapt::const_iterator it,
+
+  virtual void fixedpoint(
+    const goto_functionst &goto_functions)=0;
+
+  void sequential_fixedpoint(
     const goto_functionst &goto_functions);
-    
-  void fixedpoint(
+  void concurrent_fixedpoint(
     const goto_functionst &goto_functions);
 
-  // true = found s.th. new
+  // true = found something new
   bool visit(
+    const irep_idt &function_identifier,
     locationt l,
     working_sett &working_set,
     const goto_programt &goto_program,
     const goto_functionst &goto_functions);
-    
+
   static locationt successor(locationt l)
   {
     l++;
     return l;
   }
-  
+
   virtual bool merge(statet &a, const statet &b, locationt to)=0;
-  
+  // for concurrent fixedpoint
+  virtual bool merge_shared(statet &a, const statet &b, locationt to)=0;
+
   typedef std::set<irep_idt> functions_donet;
   functions_donet functions_done;
 
   typedef std::set<irep_idt> recursion_sett;
   recursion_sett recursion_set;
-  
+
   void generate_states(
     const goto_functionst &goto_functions);
 
   void generate_states(
     const goto_programt &goto_program);
-    
+
   bool initialized;
-  
+
   // function calls
   void do_function_call_rec(
-    locationt l_call, locationt l_return,
+    const irep_idt &calling_function,
+    locationt l_call,
+    locationt l_return,
     const exprt &function,
     const exprt::operandst &arguments,
     statet &new_state,
     const goto_functionst &goto_functions);
 
   void do_function_call(
-    locationt l_call, locationt l_return,
+    const irep_idt &calling_function,
+    locationt l_call,
+    locationt l_return,
     const goto_functionst &goto_functions,
     const goto_functionst::function_mapt::const_iterator f_it,
     const exprt::operandst &arguments,
     statet &new_state);
 
   // abstract methods
-    
+
   virtual void generate_state(locationt l)=0;
   virtual statet &get_state(locationt l)=0;
   virtual const statet &get_state(locationt l) const=0;
-  virtual statet* make_temporary_state(statet &s)=0;
+  virtual std::unique_ptr<statet> make_temporary_state(statet &s)=0;
 
   typedef domain_baset::expr_sett expr_sett;
 
@@ -264,20 +287,24 @@ public:
 
   typedef goto_programt::const_targett locationt;
 
-  inline T &operator[](locationt l)
+  T &operator[](locationt l)
   {
     typename state_mapt::iterator it=state_map.find(l);
-    if(it==state_map.end()) throw "failed to find state";
+    if(it==state_map.end())
+      throw std::out_of_range("failed to find state");
+
     return it->second;
   }
-    
-  inline const T &operator[](locationt l) const
+
+  const T &operator[](locationt l) const
   {
     typename state_mapt::const_iterator it=state_map.find(l);
-    if(it==state_map.end()) throw "failed to find state";
+    if(it==state_map.end())
+      throw std::out_of_range("failed to find state");
+
     return it->second;
   }
-  
+
   virtual void clear()
   {
     state_map.clear();
@@ -288,7 +315,7 @@ public:
   {
     return state_map.count(l)!=0;
   }
-  
+
 protected:
   typedef std::map<locationt, T> state_mapt;
   state_mapt state_map;
@@ -296,14 +323,18 @@ protected:
   virtual statet &get_state(locationt l)
   {
     typename state_mapt::iterator it=state_map.find(l);
-    if(it==state_map.end()) throw "failed to find state";
+    if(it==state_map.end())
+      throw std::out_of_range("failed to find state");
+
     return it->second;
   }
 
   virtual const statet &get_state(locationt l) const
   {
     typename state_mapt::const_iterator it=state_map.find(l);
-    if(it==state_map.end()) throw "failed to find state";
+    if(it==state_map.end())
+      throw std::out_of_range("failed to find state");
+
     return it->second;
   }
 
@@ -311,10 +342,10 @@ protected:
   {
     return static_cast<T &>(a).merge(static_cast<const T &>(b), to);
   }
-  
-  virtual statet *make_temporary_state(statet &s)
+
+  virtual std::unique_ptr<statet> make_temporary_state(statet &s)
   {
-    return new T(static_cast<T &>(s));
+    return util_make_unique<T>(static_cast<T &>(s));
   }
 
   virtual void generate_state(locationt l)
@@ -330,9 +361,51 @@ protected:
     state_map[l].get_reference_set(ns, expr, dest);
   }
 
-private:  
+  virtual void fixedpoint(const goto_functionst &goto_functions)
+  {
+    sequential_fixedpoint(goto_functions);
+  }
+
+private:
   // to enforce that T is derived from domain_baset
   void dummy(const T &s) { const statet &x=dummy1(s); (void)x; }
+
+  // not implemented in sequential analyses
+  virtual bool merge_shared(
+    statet &,
+    const statet &,
+    goto_programt::const_targett)
+  {
+    throw "not implemented";
+  }
 };
 
-#endif
+template<typename T>
+class concurrency_aware_static_analysist:public static_analysist<T>
+{
+public:
+  // constructor
+  explicit concurrency_aware_static_analysist(const namespacet &_ns):
+    static_analysist<T>(_ns)
+  {
+  }
+
+  virtual bool merge_shared(
+    static_analysis_baset::statet &a,
+    const static_analysis_baset::statet &b,
+    goto_programt::const_targett to)
+  {
+    return static_cast<T &>(a).merge_shared(
+      this->ns,
+      static_cast<const T &>(b),
+      to);
+  }
+
+protected:
+  virtual void fixedpoint(const goto_functionst &goto_functions)
+  {
+    this->concurrent_fixedpoint(goto_functions);
+  }
+};
+
+#endif // CPROVER_ANALYSES_STATIC_ANALYSIS_H

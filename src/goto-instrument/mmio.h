@@ -8,17 +8,17 @@ Date: September 2011
 
 \*******************************************************************/
 
+/// \file
+/// Memory-mapped I/O Instrumentation for Goto Programs
+
 #ifndef CPROVER_GOTO_INSTRUMENT_MMIO_H
 #define CPROVER_GOTO_INSTRUMENT_MMIO_H
 
-#include <pointer-analysis/value_sets.h>
-
-#include <goto-programs/goto_program.h>
-#include <goto-programs/goto_functions.h>
+class value_setst;
+class goto_modelt;
 
 void mmio(
-  value_setst &value_sets,
-  class symbol_tablet &symbol_table,
-  goto_functionst &goto_functions);
+  value_setst &,
+  goto_modelt &);
 
-#endif
+#endif // CPROVER_GOTO_INSTRUMENT_MMIO_H

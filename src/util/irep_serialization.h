@@ -1,15 +1,18 @@
 /*******************************************************************\
- 
+
 Module: binary irep conversions with hashing
- 
+
 Author: CM Wintersteiger
- 
+
 Date: May 2007
- 
+
 \*******************************************************************/
 
-#ifndef CPROVER_IREP_SERIALIZATION_H
-#define CPROVER_IREP_SERIALIZATION_H
+/// \file
+/// binary irep conversions with hashing
+
+#ifndef CPROVER_UTIL_IREP_SERIALIZATION_H
+#define CPROVER_UTIL_IREP_SERIALIZATION_H
 
 #include <map>
 #include <iosfwd>
@@ -32,36 +35,33 @@ public:
     ireps_on_readt ireps_on_read;
 
     irep_full_hash_containert irep_full_hash_container;
-    typedef std::map<unsigned, size_t> ireps_on_writet;
+    typedef std::map<std::size_t, std::size_t> ireps_on_writet;
     ireps_on_writet ireps_on_write;
-    
+
     typedef std::vector<bool> string_mapt;
     string_mapt string_map;
 
     typedef std::vector<std::pair<bool, irep_idt> > string_rev_mapt;
     string_rev_mapt string_rev_map;
-    
+
     void clear()
-    { 
+    {
       irep_full_hash_container.clear();
-      ireps_on_write.clear(); 
+      ireps_on_write.clear();
       ireps_on_read.clear();
       string_map.clear();
       string_rev_map.clear();
-    }        
+    }
   };
-  
+
   explicit irep_serializationt(ireps_containert &ic):
-    ireps_container(ic) 
-  { 
+    ireps_container(ic)
+  {
     read_buffer.resize(1, 0);
-    clear(); 
+    clear();
   };
-  
-  std::size_t insert_on_write(std::size_t h);
-  std::size_t insert_on_read(std::size_t id, const irept &);
-  
-  void reference_convert(std::istream &, irept &irep);
+
+  const irept &reference_convert(std::istream &);
   void reference_convert(const irept &irep, std::ostream &);
 
   irep_idt read_string_ref(std::istream &);
@@ -76,8 +76,8 @@ private:
   ireps_containert &ireps_container;
   std::vector<char> read_buffer;
 
-  void write_irep(std::ostream &, const irept &irep);      
-  void read_irep(std::istream &, irept &irep);
+  void write_irep(std::ostream &, const irept &irep);
+  irept read_irep(std::istream &);
 };
 
-#endif /*IREP_SERIALIZATION_H_*/
+#endif // CPROVER_UTIL_IREP_SERIALIZATION_H

@@ -6,81 +6,117 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+#include "ui_message.h"
+
 #include <fstream>
 #include <iostream>
 
-#include "i2string.h"
-#include "xml.h"
-#include "xml_expr.h"
+#include "cmdline.h"
 #include "cout_message.h"
-#include "ui_message.h"
-
-/*******************************************************************\
-
-Function: ui_message_handlert::ui_message_handlert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "json.h"
+#include "json_irep.h"
+#include "json_stream.h"
+#include "make_unique.h"
+#include "structured_data.h"
+#include "xml.h"
+#include "xml_irep.h"
 
 ui_message_handlert::ui_message_handlert(
-  uit __ui, const std::string &program):_ui(__ui)
+  message_handlert *_message_handler,
+  uit __ui,
+  const std::string &program,
+  bool always_flush,
+  timestampert::clockt clock_type)
+  : message_handler(_message_handler),
+    _ui(__ui),
+    always_flush(always_flush),
+    time(timestampert::make(clock_type)),
+    out(std::cout),
+    json_stream(nullptr)
 {
-  switch(__ui)
+  switch(_ui)
   {
-  case XML_UI:
-    std::cout << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << "\n";
-    std::cout << "<cprover>" << "\n";
-    
+  case uit::PLAIN:
+    break;
+
+  case uit::XML_UI:
+    out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        << "\n";
+    out << "<cprover>"
+        << "\n";
+
     {
       xmlt program_xml;
       program_xml.name="program";
       program_xml.data=program;
-      
-      std::cout << program_xml;
+
+      out << program_xml;
     }
     break;
-    
-  case PLAIN:
+
+  case uit::JSON_UI:
+    {
+      json_stream =
+        std::unique_ptr<json_stream_arrayt>(new json_stream_arrayt(out));
+      json_stream->push_back().make_object()["program"] = json_stringt(program);
+    }
     break;
-    
-  default:;
   }
 }
 
-/*******************************************************************\
+ui_message_handlert::ui_message_handlert(
+  const class cmdlinet &cmdline,
+  const std::string &program)
+  : ui_message_handlert(
+      nullptr,
+      cmdline.isset("xml-ui") || cmdline.isset("xml-interface")
+        ? uit::XML_UI
+        : cmdline.isset("json-ui") || cmdline.isset("json-interface")
+            ? uit::JSON_UI
+            : uit::PLAIN,
+      program,
+      cmdline.isset("flush"),
+      cmdline.isset("timestamp") ? cmdline.get_value("timestamp") == "monotonic"
+                                     ? timestampert::clockt::MONOTONIC
+                                     : cmdline.get_value("timestamp") == "wall"
+                                         ? timestampert::clockt::WALL_CLOCK
+                                         : timestampert::clockt::NONE
+                                 : timestampert::clockt::NONE)
+{
+  if(get_ui() == uit::PLAIN)
+  {
+    console_message_handler =
+      util_make_unique<console_message_handlert>(always_flush);
+    message_handler = &*console_message_handler;
+  }
+}
 
-Function: ui_message_handlert::~ui_message_handlert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+ui_message_handlert::ui_message_handlert(message_handlert &message_handler)
+  : ui_message_handlert(
+      &message_handler, uit::PLAIN, "", false, timestampert::clockt::NONE)
+{
+}
 
 ui_message_handlert::~ui_message_handlert()
 {
-  if(get_ui()==XML_UI)
-    std::cout << "</cprover>" << "\n";
+  switch(get_ui())
+  {
+  case uit::XML_UI:
+
+    out << "</cprover>"
+        << "\n";
+    break;
+
+  case uit::JSON_UI:
+    INVARIANT(json_stream, "JSON stream must be initialized before use");
+    json_stream->close();
+    out << '\n';
+    break;
+
+  case uit::PLAIN:
+    break;
+  }
 }
-
-/*******************************************************************\
-
-Function: ui_message_handlert::level_string
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const char *ui_message_handlert::level_string(unsigned level)
 {
@@ -92,129 +128,204 @@ const char *ui_message_handlert::level_string(unsigned level)
     return "STATUS-MESSAGE";
 }
 
-/*******************************************************************\
-
-Function: ui_message_handlert::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void ui_message_handlert::print(
   unsigned level,
   const std::string &message)
 {
   if(verbosity>=level)
   {
-    if(get_ui()==XML_UI)
+    switch(get_ui())
+    {
+    case uit::PLAIN:
+    {
+      std::stringstream ss;
+      const std::string timestamp = time->stamp();
+      ss << timestamp << (timestamp.empty() ? "" : " ") << message;
+      message_handler->print(level, ss.str());
+      if(always_flush)
+        message_handler->flush(level);
+    }
+    break;
+
+    case uit::XML_UI:
+    case uit::JSON_UI:
     {
       source_locationt location;
       location.make_nil();
-      print(level, message, -1, location);
+      print(level, message, location);
+      if(always_flush)
+        flush(level);
     }
-    else
-    {
-      console_message_handlert console_message_handler;
-      console_message_handler.print(level, message);
+    break;
     }
   }
 }
 
-/*******************************************************************\
+void ui_message_handlert::print(
+  unsigned level,
+  const xmlt &data)
+{
+  if(verbosity>=level)
+  {
+    switch(get_ui())
+    {
+    case uit::PLAIN:
+      INVARIANT(false, "Cannot print xml data on PLAIN UI");
+      break;
+    case uit::XML_UI:
+      out << data << '\n';
+      flush(level);
+      break;
+    case uit::JSON_UI:
+      INVARIANT(false, "Cannot print xml data on JSON UI");
+      break;
+    }
+  }
+}
 
-Function: ui_message_handlert::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+void ui_message_handlert::print(
+  unsigned level,
+  const jsont &data)
+{
+  if(verbosity>=level)
+  {
+    switch(get_ui())
+    {
+    case uit::PLAIN:
+      INVARIANT(false, "Cannot print json data on PLAIN UI");
+      break;
+    case uit::XML_UI:
+      INVARIANT(false, "Cannot print json data on XML UI");
+      break;
+    case uit::JSON_UI:
+      INVARIANT(json_stream, "JSON stream must be initialized before use");
+      json_stream->push_back(data);
+      flush(level);
+      break;
+    }
+  }
+}
 
 void ui_message_handlert::print(
   unsigned level,
   const std::string &message,
-  int sequence_number,
   const source_locationt &location)
 {
+  message_handlert::print(level, message);
+
   if(verbosity>=level)
   {
-    if(get_ui()==XML_UI)
+    switch(get_ui())
+    {
+    case uit::PLAIN:
+      message_handlert::print(
+        level, message, location);
+      break;
+
+    case uit::XML_UI:
+    case uit::JSON_UI:
     {
       std::string tmp_message(message);
 
-      if(tmp_message.size()!=0 && tmp_message[tmp_message.size()-1]=='\n')
+      if(!tmp_message.empty() && *tmp_message.rbegin()=='\n')
         tmp_message.resize(tmp_message.size()-1);
-    
-      const char *type=level_string(level);
-      
-      std::string sequence_number_str=
-        sequence_number>=0?i2string(sequence_number):"";
 
-      ui_msg(type, tmp_message, sequence_number_str, location);
+      const char *type=level_string(level);
+
+      ui_msg(type, tmp_message, location);
     }
-    else
-    {
-      message_handlert::print(
-        level, message, sequence_number, location);
+    break;
     }
   }
 }
 
-/*******************************************************************\
-
-Function: ui_message_handlert::ui_msg
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void ui_message_handlert::ui_msg(
   const std::string &type,
-  const std::string &msg1,
-  const std::string &msg2,
+  const std::string &msg,
   const source_locationt &location)
 {
-  xml_ui_msg(type, msg1, msg2, location);
+  switch(get_ui())
+  {
+  case uit::PLAIN:
+    break;
+
+  case uit::XML_UI:
+    xml_ui_msg(type, msg, location);
+    break;
+
+  case uit::JSON_UI:
+    json_ui_msg(type, msg, location);
+    break;
+  }
 }
-
-/*******************************************************************\
-
-Function: ui_message_handlert::xml_ui_msg
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void ui_message_handlert::xml_ui_msg(
   const std::string &type,
   const std::string &msg1,
-  const std::string &msg2,
   const source_locationt &location)
 {
   xmlt result;
   result.name="message";
 
-  if(location.is_not_nil() && location.get_file()!="")
+  if(location.is_not_nil() &&
+     !location.get_file().empty())
     result.new_element(xml(location));
 
   result.new_element("text").data=msg1;
   result.set_attribute("type", type);
-  
-  std::cout << result;
-  std::cout << std::endl;
+  const std::string timestamp = time->stamp();
+  if(!timestamp.empty())
+    result.set_attribute("timestamp", timestamp);
+
+  out << result;
+  out << '\n';
 }
 
+void ui_message_handlert::json_ui_msg(
+  const std::string &type,
+  const std::string &msg1,
+  const source_locationt &location)
+{
+  INVARIANT(json_stream, "JSON stream must be initialized before use");
+  json_objectt &result = json_stream->push_back().make_object();
+
+  if(location.is_not_nil() &&
+     !location.get_file().empty())
+    result["sourceLocation"] = json(location);
+
+  result["messageType"] = json_stringt(type);
+  result["messageText"] = json_stringt(msg1);
+  const std::string timestamp = time->stamp();
+  if(!timestamp.empty())
+    result["timestamp"] = json_stringt(timestamp);
+}
+
+void ui_message_handlert::flush(unsigned level)
+{
+  switch(get_ui())
+  {
+  case uit::PLAIN:
+    message_handler->flush(level);
+    break;
+
+  case uit::XML_UI:
+  case uit::JSON_UI:
+    out << std::flush;
+    break;
+  }
+}
+void ui_message_handlert::print(unsigned level, const structured_datat &data)
+{
+  switch(get_ui())
+  {
+  case uit::PLAIN:
+    print(level, to_pretty(data));
+    break;
+  case uit::XML_UI:
+    print(level, to_xml(data));
+    break;
+  case uit::JSON_UI:
+    print(level, to_json(data));
+    break;
+  }
+}

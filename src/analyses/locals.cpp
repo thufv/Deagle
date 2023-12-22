@@ -8,58 +8,28 @@ Date: March 2013
 
 \*******************************************************************/
 
-#include <util/std_expr.h>
+/// \file
+/// Local variables
 
 #include "locals.h"
 
-/*******************************************************************\
-
-Function: localst::build
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <goto-programs/goto_function.h>
 
 void localst::build(const goto_functiont &goto_function)
 {
-  forall_goto_program_instructions(it, goto_function.body)
-    if(it->is_decl())
-    {
-      const code_declt &code_decl=to_code_decl(it->code);
-      locals_map[code_decl.get_identifier()]=code_decl.symbol().type();
-    }
-      
-  const code_typet::parameterst &parameters=
-    goto_function.type.parameters();
-      
-  for(code_typet::parameterst::const_iterator
-      it=parameters.begin();
-      it!=parameters.end();
-      it++)
-    locals_map[it->get_identifier()]=it->type();
+  for(const auto &instruction : goto_function.body.instructions)
+  {
+    if(instruction.is_decl())
+      locals.insert(instruction.decl_symbol().get_identifier());
+  }
+
+  locals.insert(
+    goto_function.parameter_identifiers.begin(),
+    goto_function.parameter_identifiers.end());
 }
-
-/*******************************************************************\
-
-Function: localst::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void localst::output(std::ostream &out) const
 {
-  for(locals_mapt::const_iterator
-      it=locals_map.begin();
-      it!=locals_map.end();
-      it++)
-    out << it->first << "\n";
+  for(const auto &local : locals)
+    out << local << "\n";
 }

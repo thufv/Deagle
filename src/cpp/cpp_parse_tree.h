@@ -6,10 +6,15 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_PARSE_TREE_H
-#define CPROVER_CPP_PARSE_TREE_H
+/// \file
+/// C++ Parser
+
+#ifndef CPROVER_CPP_CPP_PARSE_TREE_H
+#define CPROVER_CPP_CPP_PARSE_TREE_H
 
 #include "cpp_item.h"
+
+#include <list>
 
 class cpp_parse_treet
 {
@@ -23,4 +28,12 @@ public:
   void clear();
 };
 
-#endif
+class uninitialized_typet : public typet
+{
+public:
+  uninitialized_typet() : typet(static_cast<const typet &>(get_nil_irep()))
+  {
+  }
+};
+
+#endif // CPROVER_CPP_CPP_PARSE_TREE_H

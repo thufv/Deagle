@@ -6,36 +6,47 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_EXPANDING_VECTOR_H
-#define CPROVER_EXPANDING_VECTOR_H
+
+#ifndef CPROVER_UTIL_EXPANDING_VECTOR_H
+#define CPROVER_UTIL_EXPANDING_VECTOR_H
 
 #include <vector>
 
 template<typename T>
-class expanding_vector:public std::vector<T>
+class expanding_vectort
 {
+  typedef std::vector<T> data_typet;
+  data_typet data;
+
 public:
-  inline T & operator[] (typename std::vector<T>::size_type n)
+  // NOLINTNEXTLINE(readability/identifiers)
+  typedef typename data_typet::size_type size_type;
+  // NOLINTNEXTLINE(readability/identifiers)
+  typedef typename data_typet::iterator iterator;
+  // NOLINTNEXTLINE(readability/identifiers)
+  typedef typename data_typet::const_iterator const_iterator;
+
+  T &operator[] (typename std::vector<T>::size_type n)
   {
-    check_index(n);
-    return subt::operator[](n);
-  }
-  
-  inline const T & operator[] (typename std::vector<T>::size_type n) const
-  {
-    // hack-ish const cast
-    const_cast<expanding_vector *>(this)->check_index(n);
-    return subt::operator[](n);
+    if(n>=data.size())
+      data.resize(n+1);
+    return data[n];
   }
 
-protected:  
-  typedef std::vector<T> subt;
+  void clear() { data.clear(); }
 
-  // make the vector large enough to contain 'n'
-  inline void check_index(typename std::vector<T>::size_type n)
-  {
-    if(n>=subt::size()) subt::resize(n+1);
-  }
+  iterator begin() { return data.begin(); }
+  const_iterator begin() const { return data.begin(); }
+  const_iterator cbegin() const { return data.cbegin(); }
+
+  iterator end() { return data.end(); }
+  const_iterator end() const { return data.end(); }
+  const_iterator cend() const { return data.cend(); }
+
+  size_type size() const { return data.size(); }
+
+  void push_back(const T &t) { data.push_back(t); }
+  void push_back(T &&t) { data.push_back(std::move(t)); }
 };
 
-#endif
+#endif // CPROVER_UTIL_EXPANDING_VECTOR_H

@@ -6,70 +6,56 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/arith_tools.h>
-#include <util/i2string.h>
-
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/arith_tools.h>
+#include <util/bitvector_expr.h>
 
-Function: boolbvt::convert_extractbits
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_extractbits(const extractbits_exprt &expr, bvt &bv)
+bvt boolbvt::convert_extractbits(const extractbits_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
-  
-  const irep_idt &type_id=expr.type().id();
-  
-  if(type_id!=ID_signedbv &&
-     type_id!=ID_unsignedbv &&
-     type_id!=ID_c_enum &&
-     type_id!=ID_c_enum_tag &&
-     type_id!=ID_bv)
-    return conversion_failed(expr, bv);
+  const std::size_t bv_width = boolbv_width(expr.type());
 
-  if(expr.operands().size()!=3)
-    throw "extractbits takes three operands";
+  auto const &src_bv = convert_bv(expr.src());
 
-  mp_integer o1, o2;
-  const bvt &bv0=convert_bv(expr.op0());
+  auto const maybe_upper_as_int = numeric_cast<mp_integer>(expr.upper());
+  auto const maybe_lower_as_int = numeric_cast<mp_integer>(expr.lower());
 
   // We only do constants for now.
   // Should implement a shift here.
-  if(to_integer(expr.op1(), o1) ||
-     to_integer(expr.op2(), o2))
-    return conversion_failed(expr, bv);
-    
-  if(o1<0 || o1>=bv0.size())
-    throw "extractbits: second operand out of range: "+expr.to_string();
+  if(!maybe_upper_as_int.has_value() || !maybe_lower_as_int.has_value())
+    return conversion_failed(expr);
 
-  if(o2<0 || o2>=bv0.size())
-    throw "extractbits: third operand out of range: "+expr.to_string();
+  auto upper_as_int = maybe_upper_as_int.value();
+  auto lower_as_int = maybe_lower_as_int.value();
 
-  if(o2>o1) std::swap(o1, o2);
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    upper_as_int >= 0 && upper_as_int < src_bv.size(),
+    "upper end of extracted bits must be within the bitvector",
+    expr.find_source_location(),
+    irep_pretty_diagnosticst{expr});
 
-  // now o2<=o1
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    lower_as_int >= 0 && lower_as_int < src_bv.size(),
+    "lower end of extracted bits must be within the bitvector",
+    expr.find_source_location(),
+    irep_pretty_diagnosticst{expr});
 
-  if((o1-o2+1)!=width)
-    throw "extractbits: wrong width (expected "+
-          i2string(unsigned(integer2long(o1-o2+1)))+" but got "+
-          i2string(width)+"): "+expr.to_string();
+  DATA_INVARIANT(
+    lower_as_int <= upper_as_int,
+    "upper bound must be greater or equal to lower bound");
 
-  unsigned offset=integer2unsigned(o2);
+  // now lower_as_int <= upper_as_int
 
-  bv.resize(width);
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    (upper_as_int - lower_as_int + 1) == bv_width,
+    "the difference between upper and lower end of the range must have the "
+    "same width as the resulting bitvector type",
+    expr.find_source_location(),
+    irep_pretty_diagnosticst{expr});
 
-  for(unsigned i=0; i<width; i++)
-    bv[i]=bv0[offset+i];
+  const std::size_t offset = numeric_cast_v<std::size_t>(lower_as_int);
+
+  bvt result_bv(src_bv.begin() + offset, src_bv.begin() + offset + bv_width);
+
+  return result_bv;
 }

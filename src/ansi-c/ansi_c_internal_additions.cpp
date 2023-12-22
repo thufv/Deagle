@@ -6,241 +6,292 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/i2string.h>
-#include <util/config.h>
-
 #include "ansi_c_internal_additions.h"
 
-const char gcc_builtin_headers_generic[]=
-"# 1 \"gcc_builtin_headers_generic.h\"\n"
-#include "gcc_builtin_headers_generic.inc"
-;
+#include <util/c_types.h>
+#include <util/config.h>
 
-const char gcc_builtin_headers_ia32[]=
-"# 1 \"gcc_builtin_headers_ia32.h\"\n"
+#include <linking/static_lifetime_init.h>
+
+#include <goto-programs/adjust_float_expressions.h>
+
+const char gcc_builtin_headers_types[] =
+  "#line 1 \"gcc_builtin_headers_types.h\"\n"
+#include "gcc_builtin_headers_types.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_generic[] =
+  "#line 1 \"gcc_builtin_headers_generic.h\"\n"
+#include "gcc_builtin_headers_generic.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_math[] =
+  "#line 1 \"gcc_builtin_headers_math.h\"\n"
+#include "gcc_builtin_headers_math.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_mem_string[] =
+  "#line 1 \"gcc_builtin_headers_mem_string.h\"\n"
+#include "gcc_builtin_headers_mem_string.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_omp[] = "#line 1 \"gcc_builtin_headers_omp.h\"\n"
+#include "gcc_builtin_headers_omp.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_tm[] = "#line 1 \"gcc_builtin_headers_tm.h\"\n"
+#include "gcc_builtin_headers_tm.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_ubsan[] =
+  "#line 1 \"gcc_builtin_headers_ubsan.h\"\n"
+#include "gcc_builtin_headers_ubsan.inc"
+  ; // NOLINT(whitespace/semicolon)
+
+const char gcc_builtin_headers_ia32[] =
+  "#line 1 \"gcc_builtin_headers_ia32.h\"\n"
 #include "gcc_builtin_headers_ia32.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 const char gcc_builtin_headers_ia32_2[]=
 #include "gcc_builtin_headers_ia32-2.inc"
-;
+; // NOLINT(whitespace/semicolon)
+const char gcc_builtin_headers_ia32_3[]=
+#include "gcc_builtin_headers_ia32-3.inc"
+; // NOLINT(whitespace/semicolon)
+const char gcc_builtin_headers_ia32_4[]=
+#include "gcc_builtin_headers_ia32-4.inc"
+; // NOLINT(whitespace/semicolon)
+const char gcc_builtin_headers_ia32_5[] =
+#include "gcc_builtin_headers_ia32-5.inc"
+  ; // NOLINT(whitespace/semicolon)
 
-const char gcc_builtin_headers_alpha[]=
-"# 1 \"gcc_builtin_headers_alpha.h\"\n"
+const char gcc_builtin_headers_alpha[] =
+  "#line 1 \"gcc_builtin_headers_alpha.h\"\n"
 #include "gcc_builtin_headers_alpha.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-const char gcc_builtin_headers_arm[]=
-"# 1 \"gcc_builtin_headers_arm.h\"\n"
+const char gcc_builtin_headers_arm[] = "#line 1 \"gcc_builtin_headers_arm.h\"\n"
 #include "gcc_builtin_headers_arm.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-const char gcc_builtin_headers_mips[]=
-"# 1 \"gcc_builtin_headers_mips.h\"\n"
+const char gcc_builtin_headers_mips[] =
+  "#line 1 \"gcc_builtin_headers_mips.h\"\n"
 #include "gcc_builtin_headers_mips.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-const char gcc_builtin_headers_power[]=
-"# 1 \"gcc_builtin_headers_power.h\"\n"
+const char gcc_builtin_headers_power[] =
+  "#line 1 \"gcc_builtin_headers_power.h\"\n"
 #include "gcc_builtin_headers_power.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-const char arm_builtin_headers[]=
-"# 1 \"arm_builtin_headers.h\"\n"
+const char arm_builtin_headers[] = "#line 1 \"arm_builtin_headers.h\"\n"
 #include "arm_builtin_headers.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-const char cw_builtin_headers[]=
-"# 1 \"cw_builtin_headers.h\"\n"
+const char cw_builtin_headers[] = "#line 1 \"cw_builtin_headers.h\"\n"
 #include "cw_builtin_headers.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-const char clang_builtin_headers[]=
-"# 1 \"clang_builtin_headers.h\"\n"
+const char clang_builtin_headers[] = "#line 1 \"clang_builtin_headers.h\"\n"
 #include "clang_builtin_headers.inc"
-;
+  ; // NOLINT(whitespace/semicolon)
 
-/*******************************************************************\
+const char cprover_builtin_headers[] = "#line 1 \"cprover_builtin_headers.h\"\n"
+#include "cprover_builtin_headers.inc"
+  ; // NOLINT(whitespace/semicolon)
 
-Function: architecture_string
+const char windows_builtin_headers[] = "#line 1 \"windows_builtin_headers.h\"\n"
+#include "windows_builtin_headers.inc"
+  ; // NOLINT(whitespace/semicolon)
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-static std::string architecture_string(int value, const char *s)
+static std::string architecture_string(const std::string &value, const char *s)
 {
-  return std::string("const int __CPROVER_architecture_")+
-         std::string(s)+
-         "="+i2string(value)+";\n";
+  return std::string("const char *" CPROVER_PREFIX "architecture_") +
+         std::string(s) + "=\"" + value + "\";\n";
 }
 
-/*******************************************************************\
+template <typename T>
+static std::string architecture_string(T value, const char *s)
+{
+  return std::string("const " CPROVER_PREFIX "integer " CPROVER_PREFIX
+                     "architecture_") +
+         std::string(s) + "=" + std::to_string(value) + ";\n";
+}
 
-Function: ansi_c_internal_additions
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+/// The maximum allocation size is determined by the number of bits that
+/// are left in the pointer of width \p pointer_width.
+///
+/// The allocation size cannot exceed the number represented by the (signed)
+/// offset, otherwise it would not be possible to store a pointer into a
+/// valid bit of memory. Therefore, the max allocation size is
+/// 2^(offset_bits - 1), where the offset bits is the number of bits left in the
+/// pointer after the object bits.
+///
+/// The offset must be signed, as a pointer can point to the end of the memory
+/// block, and needs to be able to point back to the start.
+/// \param pointer_width: The width of the pointer
+/// \param object_bits : The number of bits used to represent the ID
+/// \return The size in bytes of the maximum allocation supported.
+static mp_integer
+max_malloc_size(std::size_t pointer_width, std::size_t object_bits)
+{
+  PRECONDITION(pointer_width >= 1);
+  PRECONDITION(object_bits < pointer_width);
+  PRECONDITION(object_bits >= 1);
+  const auto offset_bits = pointer_width - object_bits;
+  // We require the offset to be able to express upto allocation_size - 1,
+  // but also down to -allocation_size, therefore the size is allowable
+  // is number of bits, less the signed bit.
+  const auto bits_for_positive_offset = offset_bits - 1;
+  return ((mp_integer)1) << (mp_integer)bits_for_positive_offset;
+}
 
 void ansi_c_internal_additions(std::string &code)
 {
+  // clang-format off
+  // do the built-in types and variables
   code+=
-    "# 1 \"<built-in-additions>\"\n"
-    "typedef __typeof__(sizeof(int)) __CPROVER_size_t;\n"
-    "void __CPROVER_assume(__CPROVER_bool assumption);\n"
-    "void __VERIFIER_assume(__CPROVER_bool assumption);\n"
-    "void __CPROVER_assert(__CPROVER_bool assertion, const char *description);\n"
-    "__CPROVER_bool __CPROVER_equal();\n"
-    "__CPROVER_bool __CPROVER_same_object(const void *, const void *);\n"
-    "__CPROVER_bool __CPROVER_invalid_pointer(const void *);\n"
-    "__CPROVER_bool __CPROVER_is_zero_string(const void *);\n"
-    "__CPROVER_size_t __CPROVER_zero_string_length(const void *);\n"
-    "__CPROVER_size_t __CPROVER_buffer_size(const void *);\n"
+    "#line 1 \"<built-in-additions>\"\n"
+    "typedef __typeof__(sizeof(int)) " CPROVER_PREFIX "size_t;\n"
+    "typedef "+c_type_as_string(signed_size_type().get(ID_C_c_type))+
+      " " CPROVER_PREFIX "ssize_t;\n"
+    "const unsigned " CPROVER_PREFIX "constant_infinity_uint;\n"
+    "typedef void " CPROVER_PREFIX "integer;\n"
+    "typedef void " CPROVER_PREFIX "rational;\n"
+    CPROVER_PREFIX "thread_local unsigned long " CPROVER_PREFIX "thread_id=0;\n"
+    CPROVER_PREFIX "bool " CPROVER_PREFIX "threads_exited["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
+    "unsigned long " CPROVER_PREFIX "next_thread_id=0;\n"
+    CPROVER_PREFIX "thread_local const void* " CPROVER_PREFIX "thread_keys["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
+    CPROVER_PREFIX "thread_local void (*" CPROVER_PREFIX "thread_key_dtors["
+      CPROVER_PREFIX "constant_infinity_uint])(void *);\n"
+    CPROVER_PREFIX "thread_local unsigned long "
+      CPROVER_PREFIX "next_thread_key = 0;\n"
+    "extern unsigned char " CPROVER_PREFIX "memory["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
 
-    "const unsigned __CPROVER_constant_infinity_uint;\n"
-    "typedef void __CPROVER_integer;\n"
-    "typedef void __CPROVER_rational;\n"
-    "void __CPROVER_initialize(void);\n"
-    "void __CPROVER_input(const char *id, ...);\n"
-    "void __CPROVER_output(const char *id, ...);\n"
-    "void __CPROVER_cover(__CPROVER_bool condition);\n"
-    
-    // concurrency-related
-
-    "void __CPROVER_atomic_begin();\n"
-    "void __CPROVER_atomic_end();\n"
-    "void __CPROVER_fence(const char *kind, ...);\n"
-    "__CPROVER_thread_local unsigned long __CPROVER_thread_id=0;\n"
-    "__CPROVER_bool __CPROVER_threads_exited[__CPROVER_constant_infinity_uint];\n"
-    "unsigned long __CPROVER_next_thread_id=0;\n"
-    "__CPROVER_thread_local unsigned long __CPROVER_next_thread_key=0;\n"
-    "__CPROVER_thread_local unsigned int __CPROVER_thread_keys[__CPROVER_constant_infinity_uint];\n"
-
-    // traces
-    "void CBMC_trace(int lvl, const char *event, ...);\n"
-    
-    // pointers
-    "unsigned __CPROVER_POINTER_OBJECT(const void *p);\n"
-    "signed __CPROVER_POINTER_OFFSET(const void *p);\n"
-    "__CPROVER_bool __CPROVER_DYNAMIC_OBJECT(const void *p);\n"
-    "extern unsigned char __CPROVER_memory[__CPROVER_constant_infinity_uint];\n"
-    
     // malloc
-    "void *__CPROVER_malloc(__CPROVER_size_t size);\n"
-    "const void *__CPROVER_deallocated=0;\n"
-    "const void *__CPROVER_dead_object=0;\n"
-    "const void *__CPROVER_malloc_object=0;\n"
-    "__CPROVER_size_t __CPROVER_malloc_size;\n"
-    "__CPROVER_bool __CPROVER_malloc_is_new_array=0;\n" // for the benefit of C++
-    "const void *__CPROVER_memory_leak=0;\n"
+    "const void *" CPROVER_PREFIX "deallocated=0;\n"
+    "const void *" CPROVER_PREFIX "dead_object=0;\n"
+    "const void *" CPROVER_PREFIX "new_object=0;\n" // for C++
+    CPROVER_PREFIX "bool " CPROVER_PREFIX "malloc_is_new_array=0;\n" // for C++
+    "const void *" CPROVER_PREFIX "memory_leak=0;\n"
+    "void *" CPROVER_PREFIX "allocate("
+      CPROVER_PREFIX "size_t size, " CPROVER_PREFIX "bool zero);\n"
+    "const void *" CPROVER_PREFIX "alloca_object = 0;\n"
+    "void " CPROVER_PREFIX "deallocate(void *);\n"
+
+    CPROVER_PREFIX "size_t " CPROVER_PREFIX "max_malloc_size="+
+    integer2string(max_malloc_size(config.ansi_c.pointer_width, config
+    .bv_encoding.object_bits))+";\n"
 
     // this is ANSI-C
-    "extern __CPROVER_thread_local const char __func__[__CPROVER_constant_infinity_uint];\n"
-    
+    "extern " CPROVER_PREFIX "thread_local const char __func__["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
+
     // this is GCC
-    "extern __CPROVER_thread_local const char __FUNCTION__[__CPROVER_constant_infinity_uint];\n"
-    "extern __CPROVER_thread_local const char __PRETTY_FUNCTION__[__CPROVER_constant_infinity_uint];\n"
+    "extern " CPROVER_PREFIX "thread_local const char __FUNCTION__["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
+    "extern " CPROVER_PREFIX "thread_local const char __PRETTY_FUNCTION__["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
 
     // float stuff
-    "__CPROVER_bool __CPROVER_isnanf(float f);\n"
-    "__CPROVER_bool __CPROVER_isnand(double f);\n"
-    "__CPROVER_bool __CPROVER_isnanld(long double f);\n"
-    "__CPROVER_bool __CPROVER_isfinitef(float f);\n"
-    "__CPROVER_bool __CPROVER_isfinited(double f);\n"
-    "__CPROVER_bool __CPROVER_isfiniteld(long double f);\n"
-    "__CPROVER_bool __CPROVER_isinff(float f);\n"
-    "__CPROVER_bool __CPROVER_isinfd(double f);\n"
-    "__CPROVER_bool __CPROVER_isinfld(long double f);\n"
-    "__CPROVER_bool __CPROVER_isnormalf(float f);\n"
-    "__CPROVER_bool __CPROVER_isnormald(double f);\n"
-    "__CPROVER_bool __CPROVER_isnormalld(long double f);\n"
-    "__CPROVER_bool __CPROVER_signf(float f);\n"
-    "__CPROVER_bool __CPROVER_signd(double f);\n"
-    "__CPROVER_bool __CPROVER_signld(long double f);\n"
-    "double __CPROVER_inf(void);\n"
-    "float __CPROVER_inff(void);\n"
-    "long double __CPROVER_infl(void);\n"
-    "int __CPROVER_thread_local __CPROVER_rounding_mode="+i2string(config.ansi_c.rounding_mode)+";\n"
-
-    // absolute value
-    "int __CPROVER_abs(int x);\n"
-    "long int __CPROVER_labs(long int x);\n"
-    "double __CPROVER_fabs(double x);\n"
-    "long double __CPROVER_fabsl(long double x);\n"
-    "float __CPROVER_fabsf(float x);\n"
-    
-    // arrays
-    "__CPROVER_bool __CPROVER_array_equal(const void *array1, const void *array2);\n"
-    "void __CPROVER_array_copy(const void *dest, const void *src);\n"
-    "void __CPROVER_array_set(const void *dest, ...);\n"
-
-    // k-induction
-    "void __CPROVER_k_induction_hint(unsigned min, unsigned max, "
-      "unsigned step, unsigned loop_free);\n"
-    
-    // manual specification of predicates
-    "void __CPROVER_predicate(__CPROVER_bool predicate);\n"
-    "void __CPROVER_parameter_predicates();\n"
-    "void __CPROVER_return_predicates();\n"
+    "int " CPROVER_PREFIX "thread_local " +
+      id2string(rounding_mode_identifier()) + '='+
+      std::to_string(config.ansi_c.rounding_mode)+";\n"
 
     // pipes, write, read, close
-    "struct __CPROVER_pipet {\n"
+    "struct " CPROVER_PREFIX "pipet {\n"
     "  _Bool widowed;\n"
     "  char data[4];\n"
     "  short next_avail;\n"
     "  short next_unread;\n"
     "};\n"
-    "extern struct __CPROVER_pipet __CPROVER_pipes[__CPROVER_constant_infinity_uint];\n"
+    "extern struct " CPROVER_PREFIX "pipet " CPROVER_PREFIX "pipes["
+      CPROVER_PREFIX "constant_infinity_uint];\n"
     // offset to make sure we don't collide with other fds
-    "extern const int __CPROVER_pipe_offset;\n"
-    "unsigned __CPROVER_pipe_count=0;\n"
-
+    "extern const int " CPROVER_PREFIX "pipe_offset;\n"
+    "unsigned " CPROVER_PREFIX "pipe_count=0;\n"
+    "\n"
+    // This function needs to be declared, or otherwise can't be called
+    // by the entry-point construction.
+    "void " INITIALIZE_FUNCTION "(void);\n"
+    "\n"
+    // frame specifications for contracts
+    // Declares a range of bytes as assignable (internal representation)
+    "void " CPROVER_PREFIX "assignable(void *ptr,\n"
+    "  " CPROVER_PREFIX "size_t size,\n"
+    "  " CPROVER_PREFIX "bool is_ptr_to_ptr);\n"
+    // Declares a range of bytes as assignable
+    "void " CPROVER_PREFIX "object_upto(void *ptr, \n"
+    "  " CPROVER_PREFIX "size_t size);\n"
+    // Declares bytes from ptr to the end of the object as assignable
+    "void " CPROVER_PREFIX "object_from(void *ptr);\n"
+    // Declares the whole object pointed to by ptr as assignable
+    "void " CPROVER_PREFIX "object_whole(void *ptr);\n"
+    // Declares a pointer as freeable
+    "void " CPROVER_PREFIX "freeable(void *ptr);\n"
+    // True iff ptr satisfies the preconditions of the free stdlib function
+    CPROVER_PREFIX "bool " CPROVER_PREFIX "is_freeable(void *ptr);\n"
+    // True iff ptr was freed during function execution or loop execution
+    CPROVER_PREFIX "bool " CPROVER_PREFIX "was_freed(void *ptr);\n"
     "\n";
-    
-  // GCC junk stuff, also for ARM
-  if(config.ansi_c.mode==configt::ansi_ct::MODE_GCC_C ||
-     config.ansi_c.mode==configt::ansi_ct::MODE_ARM_C_CPP)
+  // clang-format on
+
+  // GCC junk stuff, also for CLANG and ARM
+  if(
+    config.ansi_c.mode == configt::ansi_ct::flavourt::GCC ||
+    config.ansi_c.mode == configt::ansi_ct::flavourt::CLANG ||
+    config.ansi_c.mode == configt::ansi_ct::flavourt::ARM)
   {
-    code+=gcc_builtin_headers_generic;
-    code+=clang_builtin_headers;
+    code+=gcc_builtin_headers_types;
 
     // there are many more, e.g., look at
     // https://developer.apple.com/library/mac/#documentation/developertools/gcc-4.0.1/gcc/Target-Builtins.html
 
-    switch(config.ansi_c.arch)
+    if(
+      config.ansi_c.arch == "i386" || config.ansi_c.arch == "x86_64" ||
+      config.ansi_c.arch == "x32" || config.ansi_c.arch == "ia64" ||
+      config.ansi_c.arch == "powerpc" || config.ansi_c.arch == "ppc64")
     {
-    case configt::ansi_ct::ARCH_I386:
-    case configt::ansi_ct::ARCH_X86_64:
-    case configt::ansi_ct::ARCH_X32:
-      code+=gcc_builtin_headers_ia32;
-      code+=gcc_builtin_headers_ia32_2;
-      break;
-      
-    case configt::ansi_ct::ARCH_ARM:
-      code+=gcc_builtin_headers_arm;
-      break;
+      // https://gcc.gnu.org/onlinedocs/gcc/Floating-Types.html
+      // For clang, __float128 is a keyword.
+      // For gcc, this is a typedef and not a keyword.
+      if(
+        config.ansi_c.mode != configt::ansi_ct::flavourt::CLANG &&
+        config.ansi_c.gcc__float128_type)
+      {
+        code += "typedef " CPROVER_PREFIX "Float128 __float128;\n";
+      }
+    }
+    else if(config.ansi_c.arch == "ppc64le")
+    {
+      // https://patchwork.ozlabs.org/patch/792295/
+      if(config.ansi_c.mode != configt::ansi_ct::flavourt::CLANG)
+        code += "typedef " CPROVER_PREFIX "Float128 __ieee128;\n";
+    }
+    else if(config.ansi_c.arch == "hppa")
+    {
+      // https://gcc.gnu.org/onlinedocs/gcc/Floating-Types.html
+      // For clang, __float128 is a keyword.
+      // For gcc, this is a typedef and not a keyword.
+      if(
+        config.ansi_c.mode != configt::ansi_ct::flavourt::CLANG &&
+        config.ansi_c.gcc__float128_type)
+      {
+        code+="typedef long double __float128;\n";
+      }
+    }
 
-    case configt::ansi_ct::ARCH_ALPHA:
-      code+=gcc_builtin_headers_alpha;
-      break;
-     
-    case configt::ansi_ct::ARCH_MIPS:
-      code+=gcc_builtin_headers_mips;
-      break;
-     
-    case configt::ansi_ct::ARCH_POWER:
-      code+=gcc_builtin_headers_power;
-      break;
-     
-    default:;
+    if(
+      config.ansi_c.arch == "i386" || config.ansi_c.arch == "x86_64" ||
+      config.ansi_c.arch == "x32" || config.ansi_c.arch == "ia64")
+    {
+      // clang doesn't do __float80
+      // Note that __float80 is a typedef, and not a keyword.
+      if(config.ansi_c.mode != configt::ansi_ct::flavourt::CLANG)
+        code += "typedef " CPROVER_PREFIX "Float64x __float80;\n";
     }
 
     // On 64-bit systems, gcc has typedefs
@@ -248,38 +299,25 @@ void ansi_c_internal_additions(std::string &code)
     if(config.ansi_c.long_int_width>=64)
     {
       code+="typedef signed __int128 __int128_t;\n"
-            "typedef signed __int128 __uint128_t;\n";
+            "typedef unsigned __int128 __uint128_t;\n";
     }
   }
 
   // this is Visual C/C++ only
-  if(config.ansi_c.os==configt::ansi_ct::OS_WIN)
-    code+="int __noop();\n"
-          "int __assume(int);\n";
-    
+  if(config.ansi_c.os==configt::ansi_ct::ost::OS_WIN)
+    code += "int __assume(int);\n";
+
   // ARM stuff
-  if(config.ansi_c.mode==configt::ansi_ct::MODE_ARM_C_CPP)
+  if(config.ansi_c.mode==configt::ansi_ct::flavourt::ARM)
     code+=arm_builtin_headers;
-    
+
   // CW stuff
-  if(config.ansi_c.mode==configt::ansi_ct::MODE_CODEWARRIOR_C_CPP)
+  if(config.ansi_c.mode==configt::ansi_ct::flavourt::CODEWARRIOR)
     code+=cw_builtin_headers;
-    
+
   // Architecture strings
   ansi_c_architecture_strings(code);
 }
-
-/*******************************************************************\
-
-Function: architecture_strings
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void ansi_c_architecture_strings(std::string &code)
 {
@@ -287,7 +325,7 @@ void ansi_c_architecture_strings(std::string &code)
   // They allow identifying the architectural settings used
   // at compile time from a goto-binary.
 
-  code+="# 1 \"<builtin-architecture-strings>\"\n";
+  code += "#line 1 \"<builtin-architecture-strings>\"\n";
 
   code+=architecture_string(config.ansi_c.int_width, "int_width");
   code+=architecture_string(config.ansi_c.int_width, "word_size"); // old
@@ -295,17 +333,18 @@ void ansi_c_architecture_strings(std::string &code)
   code+=architecture_string(config.ansi_c.bool_width, "bool_width");
   code+=architecture_string(config.ansi_c.char_width, "char_width");
   code+=architecture_string(config.ansi_c.short_int_width, "short_int_width");
-  code+=architecture_string(config.ansi_c.long_long_int_width, "long_long_int_width");
+  code+=architecture_string(config.ansi_c.long_long_int_width, "long_long_int_width"); // NOLINT(whitespace/line_length)
   code+=architecture_string(config.ansi_c.pointer_width, "pointer_width");
   code+=architecture_string(config.ansi_c.single_width, "single_width");
   code+=architecture_string(config.ansi_c.double_width, "double_width");
-  code+=architecture_string(config.ansi_c.long_double_width, "long_double_width");
+  code+=architecture_string(config.ansi_c.long_double_width, "long_double_width"); // NOLINT(whitespace/line_length)
   code+=architecture_string(config.ansi_c.wchar_t_width, "wchar_t_width");
   code+=architecture_string(config.ansi_c.char_is_unsigned, "char_is_unsigned");
-  code+=architecture_string(config.ansi_c.wchar_t_is_unsigned, "wchar_t_is_unsigned");
-  code+=architecture_string(config.ansi_c.use_fixed_for_float, "fixed_for_float");
+  code+=architecture_string(config.ansi_c.wchar_t_is_unsigned, "wchar_t_is_unsigned"); // NOLINT(whitespace/line_length)
   code+=architecture_string(config.ansi_c.alignment, "alignment");
-  code+=architecture_string(config.ansi_c.memory_operand_size, "memory_operand_size");
-  code+=architecture_string(config.ansi_c.endianness, "endianness");
+  code+=architecture_string(config.ansi_c.memory_operand_size, "memory_operand_size"); // NOLINT(whitespace/line_length)
+  code+=architecture_string(static_cast<int>(config.ansi_c.endianness), "endianness"); // NOLINT(whitespace/line_length)
+  code+=architecture_string(id2string(config.ansi_c.arch), "arch");
+  code+=architecture_string(configt::ansi_ct::os_to_string(config.ansi_c.os), "os"); // NOLINT(whitespace/line_length)
   code+=architecture_string(config.ansi_c.NULL_is_zero, "NULL_is_zero");
 }

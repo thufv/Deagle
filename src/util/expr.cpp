@@ -3,246 +3,34 @@
 Module: Expression Representation
 
 Author: Daniel Kroening, kroening@kroening.com
+        Joel Allred, joel.allred@diffblue.com
 
 \*******************************************************************/
 
-#include <cassert>
+/// \file
+/// Expression Representation
+
+#include "arith_tools.h"
+#include "bitvector_types.h"
+#include "expr_iterator.h"
+#include "expr_util.h"
+#include "fixedbv.h"
+#include "ieee_float.h"
+#include "rational.h"
+#include "rational_tools.h"
+#include "std_expr.h"
 
 #include <stack>
 
-#include "string2int.h"
-#include "mp_arith.h"
-#include "fixedbv.h"
-#include "ieee_float.h"
-#include "expr.h"
-#include "rational.h"
-#include "rational_tools.h"
-#include "arith_tools.h"
-#include "std_expr.h"
-
-/*******************************************************************\
-
-Function: exprt::move_to_operands
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::move_to_operands(exprt &expr)
-{
-  operandst &op=operands();
-  op.push_back(static_cast<const exprt &>(get_nil_irep()));
-  op.back().swap(expr);
-}
-
-/*******************************************************************\
-
-Function: exprt::move_to_operands
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::move_to_operands(exprt &e1, exprt &e2)
-{
-  operandst &op=operands();
-  #ifndef USE_LIST
-  op.reserve(op.size()+2);
-  #endif
-  op.push_back(static_cast<const exprt &>(get_nil_irep()));
-  op.back().swap(e1);
-  op.push_back(static_cast<const exprt &>(get_nil_irep()));
-  op.back().swap(e2);
-}
-
-/*******************************************************************\
-
-Function: exprt::move_to_operands
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::move_to_operands(exprt &e1, exprt &e2, exprt &e3)
-{
-  operandst &op=operands();
-  #ifndef USE_LIST
-  op.reserve(op.size()+3);
-  #endif
-  op.push_back(static_cast<const exprt &>(get_nil_irep()));
-  op.back().swap(e1);
-  op.push_back(static_cast<const exprt &>(get_nil_irep()));
-  op.back().swap(e2);
-  op.push_back(static_cast<const exprt &>(get_nil_irep()));
-  op.back().swap(e3);
-}
-
-/*******************************************************************\
-
-Function: exprt::copy_to_operands
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::copy_to_operands(const exprt &expr)
-{
-  operands().push_back(expr);
-}
-
-/*******************************************************************\
-
-Function: exprt::copy_to_operands
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::copy_to_operands(const exprt &e1, const exprt &e2)
-{
-  operandst &op=operands();
-  #ifndef USE_LIST
-  op.reserve(op.size()+2);
-  #endif
-  op.push_back(e1);
-  op.push_back(e2);
-}
-
-/*******************************************************************\
-
-Function: exprt::copy_to_operands
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::copy_to_operands(const exprt &e1, const exprt &e2,
-                             const exprt &e3)
-{
-  operandst &op=operands();
-  #ifndef USE_LIST
-  op.reserve(op.size()+3);
-  #endif
-  op.push_back(e1);
-  op.push_back(e2);
-  op.push_back(e3);
-}
-
-/*******************************************************************\
-
-Function: exprt::make_typecast
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::make_typecast(const typet &_type)
-{
-  exprt new_expr(ID_typecast);
-
-  new_expr.move_to_operands(*this);
-  new_expr.set(ID_type, _type);
-
-  swap(new_expr);
-}
-
-/*******************************************************************\
-
-Function: exprt::make_not
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::make_not()
-{
-  if(is_true())
-  {
-    *this=false_exprt();
-    return;
-  }
-  else if(is_false())
-  {
-    *this=true_exprt();
-    return;
-  }
-
-  exprt new_expr;
-
-  if(id()==ID_not && operands().size()==1)
-  {
-    new_expr.swap(operands().front());
-  }
-  else
-  {
-    new_expr=exprt(ID_not, type());
-    new_expr.move_to_operands(*this);
-  }
-
-  swap(new_expr);
-}
-
-/*******************************************************************\
-
-Function: exprt::is_constant
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Return whether the expression is a constant.
+/// \return True if is a constant, false otherwise
 bool exprt::is_constant() const
 {
   return id()==ID_constant;
 }
 
-/*******************************************************************\
-
-Function: exprt::is_true
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Return whether the expression is a constant representing `true`.
+/// \return True if is a Boolean constant representing `true`, false otherwise.
 bool exprt::is_true() const
 {
   return is_constant() &&
@@ -250,18 +38,8 @@ bool exprt::is_true() const
          get(ID_value)!=ID_false;
 }
 
-/*******************************************************************\
-
-Function: exprt::is_false
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Return whether the expression is a constant representing `false`.
+/// \return True if is a Boolean constant representing `false`, false otherwise.
 bool exprt::is_false() const
 {
   return is_constant() &&
@@ -269,183 +47,21 @@ bool exprt::is_false() const
          get(ID_value)==ID_false;
 }
 
-/*******************************************************************\
-
-Function: exprt::make_bool
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::make_bool(bool value)
-{
-  *this=exprt(ID_constant, typet(ID_bool));
-  set(ID_value, value?ID_true:ID_false);
-}
-
-/*******************************************************************\
-
-Function: exprt::make_true
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::make_true()
-{
-  *this=exprt(ID_constant, typet(ID_bool));
-  set(ID_value, ID_true);
-}
-
-/*******************************************************************\
-
-Function: exprt::make_false
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::make_false()
-{
-  *this=exprt(ID_constant, typet(ID_bool));
-  set(ID_value, ID_false);
-}
-
-/*******************************************************************\
-
-Function: operator<
-
-  Inputs:
-
- Outputs:
-
- Purpose: defines ordering on expressions for canonicalization
-
-\*******************************************************************/
-
-bool operator<(const exprt &X, const exprt &Y)
-{
-  return (irept &)X < (irept &)Y;
-}
-
-/*******************************************************************\
-
-Function: exprt::negate
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void exprt::negate()
-{
-  const irep_idt &type_id=type().id();
-
-  if(type_id==ID_bool)
-    make_not();
-  else
-  {
-    if(is_constant())
-    {
-      const irep_idt &value=get(ID_value);
-      
-      if(type_id==ID_integer)
-      {
-        set(ID_value, integer2string(-string2integer(id2string(value))));
-      }
-      else if(type_id==ID_unsignedbv)
-      {
-        mp_integer int_value=binary2integer(id2string(value), false);
-        typet _type=type();
-        *this=from_integer(-int_value, _type);
-      }
-      else if(type_id==ID_signedbv)
-      {
-        mp_integer int_value=binary2integer(id2string(value), true);
-        typet _type=type();
-        *this=from_integer(-int_value, _type);
-      }
-      else if(type_id==ID_fixedbv)
-      {
-        fixedbvt fixedbv_value=fixedbvt(to_constant_expr(*this));
-        fixedbv_value.negate();
-        *this=fixedbv_value.to_expr();
-      }
-      else if(type_id==ID_floatbv)
-      {
-        ieee_floatt ieee_float_value=ieee_floatt(to_constant_expr(*this));
-        ieee_float_value.negate();
-        *this=ieee_float_value.to_expr();
-      }
-      else
-      {
-        make_nil();
-        assert(false);
-      }
-    }
-    else
-    {
-      if(id()==ID_unary_minus)
-      {
-        exprt tmp;
-        assert(operands().size()==1);
-        tmp.swap(op0());
-        swap(tmp);
-      }
-      else
-      {
-        exprt tmp(ID_unary_minus, type());
-        tmp.move_to_operands(*this);
-        swap(tmp);
-      }
-    }
-  }
-}
-
-/*******************************************************************\
-
-Function: exprt::is_boolean
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Return whether the expression represents a Boolean.
+/// \return True if is a Boolean, false otherwise.
 bool exprt::is_boolean() const
 {
   return type().id()==ID_bool;
 }
 
-/*******************************************************************\
-
-Function: exprt::is_zero
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Return whether the expression is a constant representing 0.
+/// Will consider the following types: ID_integer, ID_natural, ID_rational,
+/// ID_unsignedbv, ID_signedbv, ID_c_bool, ID_c_bit_field, ID_fixedbv,
+/// ID_floatbv, ID_pointer.<br>
+/// For ID_pointer, returns true iff the value is a zero string or a null
+/// pointer.
+/// For everything not in the above list, return false.
+/// \return True if has value 0, false otherwise.
 bool exprt::is_zero() const
 {
   if(is_constant())
@@ -460,73 +76,80 @@ bool exprt::is_zero() const
     else if(type_id==ID_rational)
     {
       rationalt rat_value;
-      if(to_rational(*this, rat_value)) assert(false);
+      if(to_rational(*this, rat_value))
+        CHECK_RETURN(false);
       return rat_value.is_zero();
     }
-    else if(type_id==ID_unsignedbv || type_id==ID_signedbv)
+    else if(
+      type_id == ID_unsignedbv || type_id == ID_signedbv ||
+      type_id == ID_c_bool || type_id == ID_c_bit_field)
     {
       return constant.value_is_zero_string();
     }
     else if(type_id==ID_fixedbv)
     {
-      if(fixedbvt(constant)==0) return true;
+      if(fixedbvt(constant)==0)
+        return true;
     }
     else if(type_id==ID_floatbv)
     {
-      if(ieee_floatt(constant)==0) return true;
+      if(ieee_floatt(constant)==0)
+        return true;
     }
     else if(type_id==ID_pointer)
     {
-      return constant.value_is_zero_string();
+      return is_null_pointer(constant);
     }
   }
 
   return false;
 }
 
-/*******************************************************************\
-
-Function: exprt::is_one
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Return whether the expression is a constant representing 1.
+/// Will consider the following types: ID_integer, ID_natural, ID_rational,
+/// ID_unsignedbv, ID_signedbv, ID_c_bool, ID_c_bit_field, ID_fixedbv,
+/// ID_floatbv.<br>
+/// For all other types, return false.
+/// \return True if has value 1, false otherwise.
 bool exprt::is_one() const
 {
   if(is_constant())
   {
-    const std::string &value=get_string(ID_value);
-    const irep_idt &type_id=type().id_string();
+    const auto &constant_expr = to_constant_expr(*this);
+    const irep_idt &type_id = type().id();
 
     if(type_id==ID_integer || type_id==ID_natural)
     {
-      mp_integer int_value=string2integer(value);
-      if(int_value==1) return true;
+      mp_integer int_value =
+        string2integer(id2string(constant_expr.get_value()));
+      if(int_value==1)
+        return true;
     }
     else if(type_id==ID_rational)
     {
       rationalt rat_value;
-      if(to_rational(*this, rat_value)) assert(false);
+      if(to_rational(*this, rat_value))
+        CHECK_RETURN(false);
       return rat_value.is_one();
     }
-    else if(type_id==ID_unsignedbv || type_id==ID_signedbv)
+    else if(
+      type_id == ID_unsignedbv || type_id == ID_signedbv ||
+      type_id == ID_c_bool || type_id == ID_c_bit_field)
     {
-      mp_integer int_value=binary2integer(value, false);
-      if(int_value==1) return true;
+      const auto width = to_bitvector_type(type()).get_width();
+      mp_integer int_value =
+        bvrep2integer(id2string(constant_expr.get_value()), width, false);
+      if(int_value==1)
+        return true;
     }
     else if(type_id==ID_fixedbv)
     {
-      if(fixedbvt(to_constant_expr(*this))==1)
+      if(fixedbvt(constant_expr) == 1)
         return true;
     }
     else if(type_id==ID_floatbv)
     {
-      if(ieee_floatt(to_constant_expr(*this))==1)
+      if(ieee_floatt(constant_expr) == 1)
         return true;
     }
   }
@@ -534,306 +157,133 @@ bool exprt::is_one() const
   return false;
 }
 
-/*******************************************************************\
-
-Function: exprt::sum
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool exprt::sum(const exprt &expr)
-{
-  if(!is_constant() || !expr.is_constant()) return true;
-  if(type()!=expr.type()) return true;
-
-  const irep_idt &type_id=type().id();
-
-  if(type_id==ID_integer || type_id==ID_natural)
-  {
-    set(ID_value, integer2string(
-      string2integer(get_string(ID_value))+
-      string2integer(expr.get_string(ID_value))));
-    return false;
-  }
-  else if(type_id==ID_rational)
-  {
-    rationalt a, b;
-    if(!to_rational(*this, a) && !to_rational(expr, b))
-    {
-      exprt a_plus_b=from_rational(a+b);
-      set(ID_value, a_plus_b.get_string(ID_value));
-      return false;
-    }
-  }
-  else if(type_id==ID_unsignedbv || type_id==ID_signedbv)
-  {
-    set(ID_value, integer2binary(
-      binary2integer(get_string(ID_value), false)+
-      binary2integer(expr.get_string(ID_value), false),
-      unsafe_string2unsigned(type().get_string(ID_width))));
-    return false;
-  }
-  else if(type_id==ID_fixedbv)
-  {
-    set(ID_value, integer2binary(
-      binary2integer(get_string(ID_value), false)+
-      binary2integer(expr.get_string(ID_value), false),
-      unsafe_string2unsigned(type().get_string(ID_width))));
-    return false;
-  }
-  else if(type_id==ID_floatbv)
-  {
-    ieee_floatt f(to_constant_expr(*this));
-    f+=ieee_floatt(to_constant_expr(expr));
-    *this=f.to_expr();
-    return false;
-  }
-
-  return true;
-}
-
-/*******************************************************************\
-
-Function: exprt::mul
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool exprt::mul(const exprt &expr)
-{
-  if(!is_constant() || !expr.is_constant()) return true;
-  if(type()!=expr.type()) return true;
-
-  const irep_idt &type_id=type().id();
-
-  if(type_id==ID_integer || type_id==ID_natural)
-  {
-    set(ID_value, integer2string(
-      string2integer(get_string(ID_value))*
-      string2integer(expr.get_string(ID_value))));
-    return false;
-  }
-  else if(type_id==ID_rational)
-  {
-    rationalt a, b;
-    if(!to_rational(*this, a) && !to_rational(expr, b))
-    {
-      exprt a_mul_b=from_rational(a*b);
-      set(ID_value, a_mul_b.get_string(ID_value));
-      return false;
-    }
-  }
-  else if(type_id==ID_unsignedbv || type_id==ID_signedbv)
-  {
-    // the following works for signed and unsigned integers
-    set(ID_value, integer2binary(
-      binary2integer(get_string(ID_value), false)*
-      binary2integer(expr.get_string(ID_value), false),
-      unsafe_string2unsigned(type().get_string(ID_width))));
-    return false;
-  }
-  else if(type_id==ID_fixedbv)
-  {
-    fixedbvt f(to_constant_expr(*this));
-    f*=fixedbvt(to_constant_expr(expr));
-    *this=f.to_expr();
-    return false;
-  }
-  else if(type_id==ID_floatbv)
-  {
-    ieee_floatt f(to_constant_expr(*this));
-    f*=ieee_floatt(to_constant_expr(expr));
-    *this=f.to_expr();
-    return false;
-  }
-
-  return true;
-}
-
-/*******************************************************************\
-
-Function: exprt::subtract
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool exprt::subtract(const exprt &expr)
-{
-  if(!is_constant() || !expr.is_constant()) return true;
-
-  if(type()!=expr.type()) return true;
-
-  const irep_idt &type_id=type().id();
-
-  if(type_id==ID_integer || type_id==ID_natural)
-  {
-    set(ID_value, integer2string(
-      string2integer(get_string(ID_value))-
-      string2integer(expr.get_string(ID_value))));
-    return false;
-  }
-  else if(type_id==ID_rational)
-  {
-    rationalt a, b;
-    if(!to_rational(*this, a) && !to_rational(expr, b))
-    {
-      exprt a_minus_b=from_rational(a-b);
-      set(ID_value, a_minus_b.get_string(ID_value));
-      return false;
-    }
-  }
-  else if(type_id==ID_unsignedbv || type_id==ID_signedbv)
-  {
-    set(ID_value, integer2binary(
-      binary2integer(get_string(ID_value), false)-
-      binary2integer(expr.get_string(ID_value), false),
-      unsafe_string2unsigned(type().get_string(ID_width))));
-    return false;
-  }
-
-  return true;
-}
-
-/*******************************************************************\
-
-Function: exprt::find_source_location
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Get a \ref source_locationt from the expression or from its operands
+/// (non-recursively).
+/// If no source location is found, a nil `source_locationt` is returned.
+/// \return A source location if found in the expression or its operands, nil
+///   otherwise.
 const source_locationt &exprt::find_source_location() const
 {
   const source_locationt &l=source_location();
 
-  if(l.is_not_nil()) return l;
+  if(l.is_not_nil())
+    return l;
 
   forall_operands(it, (*this))
   {
-    const source_locationt &l=it->find_source_location();
-    if(l.is_not_nil()) return l;
+    const source_locationt &op_l = it->find_source_location();
+    if(op_l.is_not_nil())
+      return op_l;
   }
 
-  return static_cast<const source_locationt &>(get_nil_irep());
+  return source_locationt::nil();
 }
 
-/*******************************************************************\
+template <typename T>
+void visit_post_template(std::function<void(T &)> visitor, T *_expr)
+{
+  struct stack_entryt
+  {
+    T *e;
+    bool operands_pushed;
+    explicit stack_entryt(T *_e) : e(_e), operands_pushed(false)
+    {
+    }
+  };
 
-Function: exprt::visit
+  std::stack<stack_entryt> stack;
 
-  Inputs:
+  stack.emplace(_expr);
 
- Outputs:
+  while(!stack.empty())
+  {
+    auto &top = stack.top();
+    if(top.operands_pushed)
+    {
+      visitor(*top.e);
+      stack.pop();
+    }
+    else
+    {
+      // do modification of 'top' before pushing in case 'top' isn't stable
+      top.operands_pushed = true;
+      for(auto &op : top.e->operands())
+        stack.emplace(&op);
+    }
+  }
+}
 
- Purpose:
+void exprt::visit_post(std::function<void(exprt &)> visitor)
+{
+  visit_post_template(visitor, this);
+}
 
-\*******************************************************************/
+void exprt::visit_post(std::function<void(const exprt &)> visitor) const
+{
+  visit_post_template(visitor, this);
+}
+
+template <typename T>
+static void visit_pre_template(std::function<void(T &)> visitor, T *_expr)
+{
+  std::stack<T *> stack;
+
+  stack.push(_expr);
+
+  while(!stack.empty())
+  {
+    T &expr = *stack.top();
+    stack.pop();
+
+    visitor(expr);
+
+    for(auto &op : expr.operands())
+      stack.push(&op);
+  }
+}
+
+void exprt::visit_pre(std::function<void(exprt &)> visitor)
+{
+  visit_pre_template(visitor, this);
+}
+
+void exprt::visit_pre(std::function<void(const exprt &)> visitor) const
+{
+  visit_pre_template(visitor, this);
+}
 
 void exprt::visit(expr_visitort &visitor)
 {
-  std::stack<exprt *> stack;
-  
-  stack.push(this);
-
-  while(!stack.empty())
-  {
-    exprt &expr=*stack.top();
-    stack.pop();
-
-    visitor(expr);
-
-    Forall_operands(it, expr)
-      stack.push(&(*it));
-  }
+  visit_pre([&visitor](exprt &e) { visitor(e); });
 }
-
-/*******************************************************************\
-
-Function: exprt::visit
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void exprt::visit(const_expr_visitort &visitor) const
 {
-  std::stack<const exprt *> stack;
-  
-  stack.push(this);
-
-  while(!stack.empty())
-  {
-    const exprt &expr=*stack.top();
-    stack.pop();
-
-    visitor(expr);
-
-    forall_operands(it, expr)
-      stack.push(&(*it));
-  }
+  visit_pre([&visitor](const exprt &e) { visitor(e); });
 }
 
-/*******************************************************************\
-
-Function: exprt::is_symbol
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-bool exprt::is_symbol() const
+depth_iteratort exprt::depth_begin()
+{ return depth_iteratort(*this); }
+depth_iteratort exprt::depth_end()
+{ return depth_iteratort(); }
+const_depth_iteratort exprt::depth_begin() const
+{ return const_depth_iteratort(*this); }
+const_depth_iteratort exprt::depth_end() const
+{ return const_depth_iteratort(); }
+const_depth_iteratort exprt::depth_cbegin() const
+{ return const_depth_iteratort(*this); }
+const_depth_iteratort exprt::depth_cend() const
+{ return const_depth_iteratort(); }
+depth_iteratort exprt::depth_begin(std::function<exprt &()> mutate_root) const
 {
-	return id() == "symbol";
+  return depth_iteratort(*this, std::move(mutate_root));
 }
 
-/*******************************************************************\
-
-Function: exprt::get_symbols
-
-  Inputs:
-
- Outputs:
-
- Purpose: get all symbols of a exprt
-
-\*******************************************************************/
-void exprt::get_symbols(std::vector<exprt>& symbols) const
-{
-	if (is_symbol()) {
-		symbols.push_back(*this);
-	}
-	else {
-		if (has_operands())	{
-			operandst ops = operands();
-			for (unsigned i = 0; i < ops.size(); i++) {
-				ops[i].get_symbols(symbols);
-			}
-		}
-	}
-}
+const_unique_depth_iteratort exprt::unique_depth_begin() const
+{ return const_unique_depth_iteratort(*this); }
+const_unique_depth_iteratort exprt::unique_depth_end() const
+{ return const_unique_depth_iteratort(); }
+const_unique_depth_iteratort exprt::unique_depth_cbegin() const
+{ return const_unique_depth_iteratort(*this); }
+const_unique_depth_iteratort exprt::unique_depth_cend() const
+{ return const_unique_depth_iteratort(); }

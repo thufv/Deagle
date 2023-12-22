@@ -1,20 +1,17 @@
+#include <util/c_types.h>
 #include <util/std_code.h>
-#include <util/std_types.h>
-#include <util/std_expr.h>
-#include <util/expr_util.h>
-#include <util/i2string.h>
 #include <util/string2int.h>
 
-#include "c_types.h"
+#include "merged_type.h"
 
 #define YYSTYPE unsigned
 #define YYSTYPE_IS_TRIVIAL 1
 
-#define mto(x, y) stack(x).move_to_operands(stack(y))
-#define mts(x, y) ((typet &)stack(x)).move_to_subtypes((typet &)stack(y))
+#define mto(x, y) parser_stack(x).add_to_operands(std::move(parser_stack(y)))
+#define mts(x, y) (to_type_with_subtypes(stack_type(x)).move_to_subtypes(stack_type(y)))
 #define binary(x, y, l, id, z) { init(x, id); \
-  stack(x).add_source_location()=stack(l).source_location(); \
-  stack(x).reserve_operands(2); mto(x, y); mto(x, z); }
+  parser_stack(x).add_source_location()=parser_stack(l).source_location(); \
+  parser_stack(x).add_to_operands(std::move(parser_stack(y)), std::move(parser_stack(z))); }
 
 /*******************************************************************\
 
@@ -48,7 +45,7 @@ Function: init
 inline static void init(YYSTYPE &expr, const irep_idt &id)
 {
   newstack(expr);
-  stack(expr).id(id);
+  parser_stack(expr).id(id);
 }
 
 /*******************************************************************\
@@ -65,7 +62,7 @@ Function: set
 
 inline static void set(YYSTYPE expr, const irep_idt &id)
 {
-  stack(expr).id(id);
+  parser_stack(expr).id(id);
 }
 
 /*******************************************************************\
@@ -83,8 +80,7 @@ Function: statement
 static void statement(YYSTYPE &expr, const irep_idt &id)
 {
   set(expr, ID_code);
-  stack(expr).type().id(ID_code);
-  stack(expr).set(ID_statement, id);
+  parser_stack(expr).set(ID_statement, id);
 }
 
 /*******************************************************************\
@@ -102,8 +98,8 @@ Function: merge_types
 static void merge_types(irept &dest, irept &src)
 {
   #if 0
-  std::cout << "D: " << dest.pretty() << std::endl;
-  std::cout << "S: " << src.pretty() << std::endl;
+  std::cout << "D: " << dest.pretty() << '\n';
+  std::cout << "S: " << src.pretty() << '\n';
   #endif
 
   if(src.is_nil())
@@ -118,13 +114,13 @@ static void merge_types(irept &dest, irept &src)
   if(dest.id()!=ID_merged_type)
   {
     source_locationt location=static_cast<const exprt &>(dest).source_location();
-    typet new_type(ID_merged_type);
+    merged_typet new_type;
     new_type.move_to_subtypes((typet &)(dest));
     dest.swap(new_type);
     static_cast<exprt &>(dest).add_source_location()=location;
   }
 
-  static_cast<typet &>(dest).move_to_subtypes(static_cast<typet &>(src));
+  to_type_with_subtypes(static_cast<typet &>(dest)).move_to_subtypes(static_cast<typet &>(src));
 }
 
 /*******************************************************************\
@@ -142,7 +138,7 @@ Function: merge_types
 #if 0
 static void merge_types(const YYSTYPE dest, const YYSTYPE src)
 {
-  merge_types(stack(dest), stack(src));
+  merge_types(parser_stack(dest), parser_stack(src));
 }
 #endif
 
@@ -160,7 +156,7 @@ Function: merge
 
 static YYSTYPE merge(const YYSTYPE src1, const YYSTYPE src2)
 {
-  merge_types(stack(src1), stack(src2));
+  merge_types(parser_stack(src1), parser_stack(src2));
   return src1;
 }
 
@@ -177,23 +173,24 @@ Function: make_subtype
 \*******************************************************************/
 
 static void make_subtype(typet &dest, typet &src)
-{  
+{
   // inserts "src" into "dest"
   // e.g., src is a pointer or array,
   // dest is a symbol or type
-  
+
   // find spot in 'dest' where to insert 'src'
-  
+
   #if 0
-  std::cout << "D: " << dest.pretty() << std::endl;
-  std::cout << "S: " << src.pretty() << std::endl;
+  std::cout << "D: " << dest.pretty() << '\n';
+  std::cout << "S: " << src.pretty() << '\n';
   #endif
-  
+
   assert(src.id()==ID_array ||
-         src.id()==ID_pointer ||
+         src.id()==ID_frontend_pointer ||
          src.id()==ID_code ||
          src.id()==ID_merged_type ||
-         src.id()==ID_c_bitfield);
+         src.id()==ID_abstract ||
+         src.id()==ID_c_bit_field);
 
   typet *p=&dest;
 
@@ -201,20 +198,20 @@ static void make_subtype(typet &dest, typet &src)
   {
     // see if we need to walk down
     typet *sub=p;
-    
+
     if(p->id()==ID_merged_type)
     {
       // do last one
-      assert(!p->subtypes().empty());
-      sub=&(p->subtypes().back());
+      auto &merged_type = to_merged_type(*p);
+      sub = &merged_type.last_type();
     }
 
-    if(sub->id()==ID_pointer ||
+    if(sub->id()==ID_frontend_pointer ||
        sub->id()==ID_array ||
        sub->id()==ID_code)
     {
       // walk down
-      p=&sub->subtype();    
+      p=&sub->add_subtype();
     }
     else
     {
@@ -225,16 +222,16 @@ static void make_subtype(typet &dest, typet &src)
       }
       else if(p->is_nil())
         assert(false);
-      else if(p->id()==irep_idt())
+      else if(p->id().empty())
         assert(false);
       else
       {
         // *p is now type or symbol
-    
+
         // save symbol
         typet symbol=*p;
         p->swap(src);
-      
+
         // find spot where to put symbol
         while(true)
         {
@@ -245,15 +242,15 @@ static void make_subtype(typet &dest, typet &src)
           }
           else if(p->id()==ID_merged_type)
           {
-            assert(!p->subtypes().empty());
-            p=&(p->subtypes().back());
+            auto &merged_type = to_merged_type(*p);
+            p=&merged_type.last_type();
           }
-          else if(p->id()==irep_idt())
+          else if(p->id().empty())
             assert(false);
           else if(p->is_nil())
             assert(false);
           else
-            p=&p->subtype();
+            p=&p->add_subtype();
         }
         break;
       }
@@ -275,9 +272,9 @@ Function: make_subtype
 
 static void make_subtype(YYSTYPE dest, YYSTYPE src)
 {
-  make_subtype((typet &)stack(dest), (typet &)stack(src));
+  make_subtype(stack_type(dest), stack_type(src));
 }
-    
+
 /*******************************************************************\
 
 Function: make_pointer
@@ -292,8 +289,10 @@ Function: make_pointer
 
 static void make_pointer(const YYSTYPE dest)
 {
-  set(dest, ID_pointer);
-  stack(dest).add(ID_subtype)=irept(ID_abstract);
+  // The below deliberately avoids pointer_type().
+  // The width is set during conversion.
+  stack_type(dest).id(ID_frontend_pointer);
+  stack_type(dest).add_subtype()=typet(ID_abstract);
 }
 
 /*******************************************************************\
@@ -328,7 +327,7 @@ Function: create_function_scope
 
 static void create_function_scope(const YYSTYPE d)
 {
-  ansi_c_declarationt &declaration=to_ansi_c_declaration(stack(d));
+  ansi_c_declarationt &declaration=to_ansi_c_declaration(parser_stack(d));
   ansi_c_declaratort &declarator=declaration.declarator();
 
   irep_idt function_name=declarator.get_base_name();
@@ -340,33 +339,43 @@ static void create_function_scope(const YYSTYPE d)
                      id2string(function_name)+"::";
   PARSER.new_scope(prefix);
 
+  // We look at the last type in case of a merged declarator type.
+  typet *declarator_type = &declarator.type();
+  if(declarator_type->id()==ID_merged_type)
+  {
+    // we want the last one
+    auto &merged_type = to_merged_type(*declarator_type);
+    declarator_type = &merged_type.last_type();
+  }
+
   // The grammar doesn't actually enforce that a function type
   // is used to define a function body. We will complain in the
   // type checker about it.
-  if(declarator.type().id()==ID_code)
+  if(declarator_type->id()==ID_code)
   {
-    code_typet &code_type=to_code_type(declarator.type());
-    
+    code_typet &code_type=to_code_type(*declarator_type);
+
     code_typet::parameterst &parameters=code_type.parameters();
-    
+
     // Add the parameter declarations to the scope.
-    for(code_typet::parameterst::iterator
-        it=parameters.begin();
-        it!=parameters.end();
-        it++)
+    for(auto &param : parameters)
     {
-      if(it->id()==ID_declaration)
+      if(param.id()==ID_declaration)
       {
-        ansi_c_declarationt &param_decl=to_ansi_c_declaration(*it);
+        ansi_c_declarationt &param_decl=to_ansi_c_declaration(param);
 
         // we record the function name in the location
         param_decl.add_source_location().set_function(function_name);
-       
+
         if(!param_decl.declarators().empty())
         {
           // add to scope
-          PARSER.current_scope().name_map
-            [param_decl.declarator().get_base_name()].id_class=ANSI_C_SYMBOL;
+          irep_idt base_name=param_decl.declarator().get_base_name();
+          ansi_c_identifiert &identifier=
+            PARSER.current_scope().name_map[base_name];
+          identifier.id_class=ansi_c_id_classt::ANSI_C_SYMBOL;
+          identifier.base_name=base_name;
+          identifier.prefixed_name=param_decl.declarator().get_name();
         }
       }
     }
@@ -402,19 +411,16 @@ static void adjust_KnR_parameters(
     ansi_c_declarationt::declaratorst &declarators=
       declaration.declarators();
 
-    for(ansi_c_declarationt::declaratorst::const_iterator
-        it=declarators.begin();
-        it!=declarators.end();
-        it++)
+    for(const auto &decl : declarators)
     {
-      irep_idt base_name=it->get_base_name();
+      irep_idt base_name=decl.get_base_name();
 
       // we just do a linear search over the parameters
       // this could be improved with a hash map
-      Forall_irep(a_it, parameters.get_sub())
+      for(auto &parameter : parameters.get_sub())
       {
         ansi_c_declarationt &p_decl=
-          to_ansi_c_declaration(static_cast<exprt &>(*a_it));
+          to_ansi_c_declaration(static_cast<exprt &>(parameter));
 
         if(p_decl.declarator().get_base_name()==base_name)
         {
@@ -422,7 +428,7 @@ static void adjust_KnR_parameters(
           // This copies the declaration type, which can be a
           // problem if there are compound bodies in there.
           p_decl.type()=declaration.type();
-          p_decl.declarator().type()=it->type();
+          p_decl.declarator().type()=decl.type();
           break;
         }
       }

@@ -6,47 +6,43 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
+/// \file
+/// C++ Language Type Checking
+
+#include <util/c_types.h>
+#include <util/cprover_prefix.h>
+#include <util/mathematical_types.h>
+#include <util/simplify_expr.h>
 #include <util/source_location.h>
 
 #include <ansi-c/c_qualifiers.h>
+#include <ansi-c/merged_type.h>
 
-#include "cpp_typecheck.h"
 #include "cpp_convert_type.h"
-#include "expr2cpp.h"
-
-/*******************************************************************\
-
-Function: cpp_typecheckt::typecheck_type
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "cpp_typecheck.h"
+#include "cpp_typecheck_fargs.h"
 
 void cpp_typecheckt::typecheck_type(typet &type)
 {
-  assert(type.id()!=irep_idt());
+  assert(!type.id().empty());
   assert(type.is_not_nil());
 
   try
   {
-    cpp_convert_plain_type(type);
+    cpp_convert_plain_type(type, get_message_handler());
   }
 
-  catch(const char *error)
+  catch(const char *err)
   {
-    err_location(type);
-    str << error;
+    error().source_location=type.source_location();
+    error() << err << eom;
     throw 0;
   }
 
-  catch(const std::string &error)
+  catch(const std::string &err)
   {
-    err_location(type);
-    str << error;
+    error().source_location=type.source_location();
+    error() << err << eom;
     throw 0;
   }
 
@@ -59,23 +55,36 @@ void cpp_typecheckt::typecheck_type(typet &type)
 
     exprt symbol_expr=resolve(
       cpp_name,
-      cpp_typecheck_resolvet::TYPE,
+      cpp_typecheck_resolvet::wantt::TYPE,
       cpp_typecheck_fargst());
 
     if(symbol_expr.id()!=ID_type)
     {
-      err_location(type);
-      str << "error: expected type";
+      error().source_location=type.source_location();
+      error() << "error: expected type" << eom;
       throw 0;
     }
-    
+
     type=symbol_expr.type();
     assert(type.is_not_nil());
 
     if(type.get_bool(ID_C_constant))
       qualifiers.is_constant = true;
 
-     qualifiers.write(type);
+    // CPROVER extensions
+    irep_idt typedef_identifier = type.get(ID_C_typedef);
+    if(typedef_identifier == CPROVER_PREFIX "rational")
+    {
+      type = rational_typet();
+      type.add_source_location() = symbol_expr.source_location();
+    }
+    else if(typedef_identifier == CPROVER_PREFIX "integer")
+    {
+      type = integer_typet();
+      type.add_source_location() = symbol_expr.source_location();
+    }
+
+    qualifiers.write(type);
   }
   else if(type.id()==ID_struct ||
           type.id()==ID_union)
@@ -84,16 +93,19 @@ void cpp_typecheckt::typecheck_type(typet &type)
   }
   else if(type.id()==ID_pointer)
   {
-    // the pointer might have a qualifier, but do subtype first
-    typecheck_type(type.subtype());
+    c_qualifierst qualifiers(type);
+
+    // the pointer/reference might have a qualifier,
+    // but do subtype first
+    typecheck_type(to_pointer_type(type).base_type());
 
     // Check if it is a pointer-to-member
-    if(type.find("to-member").is_not_nil())
+    if(type.find(ID_to_member).is_not_nil())
     {
       // these can point either to data members or member functions
       // of a class
 
-      typet &class_object=static_cast<typet &>(type.add("to-member"));
+      typet &class_object = static_cast<typet &>(type.add(ID_to_member));
 
       if(class_object.id()==ID_cpp_name)
       {
@@ -104,48 +116,52 @@ void cpp_typecheckt::typecheck_type(typet &type)
       typecheck_type(class_object);
 
       // there may be parameters if this is a pointer to member function
-      if(type.subtype().id()==ID_code)
+      if(to_pointer_type(type).base_type().id() == ID_code)
       {
-        irept::subt &parameters=type.subtype().add(ID_parameters).get_sub();
+        code_typet::parameterst &parameters =
+          to_code_type(to_pointer_type(type).base_type()).parameters();
 
-        if(parameters.empty() ||
-           parameters.front().get(ID_C_base_name)!=ID_this)
+        if(parameters.empty() || !parameters.front().get_this())
         {
           // Add 'this' to the parameters
-          exprt a0(ID_parameter);
-          a0.set(ID_C_base_name, ID_this);
-          a0.type().id(ID_pointer);
-          a0.type().subtype() = class_object;
+          code_typet::parametert a0(pointer_type(class_object));
+          a0.set_base_name(ID_this);
+          a0.set_this();
           parameters.insert(parameters.begin(), a0);
         }
       }
     }
 
-    // now do qualifier
-    if(type.find(ID_C_qualifier).is_not_nil())
-    {
-      typet &t=static_cast<typet &>(type.add(ID_C_qualifier));
-      cpp_convert_plain_type(t);
-      c_qualifierst q(t);
-      q.write(type);
-    }
+    if(type.get_bool(ID_C_constant))
+      qualifiers.is_constant = true;
 
-    type.remove(ID_C_qualifier);
+    qualifiers.write(type);
   }
   else if(type.id()==ID_array)
   {
     exprt &size_expr=to_array_type(type).size();
 
     if(size_expr.is_not_nil())
+    {
       typecheck_expr(size_expr);
+      simplify(size_expr, *this);
+    }
 
-    typecheck_type(type.subtype());
+    typecheck_type(to_array_type(type).element_type());
 
-    if(type.subtype().get_bool(ID_C_constant))
+    if(to_array_type(type).element_type().get_bool(ID_C_constant))
       type.set(ID_C_constant, true);
 
-    if(type.subtype().get_bool(ID_C_volatile))
+    if(to_array_type(type).element_type().get_bool(ID_C_volatile))
       type.set(ID_C_volatile, true);
+  }
+  else if(type.id()==ID_vector)
+  {
+    // already done
+  }
+  else if(type.id() == ID_frontend_vector)
+  {
+    typecheck_vector_type(type);
   }
   else if(type.id()==ID_code)
   {
@@ -154,41 +170,43 @@ void cpp_typecheckt::typecheck_type(typet &type)
 
     code_typet::parameterst &parameters=code_type.parameters();
 
-    for(code_typet::parameterst::iterator it=parameters.begin();
-        it!=parameters.end();
-        it++)
+    for(auto &param : parameters)
     {
-      typecheck_type(it->type());
+      typecheck_type(param.type());
 
       // see if there is a default value
-      if(it->has_default_value())
+      if(param.has_default_value())
       {
-        typecheck_expr(it->default_value());
-        implicit_typecast(it->default_value(), it->type());
+        typecheck_expr(param.default_value());
+        implicit_typecast(param.default_value(), param.type());
       }
     }
   }
   else if(type.id()==ID_template)
   {
-    typecheck_type(type.subtype());
+    typecheck_type(to_template_type(type).subtype());
   }
   else if(type.id()==ID_c_enum)
   {
     typecheck_enum_type(type);
   }
-  else if(type.id()==ID_c_bitfield)
-  {
-    typecheck_c_bit_field_type(type);
-  }
-  else if(type.id()==ID_unsignedbv ||
-          type.id()==ID_signedbv ||
-          type.id()==ID_bool ||
-          type.id()==ID_floatbv ||
-          type.id()==ID_fixedbv ||
-          type.id()==ID_empty)
+  else if(type.id()==ID_c_enum_tag)
   {
   }
-  else if(type.id()==ID_symbol)
+  else if(type.id()==ID_c_bit_field)
+  {
+    typecheck_c_bit_field_type(to_c_bit_field_type(type));
+  }
+  else if(
+    type.id() == ID_unsignedbv || type.id() == ID_signedbv ||
+    type.id() == ID_bool || type.id() == ID_c_bool || type.id() == ID_floatbv ||
+    type.id() == ID_fixedbv || type.id() == ID_empty)
+  {
+  }
+  else if(type.id() == ID_struct_tag)
+  {
+  }
+  else if(type.id() == ID_union_tag)
   {
   }
   else if(type.id()==ID_constructor ||
@@ -219,7 +237,7 @@ void cpp_typecheckt::typecheck_type(typet &type)
 
         exprt symbol_expr=resolve(
           to_cpp_name(static_cast<const irept &>(tmp_type)),
-          cpp_typecheck_resolvet::BOTH,
+          cpp_typecheck_resolvet::wantt::BOTH,
           fargs);
 
         type=symbol_expr.type();
@@ -240,7 +258,11 @@ void cpp_typecheckt::typecheck_type(typet &type)
   {
     exprt e=static_cast<const exprt &>(type.find(ID_expr_arg));
     typecheck_expr(e);
-    type=e.type();
+
+    if(e.type().id() == ID_c_bit_field)
+      type = to_c_bit_field_type(e.type()).underlying_type();
+    else
+      type = e.type();
   }
   else if(type.id()==ID_unassigned)
   {
@@ -254,13 +276,38 @@ void cpp_typecheckt::typecheck_type(typet &type)
   {
     // This is an Apple extension for lambda-like constructs.
     // http://thirdcog.eu/pwcblocks/
+    // we just treat them as references to functions
+    type.id(ID_frontend_pointer);
+    typecheck_type(type);
+  }
+  else if(type.id()==ID_nullptr)
+  {
+  }
+  else if(type.id()==ID_already_typechecked)
+  {
+    c_typecheck_baset::typecheck_type(type);
+  }
+  else if(type.id() == ID_gcc_attribute_mode)
+  {
+    PRECONDITION(type.has_subtype());
+    merged_typet as_parsed;
+    as_parsed.move_to_subtypes(to_type_with_subtype(type).subtype());
+    type.get_sub().clear();
+    as_parsed.move_to_subtypes(type);
+    type.swap(as_parsed);
+
+    c_typecheck_baset::typecheck_type(type);
+  }
+  else if(type.id() == ID_complex)
+  {
+    // already done
   }
   else
   {
-    err_location(type);
-    str << "unexpected type: " << type.pretty();
+    error().source_location=type.source_location();
+    error() << "unexpected cpp type: " << type.pretty() << eom;
     throw 0;
   }
-  
+
   assert(type.is_not_nil());
 }

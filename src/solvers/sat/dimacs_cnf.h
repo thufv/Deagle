@@ -6,8 +6,9 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_DIMACS_CNF_H
-#define CPROVER_DIMACS_CNF_H
+
+#ifndef CPROVER_SOLVERS_SAT_DIMACS_CNF_H
+#define CPROVER_SOLVERS_SAT_DIMACS_CNF_H
 
 #include <iosfwd>
 
@@ -16,55 +17,61 @@ Author: Daniel Kroening, kroening@kroening.com
 class dimacs_cnft:public cnf_clause_listt
 {
 public:
-  dimacs_cnft();
+  explicit dimacs_cnft(message_handlert &);
   virtual ~dimacs_cnft() { }
- 
+
   virtual void write_dimacs_cnf(std::ostream &out);
 
   // dummy functions
-  
-  virtual const std::string solver_text()
-  { 
+
+  const std::string solver_text() override
+  {
     return "DIMACS CNF";
   }
-  
+
+  void set_assignment(literalt a, bool value) override;
+  bool is_in_conflict(literalt l) const override;
+
+  static void
+  write_dimacs_clause(const bvt &, std::ostream &, bool break_lines);
+
 protected:
   void write_problem_line(std::ostream &out);
   void write_clauses(std::ostream &out);
-  
+
   bool break_lines;
 };
 
 class dimacs_cnf_dumpt:public cnft
 {
 public:
-  explicit dimacs_cnf_dumpt(std::ostream &_out);
+  dimacs_cnf_dumpt(std::ostream &_out, message_handlert &message_handler);
   virtual ~dimacs_cnf_dumpt() { }
- 
-  virtual const std::string solver_text()
-  { 
+
+  const std::string solver_text() override
+  {
     return "DIMACS CNF Dumper";
   }
-  
-  virtual void lcnf(const bvt &bv);
 
-  virtual resultt prop_solve()
+  void lcnf(const bvt &bv) override;
+
+  tvt l_get(literalt) const override
   {
-    return P_ERROR;
+    return tvt::unknown();
   }
 
-  virtual tvt l_get(literalt) const
-  {
-    return tvt(tvt::TV_UNKNOWN);
-  }
-  
-  virtual size_t no_clauses() const
+  size_t no_clauses() const override
   {
     return 0;
   }
 
 protected:
+  resultt do_prop_solve() override
+  {
+    return resultt::P_ERROR;
+  }
+
   std::ostream &out;
 };
 
-#endif
+#endif // CPROVER_SOLVERS_SAT_DIMACS_CNF_H

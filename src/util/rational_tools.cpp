@@ -6,21 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include "std_expr.h"
-#include "std_types.h"
+/// \file
+/// Rational Numbers
+
 #include "rational_tools.h"
 
-/*******************************************************************\
-
-Function: power10
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "mathematical_types.h"
+#include "rational.h"
 
 static mp_integer power10(size_t i)
 {
@@ -32,33 +24,18 @@ static mp_integer power10(size_t i)
   return result;
 }
 
-/*******************************************************************\
-
-Function: to_rational
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool to_rational(const exprt &expr, rationalt &rational_value)
 {
-  if(expr.id()!="constant") return true;
+  if(expr.id()!=ID_constant)
+    return true;
 
-  const std::string &value=expr.get_string("value");
+  const std::string &value=expr.get_string(ID_value);
 
   std::string no1, no2;
   char mode=0;
 
-  for(std::string::const_iterator it=value.begin();
-      it!=value.end();
-      ++it)
+  for(const char ch : value)
   {
-    const char ch=*it;
-
     if(isdigit(ch))
     {
       if(mode==0)
@@ -79,45 +56,32 @@ bool to_rational(const exprt &expr, rationalt &rational_value)
 
   switch(mode)
   {
-   case 0:
-    rational_value=string2integer(no1);
+  case 0:
+    rational_value=rationalt(string2integer(no1));
     break;
 
-   case '.':
-    rational_value=string2integer(no1);
-    rational_value+=rationalt(string2integer(no2))/power10(no2.size());
+  case '.':
+    rational_value=rationalt(string2integer(no1));
+    rational_value+=
+      rationalt(string2integer(no2))/rationalt(power10(no2.size()));
     break;
 
-   case '/':
-    rational_value=string2integer(no1);
-    rational_value/=string2integer(no2);
+  case '/':
+    rational_value=rationalt(string2integer(no1));
+    rational_value/=rationalt(string2integer(no2));
     break;
 
-   default:
+  default:
     return true;
-  }    
+  }
 
   return false;
 }
 
-/*******************************************************************\
-
-Function: from_rational
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 constant_exprt from_rational(const rationalt &a)
 {
-  std::string d=integer2string(a.numerator);
-  if(a.denominator!=1) d+="/"+integer2string(a.denominator);
-  constant_exprt result;
-  result.type()=rational_typet();
-  result.set_value(d);
-  return result;
+  std::string d=integer2string(a.get_numerator());
+  if(a.get_denominator()!=1)
+    d+="/"+integer2string(a.get_denominator());
+  return constant_exprt(d, rational_typet());
 }

@@ -6,8 +6,9 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_SATCHECK_MINISAT_H
-#define CPROVER_SATCHECK_MINISAT_H
+
+#ifndef CPROVER_SOLVERS_SAT_SATCHECK_MINISAT_H
+#define CPROVER_SOLVERS_SAT_SATCHECK_MINISAT_H
 
 #include <vector>
 
@@ -20,27 +21,35 @@ public:
   satcheck_minisat1_baset():solver(NULL)
   {
   }
-  
-  virtual ~satcheck_minisat1_baset();
-  
-  virtual const std::string solver_text();
-  virtual resultt prop_solve();
-  virtual tvt l_get(literalt a) const;
 
-  virtual void lcnf(const bvt &bv);
-  
-  virtual void set_assignment(literalt a, bool value);
+  virtual ~satcheck_minisat1_baset();
+
+  const std::string solver_text() override;
+  tvt l_get(literalt a) const override;
+
+  void lcnf(const bvt &bv) final;
+
+  void set_assignment(literalt a, bool value) override;
 
   // extra MiniSat feature: solve with assumptions
-  virtual void set_assumptions(const bvt &_assumptions);
+  void set_assumptions(const bvt &_assumptions) override;
 
-  // features  
-  virtual bool has_set_assumptions() const { return true; }
-  virtual bool has_is_in_conflict() const { return true; }
-  
-  virtual bool is_in_conflict(literalt l) const;
-  
+  // features
+  bool has_set_assumptions() const override
+  {
+    return true;
+  }
+  bool has_is_in_conflict() const override
+  {
+    return true;
+  }
+
+  bool is_in_conflict(literalt l) const override;
+
 protected:
+  resultt do_prop_solve() override;
+
+  // NOLINTNEXTLINE(readability/identifiers)
   class Solver *solver;
   void add_variables();
   bvt assumptions;
@@ -58,12 +67,13 @@ class satcheck_minisat1_prooft:public satcheck_minisat1t
 public:
   satcheck_minisat1_prooft();
   ~satcheck_minisat1_prooft();
-  
-  virtual const std::string solver_text();
+
+  const std::string solver_text() override;
   simple_prooft &get_resolution_proof();
-  //void set_partition_id(unsigned p_id);
+  // void set_partition_id(unsigned p_id);
 
 protected:
+  // NOLINTNEXTLINE(readability/identifiers)
   class Proof *proof;
   class minisat_prooft *minisat_proof;
 };
@@ -74,18 +84,22 @@ public:
   satcheck_minisat1_coret();
   ~satcheck_minisat1_coret();
 
-  virtual const std::string solver_text();
-  virtual resultt prop_solve();
-  
-  virtual bool has_in_core() const { return true; }
-  
-  virtual bool is_in_core(literalt l) const
+  const std::string solver_text() override;
+
+  bool has_in_core() const
   {
-    assert(l.var_no()<in_core.size());
+    return true;
+  }
+
+  bool is_in_core(literalt l) const
+  {
+    PRECONDITION(l.var_no() < in_core.size());
     return in_core[l.var_no()];
   }
-  
+
 protected:
   std::vector<bool> in_core;
+
+  resultt do_prop_solve() override;
 };
-#endif
+#endif // CPROVER_SOLVERS_SAT_SATCHECK_MINISAT_H

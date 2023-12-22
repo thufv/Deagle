@@ -1,5 +1,16 @@
-#ifndef POLYNOMIAL_H
-#define POLYNOMIAL_H
+/*******************************************************************\
+
+Module: Loop Acceleration
+
+Author: Matt Lewis
+
+\*******************************************************************/
+
+/// \file
+/// Loop Acceleration
+
+#ifndef CPROVER_GOTO_INSTRUMENT_ACCELERATE_POLYNOMIAL_H
+#define CPROVER_GOTO_INSTRUMENT_ACCELERATE_POLYNOMIAL_H
 
 #include <vector>
 #include <map>
@@ -9,10 +20,11 @@
 class monomialt
 {
 public:
-  typedef struct term {
+  struct termt
+  {
     exprt var;
     unsigned int exp;   // This means exponent, not expression.
-  } termt;
+  };
 
   // Invariant: this vector is sorted lexicographically w.r.t. the variable.
   std::vector<termt> terms;
@@ -50,4 +62,4 @@ public:
 
 typedef std::vector<polynomialt> polynomialst;
 
-#endif // POLYNOMIAL_H
+#endif // CPROVER_GOTO_INSTRUMENT_ACCELERATE_POLYNOMIAL_H

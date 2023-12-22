@@ -1,14 +1,27 @@
-#ifndef SCRATCH_PROGRAM_H
-#define SCRATCH_PROGRAM_H
+/*******************************************************************\
 
-#include <string>
+Module: Loop Acceleration
 
+Author: Matt Lewis
+
+\*******************************************************************/
+
+/// \file
+/// Loop Acceleration
+
+#ifndef CPROVER_GOTO_INSTRUMENT_ACCELERATE_SCRATCH_PROGRAM_H
+#define CPROVER_GOTO_INSTRUMENT_ACCELERATE_SCRATCH_PROGRAM_H
+
+#include <memory>
+
+#include <util/make_unique.h>
 #include <util/symbol_table.h>
 
 #include <goto-programs/goto_program.h>
 #include <goto-programs/goto_functions.h>
 
 #include <goto-symex/goto_symex.h>
+#include <goto-symex/path_storage.h>
 #include <goto-symex/symex_target_equation.h>
 
 #include <solvers/smt2/smt2_dec.h>
@@ -18,27 +31,53 @@
 
 #include "path.h"
 
-using namespace std;
-
-class scratch_programt : public goto_programt {
- public:
-  scratch_programt(symbol_tablet &_symbol_table) :
-      constant_propagation(true),
-      symbol_table(_symbol_table),
-      ns(symbol_table),
-      equation(ns),
-      symex(ns, symbol_table, equation),
-      satcheck(new satcheckt),
-      satchecker(ns, *satcheck),
-      z3(ns, "accelerate", "", "", smt2_dect::Z3),
-
-      checker(&z3)
-      //checker(&satchecker)
+// Wrapper around goto_symext to make initialize_entry_point_state available.
+struct scratch_program_symext : public goto_symext
+{
+  scratch_program_symext(
+    message_handlert &mh,
+    const symbol_tablet &outer_symbol_table,
+    symex_target_equationt &_target,
+    const optionst &options,
+    path_storaget &path_storage,
+    guard_managert &guard_manager)
+    : goto_symext(
+        mh,
+        outer_symbol_table,
+        _target,
+        options,
+        path_storage,
+        guard_manager)
   {
   }
 
-  ~scratch_programt() {
-    delete satcheck;
+  std::unique_ptr<statet>
+  initialize_entry_point_state(const get_goto_functiont &get_goto_function)
+  {
+    return goto_symext::initialize_entry_point_state(get_goto_function);
+  }
+};
+
+class scratch_programt:public goto_programt
+{
+public:
+  scratch_programt(
+    symbol_tablet &_symbol_table,
+    message_handlert &mh,
+    guard_managert &guard_manager)
+    : constant_propagation(true),
+      symbol_table(_symbol_table),
+      symex_symbol_table(),
+      ns(symbol_table, symex_symbol_table),
+      equation(mh),
+      path_storage(),
+      options(get_default_options()),
+      symex(mh, symbol_table, equation, options, path_storage, guard_manager),
+      satcheck(util_make_unique<satcheckt>(mh)),
+      satchecker(ns, *satcheck, mh),
+      z3(ns, "accelerate", "", "", smt2_dect::solvert::Z3, mh),
+      checker(&z3) // checker(&satchecker)
+  {
   }
 
   void append(goto_programt::instructionst &instructions);
@@ -49,10 +88,11 @@ class scratch_programt : public goto_programt {
   targett assign(const exprt &lhs, const exprt &rhs);
   targett assume(const exprt &guard);
 
-  bool check_sat(bool do_slice);
+  bool check_sat(bool do_slice, guard_managert &guard_manager);
 
-  bool check_sat() {
-    return check_sat(true);
+  bool check_sat(guard_managert &guard_manager)
+  {
+    return check_sat(true, guard_manager);
   }
 
   exprt eval(const exprt &e);
@@ -61,19 +101,22 @@ class scratch_programt : public goto_programt {
 
   bool constant_propagation;
 
- protected:
-
-  goto_symex_statet symex_state;
+protected:
+  std::unique_ptr<goto_symex_statet> symex_state;
   goto_functionst functions;
   symbol_tablet &symbol_table;
-  const namespacet ns;
+  symbol_tablet symex_symbol_table;
+  namespacet ns;
   symex_target_equationt equation;
-  goto_symext symex;
+  path_fifot path_storage;
+  optionst options;
+  scratch_program_symext symex;
 
-  propt *satcheck;
+  std::unique_ptr<propt> satcheck;
   bv_pointerst satchecker;
   smt2_dect z3;
-  prop_convt *checker;
+  decision_proceduret *checker;
+  static optionst get_default_options();
 };
 
-#endif // SCRATCH_PROGRAM_H
+#endif // CPROVER_GOTO_INSTRUMENT_ACCELERATE_SCRATCH_PROGRAM_H

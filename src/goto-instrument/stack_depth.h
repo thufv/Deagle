@@ -8,15 +8,23 @@ Date: November 2011
 
 \*******************************************************************/
 
-#ifndef CPROVER_STACK_DEPTH_H
-#define CPROVER_STACK_DEPTH_H
+/// \file
+/// Stack depth checks
 
-class symbol_tablet;
-class goto_functionst;
+#ifndef CPROVER_GOTO_INSTRUMENT_STACK_DEPTH_H
+#define CPROVER_GOTO_INSTRUMENT_STACK_DEPTH_H
 
+#include <cstddef>
+
+class goto_modelt;
+class message_handlert;
+
+/// Add assertions to all user-defined functions in \p goto_model that the call
+/// stack depth does not exceed \p depth.
+/// Warnings are reported via \p message_handler.
 void stack_depth(
-  symbol_tablet &symbol_table,
-  goto_functionst &goto_functions,
-  const int depth);
+  goto_modelt &goto_model,
+  const std::size_t depth,
+  message_handlert &message_handler);
 
-#endif
+#endif // CPROVER_GOTO_INSTRUMENT_STACK_DEPTH_H

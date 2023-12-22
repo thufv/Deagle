@@ -6,154 +6,181 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-//#define DEBUG
-
-#ifdef DEBUG
-#include <iostream>
-#endif
-
-#include <util/std_expr.h>
-#include <util/arith_tools.h>
+/// \file
+/// Interval Domain
 
 #include "interval_domain.h"
 
-/*******************************************************************\
+#ifdef DEBUG
+#include <iostream>
+#include <langapi/language_util.h>
+#endif
 
-Function: interval_domaint::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/simplify_expr.h>
+#include <util/std_expr.h>
+#include <util/arith_tools.h>
 
 void interval_domaint::output(
-  const namespacet &ns,
-  std::ostream &out) const
+  std::ostream &out,
+  const ai_baset &,
+  const namespacet &) const
 {
-  for(int_mapt::const_iterator
-      i_it=int_map.begin(); i_it!=int_map.end(); i_it++)
+  if(bottom)
   {
-    if(i_it->second.is_top()) continue;
-    if(i_it->second.lower_set)
-      out << i_it->second.lower << " <= ";
-    out << i_it->first;
-    if(i_it->second.upper_set)
-      out << " <= " << i_it->second.lower;
+    out << "BOTTOM\n";
+    return;
+  }
+
+  for(const auto &interval : int_map)
+  {
+    if(interval.second.is_top())
+      continue;
+    if(interval.second.lower_set)
+      out << interval.second.lower << " <= ";
+    out << interval.first;
+    if(interval.second.upper_set)
+      out << " <= " << interval.second.upper;
     out << "\n";
   }
 
-  for(float_mapt::const_iterator
-      i_it=float_map.begin(); i_it!=float_map.end(); i_it++)
+  for(const auto &interval : float_map)
   {
-    if(i_it->second.is_top()) continue;
-    if(i_it->second.lower_set)
-      out << i_it->second.lower << " <= ";
-    out << i_it->first;
-    if(i_it->second.upper_set)
-      out << " <= " << i_it->second.lower;
+    if(interval.second.is_top())
+      continue;
+    if(interval.second.lower_set)
+      out << interval.second.lower << " <= ";
+    out << interval.first;
+    if(interval.second.upper_set)
+      out << " <= " << interval.second.upper;
     out << "\n";
   }
 }
-
-/*******************************************************************\
-
-Function: interval_domaint::transform
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void interval_domaint::transform(
-  const namespacet &ns,
-  locationt from,
-  locationt to)
+  const irep_idt &function_from,
+  trace_ptrt trace_from,
+  const irep_idt &function_to,
+  trace_ptrt trace_to,
+  ai_baset &ai,
+  const namespacet &ns)
 {
+  locationt from{trace_from->current_location()};
+  locationt to{trace_to->current_location()};
+
   const goto_programt::instructiont &instruction=*from;
-  switch(instruction.type)
+  switch(instruction.type())
   {
   case DECL:
-    havoc_rec(to_code_decl(instruction.code).symbol());
+    havoc_rec(instruction.decl_symbol());
     break;
-    
+
   case DEAD:
-    havoc_rec(to_code_dead(instruction.code).symbol());
+    havoc_rec(instruction.dead_symbol());
     break;
-  
+
   case ASSIGN:
-    assign(to_code_assign(instruction.code));
+    assign(instruction.assign_lhs(), instruction.assign_rhs());
     break;
-  
+
   case GOTO:
+  {
+    // Comparing iterators is safe as the target must be within the same list
+    // of instructions because this is a GOTO.
+    locationt next = from;
+    next++;
+    if(from->get_target() != next) // If equal then a skip
     {
-      locationt next=from;
-      next++;
-      if(next==to)
-        assume_rec(not_exprt(instruction.guard));
+      if(next == to)
+        assume(not_exprt(instruction.condition()), ns);
       else
-        assume_rec(instruction.guard);
+        assume(instruction.condition(), ns);
     }
     break;
-  
+  }
+
   case ASSUME:
-    assume_rec(instruction.guard);
+    assume(instruction.condition(), ns);
     break;
-  
+
   case FUNCTION_CALL:
-    {
-      const code_function_callt &code_function_call=
-        to_code_function_call(instruction.code);
-      if(code_function_call.lhs().is_not_nil())
-        havoc_rec(code_function_call.lhs());
-    }
+  {
+    const auto &lhs = instruction.call_lhs();
+    if(lhs.is_not_nil())
+      havoc_rec(lhs);
     break;
-  
-  default:;
+  }
+
+  case CATCH:
+  case THROW:
+    DATA_INVARIANT(false, "Exceptions must be removed before analysis");
+    break;
+  case SET_RETURN_VALUE:
+    DATA_INVARIANT(false, "SET_RETURN_VALUE must be removed before analysis");
+    break;
+  case ATOMIC_BEGIN: // Ignoring is a valid over-approximation
+  case ATOMIC_END:   // Ignoring is a valid over-approximation
+  case END_FUNCTION: // No action required
+  case START_THREAD: // Require a concurrent analysis at higher level
+  case END_THREAD:   // Require a concurrent analysis at higher level
+  case ASSERT:       // No action required
+  case LOCATION:     // No action required
+  case SKIP:         // No action required
+    break;
+  case OTHER:
+#if 0
+    DATA_INVARIANT(false, "Unclear what is a safe over-approximation of OTHER");
+#endif
+    break;
+  case INCOMPLETE_GOTO:
+  case NO_INSTRUCTION_TYPE:
+    DATA_INVARIANT(false, "Only complete instructions can be analyzed");
+    break;
   }
 }
 
-/*******************************************************************\
-
-Function: interval_domaint::merge
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool interval_domaint::merge(const interval_domaint &b, locationt to)
+/// Sets *this to the mathematical join between the two domains. This can be
+/// thought of as an abstract version of union; *this is increased so that it
+/// contains all of the values that are represented by b as well as its original
+/// intervals. The result is an overapproximation, for example:
+/// "[0,1]".join("[3,4]") --> "[0,4]" includes 2 which isn't in [0,1] or [3,4].
+///
+///          Join is used in several places, the most significant being
+///          merge, which uses it to bring together two different paths
+///          of analysis.
+/// \par parameters: The interval domain, b, to join to this domain.
+/// \return True if the join increases the set represented by *this, False if
+///   there is no change.
+bool interval_domaint::join(
+  const interval_domaint &b)
 {
-  if(!b.seen) return false;
-  if(!seen) { *this=b; return true; }
+  if(b.bottom)
+    return false;
+  if(bottom)
+  {
+    *this=b;
+    return true;
+  }
 
   bool result=false;
-  
+
   for(int_mapt::iterator it=int_map.begin();
       it!=int_map.end(); ) // no it++
   {
-    const int_mapt::const_iterator b_it=b.int_map.begin();
+    // search for the variable that needs to be merged
+    // containers have different size and variable order
+    const int_mapt::const_iterator b_it=b.int_map.find(it->first);
     if(b_it==b.int_map.end())
     {
-      int_mapt::iterator next=it;
-      next++; // will go away with C++11, as erase() returns next
-      int_map.erase(it);
-      it=next;
+      it=int_map.erase(it);
       result=true;
     }
     else
     {
-      if(it->second.join(b_it->second))
+      integer_intervalt previous=it->second;
+      it->second.join(b_it->second);
+      if(it->second!=previous)
         result=true;
-        
+
       it++;
     }
   }
@@ -164,17 +191,16 @@ bool interval_domaint::merge(const interval_domaint &b, locationt to)
     const float_mapt::const_iterator b_it=b.float_map.begin();
     if(b_it==b.float_map.end())
     {
-      float_mapt::iterator next=it;
-      next++; // will go away with C++11, as erase() returns next
-      float_map.erase(it);
-      it=next;
+      it=float_map.erase(it);
       result=true;
     }
     else
     {
-      if(it->second.join(b_it->second))
+      ieee_float_intervalt previous=it->second;
+      it->second.join(b_it->second);
+      if(it->second!=previous)
         result=true;
-        
+
       it++;
     }
   }
@@ -182,35 +208,11 @@ bool interval_domaint::merge(const interval_domaint &b, locationt to)
   return result;
 }
 
-/*******************************************************************\
-
-Function: interval_domaint::assign
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void interval_domaint::assign(const code_assignt &code_assign)
+void interval_domaint::assign(const exprt &lhs, const exprt &rhs)
 {
-  havoc_rec(code_assign.lhs());
-  assume_rec(code_assign.lhs(), ID_equal, code_assign.rhs());
+  havoc_rec(lhs);
+  assume_rec(lhs, ID_equal, rhs);
 }
-
-/*******************************************************************\
-
-Function: interval_domaint::havoc_rec
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void interval_domaint::havoc_rec(const exprt &lhs)
 {
@@ -234,18 +236,6 @@ void interval_domaint::havoc_rec(const exprt &lhs)
   }
 }
 
-/*******************************************************************\
-
-Function: interval_domaint::assume_rec
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void interval_domaint::assume_rec(
   const exprt &lhs, irep_idt id, const exprt &rhs)
 {
@@ -261,71 +251,90 @@ void interval_domaint::assume_rec(
     assume_rec(lhs, ID_le, rhs);
     return;
   }
-  
+
+  if(id==ID_notequal)
+    return; // won't do split
+
   if(id==ID_ge)
-    return assume_rec(rhs, ID_le, lhs);    
-    
+    return assume_rec(rhs, ID_le, lhs);
+
   if(id==ID_gt)
-    return assume_rec(rhs, ID_lt, lhs);    
-    
+    return assume_rec(rhs, ID_lt, lhs);
+
   // we now have lhs <  rhs or
   //             lhs <= rhs
 
   assert(id==ID_lt || id==ID_le);
 
-  #ifdef DEBUG  
-  std::cout << "assume_rec: " 
+  #ifdef DEBUG
+  std::cout << "assume_rec: "
             << from_expr(lhs) << " " << id << " "
             << from_expr(rhs) << "\n";
   #endif
-  
+
   if(lhs.id()==ID_symbol && rhs.id()==ID_constant)
   {
     irep_idt lhs_identifier=to_symbol_expr(lhs).get_identifier();
-    
+
     if(is_int(lhs.type()) && is_int(rhs.type()))
     {
-      mp_integer tmp;
-      to_integer(rhs, tmp);
-      if(id==ID_lt) --tmp;
-      int_map[lhs_identifier].make_le_than(tmp);
+      mp_integer tmp = numeric_cast_v<mp_integer>(to_constant_expr(rhs));
+      if(id==ID_lt)
+        --tmp;
+      integer_intervalt &ii=int_map[lhs_identifier];
+      ii.make_le_than(tmp);
+      if(ii.is_bottom())
+        make_bottom();
     }
     else if(is_float(lhs.type()) && is_float(rhs.type()))
     {
       ieee_floatt tmp(to_constant_expr(rhs));
-      if(id==ID_lt) tmp.decrement();
-      float_map[lhs_identifier].make_le_than(tmp);
+      if(id==ID_lt)
+        tmp.decrement();
+      ieee_float_intervalt &fi=float_map[lhs_identifier];
+      fi.make_le_than(tmp);
+      if(fi.is_bottom())
+        make_bottom();
     }
   }
   else if(lhs.id()==ID_constant && rhs.id()==ID_symbol)
   {
     irep_idt rhs_identifier=to_symbol_expr(rhs).get_identifier();
-    
+
     if(is_int(lhs.type()) && is_int(rhs.type()))
     {
-      mp_integer tmp;
-      to_integer(lhs, tmp);
-      if(id==ID_lt) ++tmp;
-      int_map[rhs_identifier].make_ge_than(tmp);
+      mp_integer tmp = numeric_cast_v<mp_integer>(to_constant_expr(lhs));
+      if(id==ID_lt)
+        ++tmp;
+      integer_intervalt &ii=int_map[rhs_identifier];
+      ii.make_ge_than(tmp);
+      if(ii.is_bottom())
+        make_bottom();
     }
     else if(is_float(lhs.type()) && is_float(rhs.type()))
     {
       ieee_floatt tmp(to_constant_expr(lhs));
-      if(id==ID_lt) tmp.increment();
-      float_map[rhs_identifier].make_ge_than(tmp);
+      if(id==ID_lt)
+        tmp.increment();
+      ieee_float_intervalt &fi=float_map[rhs_identifier];
+      fi.make_ge_than(tmp);
+      if(fi.is_bottom())
+        make_bottom();
     }
   }
   else if(lhs.id()==ID_symbol && rhs.id()==ID_symbol)
   {
     irep_idt lhs_identifier=to_symbol_expr(lhs).get_identifier();
     irep_idt rhs_identifier=to_symbol_expr(rhs).get_identifier();
-    
+
     if(is_int(lhs.type()) && is_int(rhs.type()))
     {
       integer_intervalt &lhs_i=int_map[lhs_identifier];
       integer_intervalt &rhs_i=int_map[rhs_identifier];
-      lhs_i.meet(rhs_i);
-      rhs_i=lhs_i;
+      if(id == ID_lt && !lhs_i.is_less_than(rhs_i))
+        lhs_i.make_less_than(rhs_i);
+      if(id == ID_le && !lhs_i.is_less_than_eq(rhs_i))
+        lhs_i.make_less_than_eq(rhs_i);
     }
     else if(is_float(lhs.type()) && is_float(rhs.type()))
     {
@@ -333,47 +342,46 @@ void interval_domaint::assume_rec(
       ieee_float_intervalt &rhs_i=float_map[rhs_identifier];
       lhs_i.meet(rhs_i);
       rhs_i=lhs_i;
+      if(rhs_i.is_bottom())
+        make_bottom();
     }
   }
 }
 
-/*******************************************************************\
+void interval_domaint::assume(
+  const exprt &cond,
+  const namespacet &ns)
+{
+  assume_rec(simplify_expr(cond, ns), false);
+}
 
-Function: interval_domaint::assume_rec
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void interval_domaint::assume_rec(const exprt &cond, bool negation)
+void interval_domaint::assume_rec(
+  const exprt &cond,
+  bool negation)
 {
   if(cond.id()==ID_lt || cond.id()==ID_le ||
      cond.id()==ID_gt || cond.id()==ID_ge ||
      cond.id()==ID_equal || cond.id()==ID_notequal)
   {
-    assert(cond.operands().size()==2);
+    const auto &rel = to_binary_relation_expr(cond);
 
     if(negation) // !x<y  ---> x>=y
     {
-      if(cond.id()==ID_lt)
-        assume_rec(cond.op0(), ID_ge, cond.op1());
-      else if(cond.id()==ID_le)
-        assume_rec(cond.op0(), ID_gt, cond.op1());
-      else if(cond.id()==ID_gt)
-        assume_rec(cond.op0(), ID_le, cond.op1());
-      else if(cond.id()==ID_ge)
-        assume_rec(cond.op0(), ID_lt, cond.op1());
-      else if(cond.id()==ID_equal)
-        assume_rec(cond.op0(), ID_notequal, cond.op1());
-      else if(cond.id()==ID_notequal)
-        assume_rec(cond.op0(), ID_equal, cond.op1());
+      if(rel.id() == ID_lt)
+        assume_rec(rel.op0(), ID_ge, rel.op1());
+      else if(rel.id() == ID_le)
+        assume_rec(rel.op0(), ID_gt, rel.op1());
+      else if(rel.id() == ID_gt)
+        assume_rec(rel.op0(), ID_le, rel.op1());
+      else if(rel.id() == ID_ge)
+        assume_rec(rel.op0(), ID_lt, rel.op1());
+      else if(rel.id() == ID_equal)
+        assume_rec(rel.op0(), ID_notequal, rel.op1());
+      else if(rel.id() == ID_notequal)
+        assume_rec(rel.op0(), ID_equal, rel.op1());
     }
     else
-      assume_rec(cond.op0(), cond.id(), cond.op1());
+      assume_rec(rel.op0(), rel.id(), rel.op1());
   }
   else if(cond.id()==ID_not)
   {
@@ -393,68 +401,119 @@ void interval_domaint::assume_rec(const exprt &cond, bool negation)
   }
 }
 
-/*******************************************************************\
-
-Function: interval_domaint::make_expression
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 exprt interval_domaint::make_expression(const symbol_exprt &src) const
 {
   if(is_int(src.type()))
   {
     int_mapt::const_iterator i_it=int_map.find(src.get_identifier());
-    if(i_it==int_map.end()) return true_exprt();
+    if(i_it==int_map.end())
+      return true_exprt();
+
     const integer_intervalt &interval=i_it->second;
-    if(interval.is_top()) return true_exprt();
-    if(interval.is_bottom()) return false_exprt();
+    if(interval.is_top())
+      return true_exprt();
+    if(interval.is_bottom())
+      return false_exprt();
 
     exprt::operandst conjuncts;
 
-    if(interval.upper_set) 
+    if(interval.upper_set)
     {
       exprt tmp=from_integer(interval.upper, src.type());
       conjuncts.push_back(binary_relation_exprt(src, ID_le, tmp));
     }
 
-    if(interval.lower_set) 
+    if(interval.lower_set)
     {
       exprt tmp=from_integer(interval.lower, src.type());
       conjuncts.push_back(binary_relation_exprt(tmp, ID_le, src));
     }
-  
+
     return conjunction(conjuncts);
   }
   else if(is_float(src.type()))
   {
     float_mapt::const_iterator i_it=float_map.find(src.get_identifier());
-    if(i_it==float_map.end()) return true_exprt();
+    if(i_it==float_map.end())
+      return true_exprt();
+
     const ieee_float_intervalt &interval=i_it->second;
-    if(interval.is_top()) return true_exprt();
-    if(interval.is_bottom()) return false_exprt();
+    if(interval.is_top())
+      return true_exprt();
+    if(interval.is_bottom())
+      return false_exprt();
 
     exprt::operandst conjuncts;
 
-    if(interval.upper_set) 
+    if(interval.upper_set)
     {
       exprt tmp=interval.upper.to_expr();
       conjuncts.push_back(binary_relation_exprt(src, ID_le, tmp));
     }
 
-    if(interval.lower_set) 
+    if(interval.lower_set)
     {
       exprt tmp=interval.lower.to_expr();
       conjuncts.push_back(binary_relation_exprt(tmp, ID_le, src));
     }
-  
+
     return conjunction(conjuncts);
   }
   else
     return true_exprt();
+}
+
+/// Uses the abstract state to simplify a given expression using context-
+/// specific information.
+/// \par parameters: The expression to simplify.
+/// \return A simplified version of the expression.
+/*
+ * This implementation is aimed at reducing assertions to true, particularly
+ * range checks for arrays and other bounds checks.
+ *
+ * Rather than work with the various kinds of exprt directly, we use assume,
+ * join and is_bottom.  It is sufficient for the use case and avoids duplicating
+ * functionality that is in assume anyway.
+ *
+ * As some expressions (1<=a && a<=2) can be represented exactly as intervals
+ * and some can't (a<1 || a>2), the way these operations are used varies
+ * depending on the structure of the expression to try to give the best results.
+ * For example negating a disjunction makes it easier for assume to handle.
+ */
+
+bool interval_domaint::ai_simplify(
+  exprt &condition,
+  const namespacet &ns) const
+{
+  bool unchanged=true;
+  interval_domaint d(*this);
+
+  // merge intervals to properly handle conjunction
+  if(condition.id()==ID_and)              // May be directly representable
+  {
+    interval_domaint a;
+    a.make_top();                         // a is everything
+    a.assume(condition, ns);              // Restrict a to an over-approximation
+                                          //  of when condition is true
+    if(!a.join(d))                        // If d (this) is included in a...
+    {                                     // Then the condition is always true
+      unchanged=condition.is_true();
+      condition = true_exprt();
+    }
+  }
+  else if(condition.id()==ID_symbol)
+  {
+    // TODO: we have to handle symbol expression
+  }
+  else                                    // Less likely to be representable
+  {
+    d.assume(not_exprt(condition), ns);   // Restrict to when condition is false
+    if(d.is_bottom())                     // If there there are none...
+    {                                     // Then the condition is always true
+      unchanged=condition.is_true();
+      condition = true_exprt();
+    }
+  }
+
+  return unchanged;
 }

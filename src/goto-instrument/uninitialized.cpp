@@ -8,31 +8,28 @@ Date: January 2010
 
 \*******************************************************************/
 
+/// \file
+/// Detection for Uninitialized Local Variables
+
+#include "uninitialized.h"
+
 #include <util/std_code.h>
-#include <util/std_expr.h>
 #include <util/symbol_table.h>
 
 #include <analyses/uninitialized_domain.h>
 
-/*******************************************************************\
-
-   Class: uninitializedt
-
- Purpose: 
-
-\*******************************************************************/
-
 class uninitializedt
 {
 public:
-  uninitializedt(symbol_tablet &_symbol_table):
+  explicit uninitializedt(symbol_tablet &_symbol_table):
     symbol_table(_symbol_table),
-    ns(_symbol_table),
-    uninitialized_analysis(ns)
+    ns(_symbol_table)
   {
   }
 
-  void add_assertions(goto_programt &goto_program);
+  void add_assertions(
+    const irep_idt &function_identifer,
+    goto_programt &goto_program);
 
 protected:
   symbol_tablet &symbol_table;
@@ -42,65 +39,43 @@ protected:
   // The variables that need tracking,
   // i.e., are uninitialized and may be read?
   std::set<irep_idt> tracking;
-  
+
   void get_tracking(goto_programt::const_targett i_it);
 };
 
-/*******************************************************************\
-
-Function: uninitializedt::get_tracking
-
-  Inputs:
-
- Outputs:
-
- Purpose: which variables need tracking,
-          i.e., are uninitialized and may be read?
-
-\*******************************************************************/
-
+/// which variables need tracking, i.e., are uninitialized and may be read?
 void uninitializedt::get_tracking(goto_programt::const_targett i_it)
 {
   std::list<exprt> objects=objects_read(*i_it);
 
-  forall_expr_list(o_it, objects)
+  for(const auto &object : objects)
   {
-    if(o_it->id()==ID_symbol)
+    if(object.id() == ID_symbol)
     {
-      const irep_idt &identifier=to_symbol_expr(*o_it).get_identifier();
+      const irep_idt &identifier = to_symbol_expr(object).get_identifier();
       const std::set<irep_idt> &uninitialized=
         uninitialized_analysis[i_it].uninitialized;
       if(uninitialized.find(identifier)!=uninitialized.end())
         tracking.insert(identifier);
     }
-    else if(o_it->id()==ID_dereference)
+    else if(object.id() == ID_dereference)
     {
     }
   }
 }
 
-/*******************************************************************\
-
-Function: uninitializedt::add_assertions
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void uninitializedt::add_assertions(goto_programt &goto_program)
+void uninitializedt::add_assertions(
+  const irep_idt &function_identifier,
+  goto_programt &goto_program)
 {
-  uninitialized_analysis(goto_program);
-  
+  uninitialized_analysis(function_identifier, goto_program, ns);
+
   // find out which variables need tracking
 
   tracking.clear();
   forall_goto_program_instructions(i_it, goto_program)
     get_tracking(i_it);
-    
+
   // add tracking symbols to symbol table
   for(std::set<irep_idt>::const_iterator
       it=tracking.begin();
@@ -120,8 +95,8 @@ void uninitializedt::add_assertions(goto_programt &goto_program)
     new_symbol.is_static_lifetime=false;
     new_symbol.is_file_local=true;
     new_symbol.is_lvalue=true;
-    
-    symbol_table.move(new_symbol);
+
+    symbol_table.insert(std::move(new_symbol));
   }
 
   Forall_goto_program_instructions(i_it, goto_program)
@@ -133,28 +108,24 @@ void uninitializedt::add_assertions(goto_programt &goto_program)
       // if we track it, add declaration and assignment
       // for tracking variable!
 
-      const irep_idt &identifier=
-        to_code_decl(instruction.code).get_identifier();
+      const irep_idt &identifier = instruction.decl_symbol().get_identifier();
 
       if(tracking.find(identifier)!=tracking.end())
       {
-        goto_programt::targett i1=goto_program.insert_after(i_it);
-        goto_programt::targett i2=goto_program.insert_after(i1);
-        i_it++, i_it++;
-        
         const irep_idt new_identifier=
           id2string(identifier)+"#initialized";
 
-        symbol_exprt symbol_expr;
-        symbol_expr.set_identifier(new_identifier);
-        symbol_expr.type()=bool_typet();
-        i1->type=DECL;
-        i1->source_location=instruction.source_location;
-        i1->code=code_declt(symbol_expr);
+        symbol_exprt symbol_expr(new_identifier, bool_typet());
+        goto_programt::instructiont i1 =
+          goto_programt::make_decl(symbol_expr, instruction.source_location());
 
-        i2->type=ASSIGN;
-        i2->source_location=instruction.source_location;
-        i2->code=code_assignt(symbol_expr, false_exprt());        
+        goto_programt::instructiont i2 = goto_programt::make_assignment(
+          symbol_expr, false_exprt(), instruction.source_location());
+
+        goto_programt::targett i1_it =
+          goto_program.insert_after(i_it, std::move(i1));
+        goto_program.insert_after(i1_it, std::move(i2));
+        i_it++, i_it++;
       }
     }
     else
@@ -163,33 +134,33 @@ void uninitializedt::add_assertions(goto_programt &goto_program)
       std::list<exprt> written=objects_written(instruction);
 
       // if(instruction.is_function_call())
-      //const code_function_callt &code_function_call=
+      // const code_function_callt &code_function_call=
       //  to_code_function_call(instruction.code);
 
-      assert(uninitialized_analysis.has_location(i_it));
       const std::set<irep_idt> &uninitialized=
         uninitialized_analysis[i_it].uninitialized;
 
       // check tracking variables
-      forall_expr_list(it, read)
+      for(const auto &object : read)
       {
-        if(it->id()==ID_symbol)
+        if(object.id() == ID_symbol)
         {
-          const irep_idt &identifier=to_symbol_expr(*it).get_identifier();
+          const irep_idt &identifier = to_symbol_expr(object).get_identifier();
 
           if(uninitialized.find(identifier)!=uninitialized.end())
           {
             assert(tracking.find(identifier)!=tracking.end());
             const irep_idt new_identifier=id2string(identifier)+"#initialized";
-          
+
             // insert assertion
-            goto_programt::instructiont assertion;
-            assertion.type=ASSERT;
-            assertion.guard=symbol_exprt(new_identifier, bool_typet());
-            assertion.source_location=instruction.source_location;
-            assertion.source_location.set_comment("use of uninitialized local variable");
-            assertion.source_location.set_property_class("uninitialized local");
-            
+            source_locationt annotated_location = instruction.source_location();
+            annotated_location.set_comment(
+              "use of uninitialized local variable " + id2string(identifier));
+            annotated_location.set_property_class("uninitialized local");
+            goto_programt::instructiont assertion =
+              goto_programt::make_assertion(
+                symbol_exprt(new_identifier, bool_typet()), annotated_location);
+
             goto_program.insert_before_swap(i_it, assertion);
             i_it++;
           }
@@ -197,86 +168,58 @@ void uninitializedt::add_assertions(goto_programt &goto_program)
       }
 
       // set tracking variables
-      forall_expr_list(it, written)
+      for(const auto &object : written)
       {
-        if(it->id()==ID_symbol)
+        if(object.id() == ID_symbol)
         {
-          const irep_idt &identifier=to_symbol_expr(*it).get_identifier();
+          const irep_idt &identifier = to_symbol_expr(object).get_identifier();
 
           if(tracking.find(identifier)!=tracking.end())
           {
             const irep_idt new_identifier=id2string(identifier)+"#initialized";
-          
-            goto_programt::instructiont assignment;
-            assignment.type=ASSIGN;
-            assignment.code=code_assignt(
-              symbol_exprt(new_identifier, bool_typet()), true_exprt());
-            assignment.source_location=instruction.source_location;
-            
+
+            goto_programt::instructiont assignment =
+              goto_programt::make_assignment(
+                symbol_exprt(new_identifier, bool_typet()),
+                true_exprt(),
+                instruction.source_location());
+
             goto_program.insert_before_swap(i_it, assignment);
             i_it++;
           }
         }
       }
     }
-  }  
-}
-
-/*******************************************************************\
-
-Function: add_uninitialized_locals_assertions
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void add_uninitialized_locals_assertions(
-  symbol_tablet &symbol_table,
-  goto_functionst &goto_functions)
-{
-  Forall_goto_functions(f_it, goto_functions)
-  {
-    uninitializedt uninitialized(symbol_table);
-
-    uninitialized.add_assertions(f_it->second.body);
   }
 }
 
-/*******************************************************************\
+void add_uninitialized_locals_assertions(goto_modelt &goto_model)
+{
+  for(auto &gf_entry : goto_model.goto_functions.function_map)
+  {
+    uninitializedt uninitialized(goto_model.symbol_table);
 
-Function: show_uninitialized
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+    uninitialized.add_assertions(gf_entry.first, gf_entry.second.body);
+  }
+}
 
 void show_uninitialized(
-  class symbol_tablet &symbol_table,
-  const goto_functionst &goto_functions,
+  const goto_modelt &goto_model,
   std::ostream &out)
 {
-  const namespacet ns(symbol_table);
+  const namespacet ns(goto_model.symbol_table);
 
-  forall_goto_functions(f_it, goto_functions)
+  for(const auto &gf_entry : goto_model.goto_functions.function_map)
   {
-    if(f_it->second.body_available)
+    if(gf_entry.second.body_available())
     {
-      out << "////" << std::endl;
-      out << "//// Function: " << f_it->first << std::endl;
-      out << "////" << std::endl;
-      out << std::endl;
-      uninitialized_analysist uninitialized_analysis(ns);
-      uninitialized_analysis(f_it->second.body);
-      uninitialized_analysis.output(f_it->second.body, out);
+      out << "////\n";
+      out << "//// Function: " << gf_entry.first << '\n';
+      out << "////\n\n";
+      uninitialized_analysist uninitialized_analysis;
+      uninitialized_analysis(gf_entry.first, gf_entry.second.body, ns);
+      uninitialized_analysis.output(
+        ns, gf_entry.first, gf_entry.second.body, out);
     }
   }
-
 }

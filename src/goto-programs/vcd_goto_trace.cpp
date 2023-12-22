@@ -8,34 +8,25 @@ Date: June 2011
 
 \*******************************************************************/
 
-#include <ctime>
-#include <ostream>
-#include <cassert>
-
-#include <util/arith_tools.h>
-#include <util/pointer_offset_size.h>
-#include <util/numbering.h>
+/// \file
+/// Traces of GOTO Programs in VCD (Value Change Dump) Format
 
 #include "vcd_goto_trace.h"
 
-/*******************************************************************\
+#include <ctime>
 
-Function: output_vcd
+#include <util/arith_tools.h>
+#include <util/numbering.h>
+#include <util/pointer_offset_size.h>
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "goto_trace.h"
 
 std::string as_vcd_binary(
   const exprt &expr,
   const namespacet &ns)
 {
-  const typet &type=ns.follow(expr.type());
-  
+  const typet &type = expr.type();
+
   if(expr.id()==ID_constant)
   {
     if(type.id()==ID_unsignedbv ||
@@ -52,7 +43,7 @@ std::string as_vcd_binary(
 
     forall_operands(it, expr)
       result+=as_vcd_binary(*it, ns);
-    
+
     return result;
   }
   else if(expr.id()==ID_struct)
@@ -61,53 +52,23 @@ std::string as_vcd_binary(
 
     forall_operands(it, expr)
       result+=as_vcd_binary(*it, ns);
-    
+
     return result;
   }
   else if(expr.id()==ID_union)
-  { 
-    assert(expr.operands().size()==1);
-    return as_vcd_binary(expr.op0(), ns);
+  {
+    return as_vcd_binary(to_union_expr(expr).op(), ns);
   }
-  
+
   // build "xxx"
 
-  mp_integer width;
+  const auto width = pointer_offset_bits(type, ns);
 
-  if(type.id()==ID_unsignedbv ||
-     type.id()==ID_signedbv ||
-     type.id()==ID_floatbv ||
-     type.id()==ID_fixedbv ||
-     type.id()==ID_pointer ||
-     type.id()==ID_bv)
-    width=string2integer(type.get_string(ID_width));
+  if(width.has_value())
+    return std::string(numeric_cast_v<std::size_t>(*width), 'x');
   else
-    width=pointer_offset_size(ns, type)*8;
-
-  if(width>=0)
-  {
-    std::string result;
-
-    for(; width!=0; --width)
-      result+='x';
-
-    return result;
-  }
-  
-  return "";
+    return "";
 }
-
-/*******************************************************************\
-
-Function: output_vcd
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void output_vcd(
   const namespacet &ns,
@@ -117,89 +78,78 @@ void output_vcd(
   time_t t;
   time(&t);
   out << "$date\n  " << ctime(&t) << "$end" << "\n";
-  
+
   // this is pretty arbitrary
   out << "$timescale 1 ns $end" << "\n";
 
   // we first collect all variables that are assigned
-  
-  numbering<irep_idt> n;
 
-  for(goto_tracet::stepst::const_iterator
-      it=goto_trace.steps.begin();
-      it!=goto_trace.steps.end();
-      it++)
+  numberingt<irep_idt> n;
+
+  for(const auto &step : goto_trace.steps)
   {
-    if(it->is_assignment())
+    if(step.is_assignment())
     {
-      irep_idt identifier=it->lhs_object.get_identifier();
-      const typet &type=it->lhs_object.type();
-        
-      unsigned number=n.number(identifier);
+      auto lhs_object=step.get_lhs_object();
+      if(lhs_object.has_value())
+      {
+        irep_idt identifier=lhs_object->get_identifier();
+        const typet &type=lhs_object->type();
 
-      mp_integer width;
+        const auto number=n.number(identifier);
 
-      if(type.id()==ID_bool)
-        width=1;
-      else if(type.id()==ID_unsignedbv ||
-              type.id()==ID_signedbv ||
-              type.id()==ID_floatbv ||
-              type.id()==ID_fixedbv ||
-              type.id()==ID_pointer ||
-              type.id()==ID_bv)
-        width=string2integer(type.get_string(ID_width));
-      else
-        width=pointer_offset_size(ns, type)*8;
-        
-      if(width>=1)
-        out << "$var reg " << width << " V" << number << " "
-            << identifier << " $end" << "\n";
+        const auto width = pointer_offset_bits(type, ns);
+
+        if(width.has_value() && (*width) >= 1)
+          out << "$var reg " << (*width) << " V" << number << " " << identifier
+              << " $end"
+              << "\n";
+      }
     }
-  }  
+  }
 
   // end of header
   out << "$enddefinitions $end" << "\n";
 
   unsigned timestamp=0;
 
-  for(goto_tracet::stepst::const_iterator
-      it=goto_trace.steps.begin();
-      it!=goto_trace.steps.end();
-      it++)
+  for(const auto &step : goto_trace.steps)
   {
-    switch(it->type)
+    if(step.is_assignment())
     {
-    case goto_trace_stept::ASSIGNMENT:
+      auto lhs_object = step.get_lhs_object();
+      if(lhs_object.has_value())
       {
-        irep_idt identifier=it->lhs_object.get_identifier();
-        const typet &type=it->lhs_object.type();
+        irep_idt identifier = lhs_object->get_identifier();
+        const typet &type = lhs_object->type();
 
         out << '#' << timestamp << "\n";
         timestamp++;
 
-        unsigned number=n.number(identifier);
-        
+        const auto number = n.number(identifier);
+
         // booleans are special in VCD
-        if(type.id()==ID_bool)
+        if(type.id() == ID_bool)
         {
-          if(it->lhs_object_value.is_true())
-            out << "1" << "V" << number << "\n";
-          else if(it->lhs_object_value.is_false())
-            out << "0" << "V" << number << "\n";
+          if(step.full_lhs_value.is_true())
+            out << "1"
+                << "V" << number << "\n";
+          else if(step.full_lhs_value.is_false())
+            out << "0"
+                << "V" << number << "\n";
           else
-            out << "x" << "V" << number << "\n";
+            out << "x"
+                << "V" << number << "\n";
         }
         else
         {
-          std::string binary=as_vcd_binary(it->lhs_object_value, ns);
+          std::string binary = as_vcd_binary(step.full_lhs_value, ns);
 
-          if(binary!="")
-            out << "b" << binary << " V" << number << " " << "\n";
+          if(!binary.empty())
+            out << "b" << binary << " V" << number << " "
+                << "\n";
         }
       }
-      break;
-      
-    default:;
     }
   }
 }

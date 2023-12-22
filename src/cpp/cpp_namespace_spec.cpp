@@ -6,24 +6,14 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <ostream>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_namespace_spec.h"
-#include "cpp_item.h"
 
-/*******************************************************************\
-
-Function: cpp_namespace_spect::output
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <ostream>
 
 void cpp_namespace_spect::output(std::ostream &out) const
 {
-  out << "  namespace: " << get_namespace() << "\n";
+  out << "  namespace: " << get_namespace() << '\n';
 }

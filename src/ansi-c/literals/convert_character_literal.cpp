@@ -6,51 +6,41 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
+/// \file
+/// C Language Conversion
 
-#include <util/arith_tools.h>
-#include <util/i2string.h>
-#include <util/std_expr.h>
-
-#include "../c_types.h"
-
-#include "unescape_string.h"
 #include "convert_character_literal.h"
 
-/*******************************************************************\
+#include <climits>
 
-Function: convert_character_literal
+#include <util/arith_tools.h>
+#include <util/c_types.h>
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "unescape_string.h"
 
 exprt convert_character_literal(
   const std::string &src,
-  bool force_integer_type)
+  bool force_integer_type,
+  const source_locationt &source_location)
 {
   assert(src.size()>=2);
-  
+
   exprt result;
 
   if(src[0]=='L' || src[0]=='u' || src[0]=='U')
   {
     assert(src[1]=='\'');
     assert(src[src.size()-1]=='\'');
-  
-    std::basic_string<unsigned int> value;
-    unescape_wide_string(std::string(src, 2, src.size()-3), value);
-    
+
+    std::basic_string<unsigned int> value=
+      unescape_wide_string(std::string(src, 2, src.size()-3));
+    // the parser rejects empty character constants
+    CHECK_RETURN(!value.empty());
+
     // L is wchar_t, u is char16_t, U is char32_t
     typet type=wchar_t_type();
-    
-    if(value.size()==0)
-      throw "empty wide character literal";
-    else if(value.size()==1)
+
+    if(value.size() == 1)
     {
       result=from_integer(value[0], type);
     }
@@ -63,7 +53,7 @@ exprt convert_character_literal(
       for(unsigned i=0; i<value.size(); i++)
       {
         mp_integer z=(unsigned char)(value[i]);
-        z=z<<((value.size()-i-1)*8);
+        z = z << ((value.size() - i - 1) * CHAR_BIT);
         x+=z;
       }
 
@@ -71,20 +61,22 @@ exprt convert_character_literal(
       result=from_integer(x, type);
     }
     else
-      throw "wide literals with "+i2string(value.size())+
-            " characters are not supported";
+      throw invalid_source_file_exceptiont{
+        "wide literals with " + std::to_string(value.size()) +
+          " characters are not supported",
+        source_location};
   }
   else
   {
     assert(src[0]=='\'');
     assert(src[src.size()-1]=='\'');
 
-    std::string value;
-    unescape_string(std::string(src, 1, src.size()-2), value);
+    std::string value=
+      unescape_string(std::string(src, 1, src.size()-2));
+    // the parser rejects empty character constants
+    CHECK_RETURN(!value.empty());
 
-    if(value.size()==0)
-      throw "empty character literal";
-    else if(value.size()==1)
+    if(value.size() == 1)
     {
       typet type=force_integer_type?signed_int_type():char_type();
       result=from_integer(value[0], type);
@@ -96,7 +88,7 @@ exprt convert_character_literal(
       for(unsigned i=0; i<value.size(); i++)
       {
         mp_integer z=(unsigned char)(value[i]);
-        z=z<<((value.size()-i-1)*8);
+        z = z << ((value.size() - i - 1) * CHAR_BIT);
         x+=z;
       }
 
@@ -104,9 +96,12 @@ exprt convert_character_literal(
       result=from_integer(x, signed_int_type());
     }
     else
-      throw "literals with "+i2string(value.size())+
-            " characters are not supported";
+      throw invalid_source_file_exceptiont{
+        "literals with " + std::to_string(value.size()) +
+          " characters are not supported",
+        source_location};
   }
-  
+
+  result.add_source_location() = source_location;
   return result;
 }

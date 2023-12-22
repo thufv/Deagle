@@ -6,8 +6,11 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_USING_H
-#define CPROVER_CPP_USING_H
+/// \file
+/// C++ Language Type Checking
+
+#ifndef CPROVER_CPP_CPP_USING_H
+#define CPROVER_CPP_CPP_USING_H
 
 #include "cpp_name.h"
 
@@ -17,17 +20,17 @@ public:
   cpp_usingt():irept(ID_cpp_using)
   {
   }
-  
+
   cpp_namet &name()
   {
     return (cpp_namet &)add(ID_name);
   }
 
-  const cpp_namet &name() const 
+  const cpp_namet &name() const
   {
     return (cpp_namet &)find(ID_name);
   }
-  
+
   bool get_namespace() const
   {
     return get_bool(ID_namespace);
@@ -39,4 +42,4 @@ public:
   }
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_USING_H

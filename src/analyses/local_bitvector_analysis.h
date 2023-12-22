@@ -6,44 +6,40 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_LOCAL_BITVECTOR_ANALYSIS_H
-#define CPROVER_LOCAL_BITVECTOR_ANALYSIS_H
+/// \file
+/// Field-insensitive, location-sensitive bitvector analysis
 
-#include <stack>
+#ifndef CPROVER_ANALYSES_LOCAL_BITVECTOR_ANALYSIS_H
+#define CPROVER_ANALYSES_LOCAL_BITVECTOR_ANALYSIS_H
 
 #include <util/expanding_vector.h>
+#include <util/numbering.h>
 
 #include "locals.h"
 #include "dirty.h"
 #include "local_cfg.h"
 
-/*******************************************************************\
-
-   Class: local_may_aliast
-   
- Purpose:
-
-\*******************************************************************/
-
 class local_bitvector_analysist
 {
 public:
   typedef goto_functionst::goto_functiont goto_functiont;
-  
-  explicit local_bitvector_analysist(
-    const goto_functiont &_goto_function):
-    dirty(_goto_function),
-    locals(_goto_function),
-    cfg(_goto_function.body)
+
+  local_bitvector_analysist(
+    const goto_functiont &_goto_function,
+    const namespacet &ns)
+    : dirty(_goto_function),
+      locals(_goto_function),
+      cfg(_goto_function.body),
+      ns(ns)
   {
-    build(_goto_function);
+    build();
   }
 
   void output(
     std::ostream &out,
     const goto_functiont &goto_function,
     const namespacet &ns) const;
-  
+
   dirtyt dirty;
   localst locals;
   local_cfgt cfg;
@@ -51,17 +47,17 @@ public:
   // categories of things one can point to
   struct flagst
   {
-    inline flagst():bits(0)
+    flagst():bits(0)
     {
     }
-    
+
     void clear()
     {
       bits=0;
     }
 
     // the bits for the "bitvector analysis"
-    typedef enum
+    enum bitst
     {
       B_unknown=1<<0,
       B_uninitialized=1<<1,
@@ -71,155 +67,149 @@ public:
       B_null=1<<5,
       B_static_lifetime=1<<6,
       B_integer_address=1<<7
-    } bitst;
+    };
 
-    explicit inline flagst(const bitst _bits):bits(_bits)
+    explicit flagst(const bitst _bits):bits(_bits)
     {
     }
-      
+
     unsigned bits;
-    
-    inline bool merge(const flagst &other)
+
+    bool merge(const flagst &other)
     {
       unsigned old=bits;
       bits|=other.bits; // bit-wise or
       return old!=bits;
     }
-    
-    inline static flagst mk_unknown()
+
+    static flagst mk_unknown()
     {
       return flagst(B_unknown);
     }
 
-    inline bool is_unknown() const
+    bool is_unknown() const
     {
       return (bits&B_unknown)!=0;
     }
 
-    inline static flagst mk_uninitialized()
+    static flagst mk_uninitialized()
     {
       return flagst(B_uninitialized);
     }
 
-    inline bool is_uninitialized() const
+    bool is_uninitialized() const
     {
       return (bits&B_uninitialized)!=0;
     }
 
-    inline static flagst mk_uses_offset()
+    static flagst mk_uses_offset()
     {
       return flagst(B_uses_offset);
     }
 
-    inline bool is_uses_offset() const
+    bool is_uses_offset() const
     {
       return (bits&B_uses_offset)!=0;
     }
 
-    inline static flagst mk_dynamic_local()
+    static flagst mk_dynamic_local()
     {
       return flagst(B_dynamic_local);
     }
 
-    inline bool is_dynamic_local() const
+    bool is_dynamic_local() const
     {
       return (bits&B_dynamic_local)!=0;
     }
 
-    inline static flagst mk_dynamic_heap()
+    static flagst mk_dynamic_heap()
     {
       return flagst(B_dynamic_heap);
     }
 
-    inline bool is_dynamic_heap() const
+    bool is_dynamic_heap() const
     {
       return (bits&B_dynamic_heap)!=0;
     }
 
-    inline static flagst mk_null()
+    static flagst mk_null()
     {
       return flagst(B_null);
     }
 
-    inline bool is_null() const
+    bool is_null() const
     {
       return (bits&B_null)!=0;
     }
 
-    inline static flagst mk_static_lifetime()
+    static flagst mk_static_lifetime()
     {
       return flagst(B_static_lifetime);
     }
 
-    inline bool is_static_lifetime() const
+    bool is_static_lifetime() const
     {
       return (bits&B_static_lifetime)!=0;
     }
 
-    inline static flagst mk_integer_address()
+    static flagst mk_integer_address()
     {
       return flagst(B_integer_address);
     }
 
-    inline bool is_integer_address() const
+    bool is_integer_address() const
     {
       return (bits&B_integer_address)!=0;
     }
 
     void print(std::ostream &) const;
-  };
 
-  friend std::ostream & operator << (std::ostream &out, const flagst f)
-  {
-    f.print(out);
-    return out;
-  }
-  
-  inline friend flagst operator|(const flagst f1, const flagst f2)
-  {
-    flagst result=f1;
-    result.bits|=f2.bits;
-    return result;
-  }
+    flagst operator|(const flagst other) const
+    {
+      flagst result(*this);
+      result.bits|=other.bits;
+      return result;
+    }
+  };
 
   flagst get(
     const goto_programt::const_targett t,
     const exprt &src);
-  
+
 protected:
-  void build(const goto_functiont &goto_function);
+  const namespacet &ns;
+  void build();
 
-  typedef std::stack<unsigned> work_queuet;
+  numberingt<irep_idt> pointers;
 
-  numbering<irep_idt> pointers;
-  
   // pointers -> flagst
   // This is a vector, so it's fast.
-  typedef expanding_vector<flagst> points_tot;
+  typedef expanding_vectort<flagst> points_tot;
 
-  // the information tracked per program location  
-  class loc_infot
-  {
-  public:
-    points_tot points_to;
-    
-    bool merge(const loc_infot &src);
-  };
+  static bool merge(points_tot &a, points_tot &b);
 
-  typedef std::vector<loc_infot> loc_infost;
+  typedef std::vector<points_tot> loc_infost;
   loc_infost loc_infos;
-  
+
   void assign_lhs(
     const exprt &lhs,
     const exprt &rhs,
-    const loc_infot &loc_info_src,
-    loc_infot &loc_info_dest);
-    
+    points_tot &loc_info_src,
+    points_tot &loc_info_dest);
+
   flagst get_rec(
     const exprt &rhs,
-    const loc_infot &loc_info_src);
-    
+    points_tot &loc_info_src);
+
   bool is_tracked(const irep_idt &identifier);
 };
 
-#endif
+inline std::ostream &operator<<(
+  std::ostream &out,
+  const local_bitvector_analysist::flagst &flags)
+{
+  flags.print(out);
+  return out;
+}
+
+#endif // CPROVER_ANALYSES_LOCAL_BITVECTOR_ANALYSIS_H

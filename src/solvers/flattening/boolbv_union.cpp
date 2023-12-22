@@ -6,42 +6,36 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <util/arith_tools.h>
-
 #include "boolbv.h"
 
-/*******************************************************************\
-
-Function: boolbvt::convert_union
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_union(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_union(const union_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
+  std::size_t width=boolbv_width(expr.type());
 
-  if(width==0)
-    return conversion_failed(expr, bv);
+  const bvt &op_bv=convert_bv(expr.op());
 
-  if(expr.operands().size()!=1)
-    throw "union expects one argument";
-  const bvt &op_bv=convert_bv(expr.op0());
+  INVARIANT(
+    op_bv.size() <= width,
+    "operand bitvector width shall not be larger than the width indicated by "
+    "the union type");
 
-  if(width<op_bv.size())
-    throw "union: unexpected operand op width";
-
+  bvt bv;
   bv.resize(width);
-  
-  for(unsigned i=0; i<op_bv.size(); i++)
-    bv[i]=op_bv[i];
+
+  endianness_mapt map_u = endianness_map(expr.type());
+  endianness_mapt map_op = endianness_map(expr.op().type());
+
+  for(std::size_t i = 0; i < op_bv.size(); i++)
+    bv[map_u.map_bit(i)] = op_bv[map_op.map_bit(i)];
 
   // pad with nondets
-  for(unsigned i=op_bv.size(); i<bv.size(); i++)
-    bv[i]=prop.new_variable();
+  for(std::size_t i = op_bv.size(); i < bv.size(); i++)
+    bv[map_u.map_bit(i)] = prop.new_variable();
+
+  return bv;
+}
+
+bvt boolbvt::convert_empty_union(const empty_union_exprt &expr)
+{
+  return {};
 }

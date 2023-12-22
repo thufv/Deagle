@@ -103,6 +103,10 @@ Solver::~Solver()
 {
 }
 
+//Virtual methods:
+void Solver::addOC(std::string from, std::string to, std::string type, Lit related_lit) {}
+void Solver::addGuard(std::string node, Lit guard) {}
+
 
 //=================================================================================================
 // Minor methods:

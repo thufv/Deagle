@@ -7,6 +7,8 @@ ifeq ($(uname),windows32)
   BUILD_ENV_ := MSVC
 else ifeq ($(uname),Darwin)
   BUILD_ENV_ := OSX
+else ifeq ($(uname),FreeBSD)
+  BUILD_ENV_ := FreeBSD
 else ifeq ($(filter-out MINGW32_%, $(uname)),)
   BUILD_ENV_ := MinGW
 else ifeq ($(filter-out CYGWIN_%, $(uname)),)
@@ -18,54 +20,77 @@ else
   BUILD_ENV_ := $(BUILD_ENV)
 endif
 
-ifeq ($(filter-out Unix MinGW OSX OSX_Universal,$(BUILD_ENV_)),)
+ifeq ($(filter-out Unix MinGW OSX OSX_Universal FreeBSD,$(BUILD_ENV_)),)
   # Linux-ish
   LIBEXT = .a
   OBJEXT = .o
+  DEPEXT = .d
 ifeq ($(BUILD_ENV_),MinGW)
   EXEEXT = .exe
 else
   EXEEXT =
 endif
-  #CFLAGS ?= -Wall -g -Ddebug
   CFLAGS ?= -Wall -O2
-  CXXFLAGS ?= -Wall -O2
   CP_CFLAGS = -MMD -MP
+  CXXFLAGS ?= -Wall -O2
 ifeq ($(filter-out OSX OSX_Universal,$(BUILD_ENV_)),)
-  CP_CXXFLAGS = -MMD -MP -DSTL_HASH_TR1 -mmacosx-version-min=10.6
-  LINKFLAGS += -mmacosx-version-min=10.6
-  LINKNATIVE += -mmacosx-version-min=10.6
+  CP_CXXFLAGS += -MMD -MP -mmacosx-version-min=10.15 -std=c++11 -stdlib=libc++
+  CP_CFLAGS += -mmacosx-version-min=10.15
+  LINKFLAGS += -mmacosx-version-min=10.15 -stdlib=libc++
+  LINKNATIVE += -mmacosx-version-min=10.15 -stdlib=libc++
 else
-  CP_CXXFLAGS = -MMD -MP -DSTL_HASH_TR1
+  CP_CXXFLAGS += -MMD -MP -std=c++11
+endif
+ifeq ($(filter -O%,$(CXXFLAGS)),)
+  CP_CXXFLAGS += -O2
 endif
   #LINKFLAGS = -static
 ifeq ($(filter-out OSX OSX_Universal,$(BUILD_ENV_)),)
   ifeq ($(BUILD_ENV_),OSX_Universal)
     # MacOS Fat Binaries
-    CP_CXXFLAGS += -force_cpusubtype_ALL -arch i386 -arch x86_64
-    CP_CFLAGS += -force_cpusubtype_ALL -arch i386 -arch x86_64
-    LINKFLAGS += -force_cpusubtype_ALL -arch i386 -arch x86_64
+    CP_CXXFLAGS += -force_cpusubtype_ALL -arch arm64 -arch x86_64
+    CP_CFLAGS += -force_cpusubtype_ALL -arch arm64 -arch x86_64
+    LINKFLAGS += -force_cpusubtype_ALL -arch arm64 -arch x86_64
   endif
   LINKLIB = /usr/bin/libtool -static -o $@ $^
   LINKBIN = $(CXX) $(LINKFLAGS) -o $@ $^ $(LIBS)
   LINKNATIVE = $(HOSTCXX) -o $@ $^
+  ifeq ($(origin CC),default)
+    CC     = clang
+  endif
+  ifeq ($(origin CXX),default)
+    CXX    = clang++
+  endif
+  YFLAGS ?= -v
+else ifeq ($(filter-out FreeBSD,$(BUILD_ENV_)),)
+  CP_CXXFLAGS +=
+  LINKLIB = ar rcT $@ $^
+  LINKBIN = $(CXX) $(LINKFLAGS) -o $@ -Wl,--start-group $^ -Wl,--end-group $(LIBS)
+  LINKNATIVE = $(HOSTCXX) -o $@ $^
+  ifeq ($(origin CC),default)
+    CC     = clang
+  endif
+  ifeq ($(origin CXX),default)
+    CXX    = clang++
+  endif
+  YFLAGS ?= -v -Werror
 else
   LINKLIB = ar rcT $@ $^
   LINKBIN = $(CXX) $(LINKFLAGS) -o $@ -Wl,--start-group $^ -Wl,--end-group $(LIBS)
   LINKNATIVE = $(HOSTCXX) -o $@ $^
-endif
-ifeq ($(origin CC),default)
-  CC     = gcc
-  #CC     = icc
-endif
-ifeq ($(origin CXX),default)
-  CXX    = g++
-  #CXX    = icpc
+  ifeq ($(origin CC),default)
+    CC     = gcc
+    #CC     = icc
+  endif
+  ifeq ($(origin CXX),default)
+    CXX    = g++
+    #CXX    = icpc
+  endif
+  YFLAGS ?= -v -Werror
 endif
 ifeq ($(origin YACC),default)
-  YACC   = bison -y
+  YACC   = bison
 endif
-  YFLAGS ?= -v
 ifeq ($(origin LEX),default)
   LEX    = flex
 endif
@@ -75,27 +100,30 @@ else ifeq ($(BUILD_ENV_),Cygwin)
   # use these for Cygwin:
   LIBEXT = .a
   OBJEXT = .o
+  DEPEXT = .d
   EXEEXT = .exe
   CFLAGS ?= -Wall -O2
   CXXFLAGS ?= -Wall -O2
   CP_CFLAGS = -MMD -MP
-  CP_CXXFLAGS = -MMD -MP -DSTL_HASH_TR1
-  LINKFLAGS = -static
+  CP_CXXFLAGS += -MMD -MP -std=c++11 -U__STRICT_ANSI__
+  # Cygwin-g++ has problems with statically linking exception code.
+  # If linking fails, remove -static.
+  LINKFLAGS = -static -std=c++11
   LINKLIB = ar rcT $@ $^
   LINKBIN = $(CXX) $(LINKFLAGS) -o $@ -Wl,--start-group $^ -Wl,--end-group $(LIBS)
-  LINKNATIVE = $(HOSTCXX) -o $@ $^ -static
+  LINKNATIVE = $(HOSTCXX) -std=c++11 -o $@ $^ -static
 ifeq ($(origin CC),default)
   #CC = gcc
-  CC = i686-pc-mingw32-gcc
+  CC = x86_64-w64-mingw32-gcc
 endif
 ifeq ($(origin CXX),default)
   #CXX    = g++
-  CXX = i686-pc-mingw32-g++
+  CXX = x86_64-w64-mingw32-g++
 endif
 ifeq ($(origin YACC),default)
-  YACC   = bison -y
+  YACC   = bison -y -Wno-error=yacc
 endif
-  YFLAGS ?= -v
+  YFLAGS ?= -v -Werror
 ifeq ($(origin LEX),default)
   LEX    = flex
 endif
@@ -105,14 +133,15 @@ else ifeq ($(BUILD_ENV_),MSVC)
   # use these for Visual Studio:
   LIBEXT = .lib
   OBJEXT = .obj
+  DEPEXT = .dep
   EXEEXT = .exe
   CFLAGS ?= /W3 /O2 /GF
   CXXFLAGS ?= /W3 /D_CRT_SECURE_NO_WARNINGS /O2 /GF
   CP_CFLAGS =
-  CP_CXXFLAGS = -DSTL_HASH_TR1
+  CP_CXXFLAGS +=
   LINKLIB = lib /NOLOGO /OUT:$@ $^
-  LINKBIN = $(CXX) $(LINKFLAGS) /Fe$@ $^ $(LIBS)
-  LINKNATIVE = $(HOSTCXX) /Fe$@ $^
+  LINKBIN = $(CXX) $(LINKFLAGS) /Fe$@ /Z7 /nologo $^ DbgHelp.lib $(LIBS)
+  LINKNATIVE = $(HOSTCXX) /Fe$@ /nologo /EHsc $^
 ifeq ($(origin CC),default)
   CC = cl
 endif
@@ -120,11 +149,11 @@ ifeq ($(origin CXX),default)
   CXX = cl
 endif
 ifeq ($(origin YACC),default)
-  YACC   = bison -y
+  YACC   = win_bison -y -Wno-error=yacc
 endif
-  YFLAGS ?= -v
+  YFLAGS ?= -v -Werror
 ifeq ($(origin LEX),default)
-  LEX    = flex
+  LEX    = win_flex
 endif
 
 
@@ -132,18 +161,66 @@ else
   $(error Invalid setting for BUILD_ENV: $(BUILD_ENV_))
 endif
 
+ifneq ($(IPASIR),)
+  CP_CXXFLAGS += -DHAVE_IPASIR
+endif
+
+ifneq ($(PICOSAT),)
+  CP_CXXFLAGS += -DHAVE_PICOSAT
+endif
+
+ifneq ($(LINGELING),)
+  CP_CXXFLAGS += -DHAVE_LINGELING
+endif
+
+ifneq ($(CHAFF),)
+  CP_CXXFLAGS += -DHAVE_CHAFF
+endif
+
+ifneq ($(BOOLEFORCE),)
+  CP_CXXFLAGS += -DHAVE_BOOLEFORCE
+endif
+
+ifneq ($(MINISAT),)
+  CP_CXXFLAGS += -DHAVE_MINISAT
+endif
+
+ifneq ($(MINISAT2),)
+  CP_CXXFLAGS += -DHAVE_MINISAT2
+endif
+
+ifneq ($(GLUCOSE),)
+  CP_CXXFLAGS += -DHAVE_GLUCOSE
+endif
+
+ifneq ($(CADICAL),)
+  CP_CXXFLAGS += -DHAVE_CADICAL
+endif
+
+
+ifneq ($(CUDD),)
+  CP_CXXFLAGS += -DHAVE_CUDD
+ifeq ($(CPROVER_DIR),)
+  INCLUDES += -I $(CUDD) -I $(CUDD)/cudd
+else
+  INCLUDES += -I ../$(CPROVER_DIR)/src/solvers/$(CUDD)
+  INCLUDES += -I ../$(CPROVER_DIR)/src/solvers/$(CUDD)/cudd
+endif
+endif
+
 
 first_target: all
 
 HOSTCXX ?= $(CXX)
 
-CP_CFLAGS += $(CFLAGS) $(INCLUDES)
-CP_CXXFLAGS += $(CXXFLAGS) $(INCLUDES)
+CP_CFLAGS += $(CFLAGS) $(CP_EXTRA_CFLAGS) $(INCLUDES)
+CP_CXXFLAGS += $(CXXFLAGS) $(CP_EXTRA_CXXFLAGS) $(INCLUDES)
 
 OBJ += $(patsubst %.cpp, %$(OBJEXT), $(filter %.cpp, $(SRC)))
 OBJ += $(patsubst %.cc, %$(OBJEXT), $(filter %.cc, $(SRC)))
+OBJ += $(patsubst %.c, %$(OBJEXT), $(filter %.c, $(SRC)))
 
-.SUFFIXES:	.cc .d .cpp
+.SUFFIXES: .cc $(DEPEXT) .cpp
 
 %.o:%.cpp
 	$(CXX) -c $(CP_CXXFLAGS) -o $@ $<
@@ -166,9 +243,11 @@ OBJ += $(patsubst %.cc, %$(OBJEXT), $(filter %.cc, $(SRC)))
 
 clean:
 	$(RM) $(patsubst %.cpp, %$(OBJEXT), $(filter %.cpp, $(SRC))) \
-		$(patsubst %.cpp, %.d, $(filter %.cpp, $(SRC))) \
+		$(patsubst %.cpp, %$(DEPEXT), $(filter %.cpp, $(SRC))) \
 		$(patsubst %.cc, %$(OBJEXT), $(filter %.cc, $(SRC))) \
-		$(patsubst %.cc, %.d, $(filter %.cc, $(SRC))) \
+		$(patsubst %.cc, %$(DEPEXT), $(filter %.cc, $(SRC))) \
+		$(patsubst %.c, %$(OBJEXT), $(filter %.c, $(SRC))) \
+		$(patsubst %.c, %$(DEPEXT), $(filter %.c, $(SRC))) \
 		$(CLEANFILES)
 
 .PHONY: first_target clean all
@@ -185,8 +264,7 @@ sources: Makefile
 # include .depend
 # endif
 
-D_FILES1 = $(SRC:.c=.d)
-D_FILES = $(D_FILES1:.cpp=.d)
+D_FILES1 = $(SRC:.c=$(DEPEXT))
+D_FILES = $(D_FILES1:.cpp=$(DEPEXT))
 
 -include $(D_FILES)
-

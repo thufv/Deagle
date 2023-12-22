@@ -6,42 +6,26 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <iostream>
-
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/invariant.h>
 
-Function: boolbvt::convert_case
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_case(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_case(const exprt &expr)
 {
+  PRECONDITION(expr.id() == ID_case);
+
   const std::vector<exprt> &operands=expr.operands();
 
-  unsigned width=boolbv_width(expr.type());
-
-  if(width==0)
-    return conversion_failed(expr, bv);
-
-  bv.resize(width);
+  std::size_t width=boolbv_width(expr.type());
 
   // make it free variables
-  Forall_literals(it, bv)
-    *it=prop.new_variable();
+  bvt bv = prop.new_variables(width);
 
-  if(operands.size()<3)
-    throw "case takes at least three operands";
+  DATA_INVARIANT(
+    operands.size() >= 3, "case should have at least three operands");
 
-  if((operands.size()%2)!=1)
-    throw "number of case operands must be odd";
+  DATA_INVARIANT(
+    operands.size() % 2 == 1, "number of case operands should be odd");
 
   enum { FIRST, COMPARE, VALUE } what=FIRST;
   bvt compare_bv;
@@ -60,37 +44,26 @@ void boolbvt::convert_case(const exprt &expr, bvt &bv)
       break;
 
     case COMPARE:
-      if(compare_bv.size()!=op.size())
-      {
-        std::cerr << "compare operand: " << compare_bv.size()
-                  << std::endl
-                  << "operand: " << op.size() << std::endl
-                  << it->pretty()
-                  << std::endl;
-
-        throw "size of compare operand does not match";
-      }
+      DATA_INVARIANT(
+        compare_bv.size() == op.size(),
+        std::string("size of compare operand does not match:\n") +
+          "compare operand: " + std::to_string(compare_bv.size()) +
+          "\noperand: " + std::to_string(op.size()) + '\n' + it->pretty());
 
       compare_literal=bv_utils.equal(compare_bv, op);
-      compare_literal=prop.land(prop.lnot(previous_compare),
-                           compare_literal);
+      compare_literal=prop.land(!previous_compare, compare_literal);
 
       previous_compare=prop.lor(previous_compare, compare_literal);
 
       what=VALUE;
       break;
 
-    case VALUE: 
-      if(bv.size()!=op.size())
-      {
-        std::cerr << "result size: " << bv.size()
-                  << std::endl
-                  << "operand: " << op.size() << std::endl
-                  << it->pretty()
-                  << std::endl;
-
-        throw "size of value operand does not match";
-      }
+    case VALUE:
+      DATA_INVARIANT(
+        bv.size() == op.size(),
+        std::string("size of value operand does not match:\n") +
+          "result size: " + std::to_string(bv.size()) +
+          "\noperand: " + std::to_string(op.size()) + '\n' + it->pretty());
 
       {
         literalt value_literal=bv_utils.equal(bv, op);
@@ -103,8 +76,9 @@ void boolbvt::convert_case(const exprt &expr, bvt &bv)
       break;
 
     default:
-      assert(false);
+      UNREACHABLE;
     }
   }
-}
 
+  return bv;
+}

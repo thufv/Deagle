@@ -6,53 +6,36 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+
 #include "dimacs_cnf.h"
+
+#include <util/invariant.h>
+#include <util/magic.h>
 
 #include <iostream>
 
-/*******************************************************************\
-
-Function: dimacs_cnft::dimacs_cnft
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-dimacs_cnft::dimacs_cnft():break_lines(false)
+dimacs_cnft::dimacs_cnft(message_handlert &message_handler)
+  : cnf_clause_listt(message_handler), break_lines(false)
 {
 }
 
-/*******************************************************************\
-
-Function: dimacs_cnf_dumpt::dimacs_cnf_dumpt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-dimacs_cnf_dumpt::dimacs_cnf_dumpt(std::ostream &_out):out(_out)
+void dimacs_cnft::set_assignment(literalt, bool)
 {
+  UNIMPLEMENTED;
 }
 
-/*******************************************************************\
+bool dimacs_cnft::is_in_conflict(literalt) const
+{
+  UNREACHABLE;
+  return false;
+}
 
-Function: dimacs_cnft::write_dimacs_cnf
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+dimacs_cnf_dumpt::dimacs_cnf_dumpt(
+  std::ostream &_out,
+  message_handlert &message_handler)
+  : cnft(message_handler), out(_out)
+{
+}
 
 void dimacs_cnft::write_dimacs_cnf(std::ostream &out)
 {
@@ -60,37 +43,14 @@ void dimacs_cnft::write_dimacs_cnf(std::ostream &out)
   write_clauses(out);
 }
 
-/*******************************************************************\
-
-Function: dimacs_cnft::write_problem_line
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void dimacs_cnft::write_problem_line(std::ostream &out)
 {
-  out << "p cnf " << no_variables() << " " 
+  // We start counting at 1, thus there is one variable fewer.
+  out << "p cnf " << (no_variables()-1) << " "
       << clauses.size() << "\n";
 }
 
-/*******************************************************************\
-
-Function: write_dimacs_clause
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-static void write_dimacs_clause(
+void dimacs_cnft::write_dimacs_clause(
   const bvt &clause,
   std::ostream &out,
   bool break_lines)
@@ -101,53 +61,43 @@ static void write_dimacs_clause(
   // this format allows clauses to be on multiple lines."
   // Some historic solvers (zchaff e.g.) have silently swallowed
   // literals in clauses that exceed some fixed buffer size.
-  
+
   // However, the SAT competition format does not allow line
-  // breaks in clauses, so we offer both options. 
+  // breaks in clauses, so we offer both options.
 
   for(size_t j=0; j<clause.size(); j++)
   {
     out << clause[j].dimacs() << " ";
     // newline to avoid overflow in sat checkers
-    if((j&15)==0 && j!=0 && break_lines) out << "\n";
+    if((j&15)==0 && j!=0 && break_lines)
+      out << "\n";
   }
 
   out << "0" << "\n";
 }
 
-/*******************************************************************\
-
-Function: dimacs_cnft::write_clauses
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void dimacs_cnft::write_clauses(std::ostream &out)
 {
+  std::size_t count = 0;
+  std::stringstream output_block;
   for(clausest::const_iterator it=clauses.begin();
       it!=clauses.end(); it++)
-    write_dimacs_clause(*it, out, break_lines);
+  {
+    write_dimacs_clause(*it, output_block, break_lines);
+
+    // print the block once in a while
+    if(++count % CNF_DUMP_BLOCK_SIZE == 0)
+    {
+      out << output_block.str();
+      output_block.str("");
+    }
+  }
+
+  // make sure the final block is printed as well
+  out << output_block.str();
 }
-
-/*******************************************************************\
-
-Function: dimacs_cnf_dumpt::lcnf
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void dimacs_cnf_dumpt::lcnf(const bvt &bv)
 {
-  write_dimacs_clause(bv, out, true);
+  dimacs_cnft::write_dimacs_clause(bv, out, true);
 }
-

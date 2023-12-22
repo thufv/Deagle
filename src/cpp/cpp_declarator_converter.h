@@ -6,14 +6,16 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_DECLARATOR_CONVERTER_H
-#define CPROVER_CPP_DECLARATOR_CONVERTER_H
+/// \file
+/// C++ Language Type Checking
 
-#include <util/symbol.h>
+#ifndef CPROVER_CPP_CPP_DECLARATOR_CONVERTER_H
+#define CPROVER_CPP_CPP_DECLARATOR_CONVERTER_H
 
-#include "cpp_declarator.h"
 #include "cpp_declaration.h"
-#include "cpp_scope.h"
+
+class cpp_scopet;
+class symbolt;
 
 // converts a cpp_declator plus some
 // additional information stored in the class
@@ -80,8 +82,9 @@ protected:
 
   bool is_code_type(const typet &type) const
   {
-    return type.id()==ID_code ||
-           (type.id()==ID_template && type.subtype().id()==ID_code);
+    return type.id() == ID_code ||
+           (type.id() == ID_template &&
+            to_template_type(type).subtype().id() == ID_code);
   }
 
   void combine_types(
@@ -90,4 +93,4 @@ protected:
     symbolt &symbol);
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_DECLARATOR_CONVERTER_H

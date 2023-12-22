@@ -6,25 +6,18 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// Symbolic Execution
+
 #include "goto_symex.h"
 
-/*******************************************************************\
-
-Function: goto_symext::symex_catch
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void goto_symext::symex_catch(statet &state)
+void goto_symext::symex_catch(statet &)
 {
+  // TODO: uncomment this line when TG-4667 is done
+  // UNREACHABLE;
   // there are two variants: 'push' and 'pop'
- 
-  #if 0 
+
+  #if 0
   const goto_programt::instructiont &instruction=*state.source.pc;
 
   if(instruction.targets.empty()) // pop
@@ -42,15 +35,15 @@ void goto_symext::symex_catch(statet &state)
   {
     state.catch_stack.push_back(goto_symex_statet::catch_framet());
     goto_symex_statet::catch_framet &frame=state.catch_stack.back();
-    
+
     // copy targets
     const irept::subt &exception_list=
       instruction.code.find(ID_exception_list).get_sub();
-    
+
     assert(exception_list.size()==instruction.targets.size());
-    
+
     unsigned i=0;
-    
+
     for(goto_programt::targetst::const_iterator
         it=instruction.targets.begin();
         it!=instruction.targets.end();

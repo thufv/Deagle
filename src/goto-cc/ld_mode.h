@@ -8,32 +8,43 @@ Date: June 2006
 
 \*******************************************************************/
 
-#ifndef GOTO_CC_LD_MODE_H
-#define GOTO_CC_LD_MODE_H
+/// \file
+/// Base class for command line interpretation
 
+#ifndef CPROVER_GOTO_CC_LD_MODE_H
+#define CPROVER_GOTO_CC_LD_MODE_H
+
+#include "gcc_message_handler.h"
 #include "goto_cc_mode.h"
-#include "ld_cmdline.h"
 
-class ld_modet:public goto_cc_modet
+class ld_modet : public goto_cc_modet
 {
 public:
-  virtual bool doit();
-  virtual void help_mode();
+  int doit() final;
+  void help_mode() final;
 
-  explicit ld_modet(ld_cmdlinet &_ld_cmdline):
-    goto_cc_modet(_ld_cmdline),
-    produce_hybrid_binary(false),
-    cmdline(_ld_cmdline)
-  {
-  }
+  ld_modet(
+    goto_cc_cmdlinet &_cmdline,
+    const std::string &_base_name);
 
-  bool produce_hybrid_binary;
-  
 protected:
-  ld_cmdlinet &cmdline;
-  
-  //int gcc_hybrid_binary(const cmdlinet::argst &input_files);
-  //static bool is_supported_source_file(const std::string &);
+  gcc_message_handlert gcc_message_handler;
+
+  std::string native_tool_name;
+
+  const std::string goto_binary_tmp_suffix;
+
+  /// \brief call ld with original command line
+  int run_ld();
+
+  /// Build an ELF or Mach-O binary containing a goto-cc section.
+  /// \param building_executable: set to true iff the target file is an
+  ///   executable
+  /// \param object_files: object files to be linked
+  /// \return zero, unless an error occurred
+  int ld_hybrid_binary(
+    bool building_executable,
+    const std::list<std::string> &object_files);
 };
 
-#endif /* GOTO_CC_LD_MODE_H */
+#endif // CPROVER_GOTO_CC_LD_MODE_H

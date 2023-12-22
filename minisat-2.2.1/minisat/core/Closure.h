@@ -1,5 +1,4 @@
 // __SZH_ADD_BEGIN__
-
 #include "ClosureTypes.h"
 
 #include "../../minisat/mtl/Vec.h"
@@ -38,96 +37,31 @@ private:
     vec<int> trail_edge_lim;
     vec<std::pair<int, int>> trail_rf;
     vec<int> trail_rf_lim;
+    vec<std::pair<int, int>> trail_vital;
+    vec<int> trail_vital_lim;
     vec<int> trail_light_guard;
     vec<int> trail_light_guard_lim;
-    vec<std::pair<int, int>> trail_dangerous_edge;
-    vec<int> trail_dangerous_edge_lim;
+    vec<std::pair<Lit, Lit>> trail_triplet;
+    vec<int> trail_triplet_lim;
 
-    //unvisited dangerous edges
-    enum unvisited_reasont {newly_added_closure, newly_added_prop, guard_activated, rf_activated};
-    typedef int dangerous_edge_indext;
-
-    struct dangerous_edget
+public:
+    struct triplett
     {
-        int from; //if from == -1, this dangerous edge does not exist
-        int to;
-        literal_vector dangerous_reason;
-        unvisited_reasont unvisited_reason; //only for unvisited_reason
-        int unvisited_rf_node; //only when unvisited_reason == rf_activated
+        int w1;
+        int w2;
+        int r;
+        Lit rf_lit;
+        Lit guard_lit;
 
-        bool visited;
-
-        dangerous_edget(int _from = -1, int _to = -1, literal_vector _dangerous_reason = literal_vector(), unvisited_reasont _unvisited_reason = newly_added_closure):
-            from(_from), to(_to), dangerous_reason(_dangerous_reason), unvisited_reason(_unvisited_reason), unvisited_rf_node(-1), visited(false) {}
+        triplett(int _w1, int _w2, int _r, Lit _rf_lit, Lit _guard_lit) :
+            w1(_w1), w2(_w2), r(_r), rf_lit(_rf_lit), guard_lit(_guard_lit) {}
     };
 
-    std::vector<dangerous_edget> dangerous_edge_pool;
+    std::vector<triplett> triplets_to_check;
 
-    dangerous_edge_indext to_dangerous_edge_index(int from, int to)
-    {
-        return from * nodes.size() + to;
-    }
-
-    bool dangerous_edge_exist(int from, int to)
-    {
-        dangerous_edge_indext index = to_dangerous_edge_index(from, to);
-
-        if(dangerous_edge_pool.size() <= index)
-            dangerous_edge_pool.resize(index + 1);
-
-        return dangerous_edge_pool[index].from != -1;
-    }
-
-    dangerous_edge_indext new_dangerous_edge(int from, int to, literal_vector& dangerous_reason, unvisited_reasont unvisited_reason)
-    {
-        dangerous_edge_indext index = to_dangerous_edge_index(from, to);
-
-        if(dangerous_edge_pool.size() <= index)
-            dangerous_edge_pool.resize(index + 1);
-
-        dangerous_edge_pool[index] = dangerous_edget(from, to, dangerous_reason, unvisited_reason);
-
-        trail_dangerous_edge.push(std::make_pair(from, to));
-
-        nodes[from].dangerous_out.push_back(to);
-        nodes[to].dangerous_in.push_back(from);
-
-        return index;
-    }
-
-    dangerous_edge_indext renew_dangerous_edge(int from, int to, unvisited_reasont unvisited_reason, int unvisited_rf_node = -1)
-    {
-        dangerous_edge_indext index = to_dangerous_edge_index(from, to);
-        if(dangerous_edge_pool.size() <= index)
-            dangerous_edge_pool.resize(index + 1);
-
-        dangerous_edge_pool[index].unvisited_reason = unvisited_reason;
-        dangerous_edge_pool[index].unvisited_rf_node = unvisited_rf_node;
-        dangerous_edge_pool[index].visited = false;
-
-        return index;
-    }
-
-    dangerous_edget& get_dangerous_edge(int from, int to)
-    {
-        dangerous_edge_indext index = to_dangerous_edge_index(from, to);
-        return dangerous_edge_pool[index];
-    }
-
-    dangerous_edget& get_dangerous_edge(dangerous_edge_indext index)
-    {
-        return dangerous_edge_pool[index];
-    }
-
-    void remove_dangerous_edge(int from, int to)
-    {
-        dangerous_edge_indext index = to_dangerous_edge_index(from, to);
-        dangerous_edge_pool[index].from = -1;
-        nodes[from].dangerous_out.pop_back();
-        nodes[to].dangerous_in.pop_back();
-    }
-
-    std::vector<dangerous_edge_indext> unvisited_dangerous_edges;
+private:
+    std::map<Lit, std::vector<triplett>> rf_to_triplets;
+    std::map<Lit, std::vector<triplett>> guard_to_triplets;
 
     //union operations
     void union_join(int m, int n);
@@ -141,6 +75,10 @@ private:
     std::vector<std::vector<inactive_edge_t>> tail_to_inactive_edges;
     std::vector<std::vector<inactive_edge_t>> head_to_inactive_edges;
     std::vector<std::vector<Lit>> tail_head_to_inactive_lit;
+
+    typedef std::pair<int, Lit> inactive_race_t;
+
+    std::map<std::pair<int, int>, Lit> pair_to_inactive_races; // pair.first < pair.second
 
     Lit check_tail_head_to_inactive_lit(int a, int b);
 
@@ -162,14 +100,19 @@ public:
 
     void init_reasonable_edge(int u, int v, edge_kindt kind, Lit l);
 
+    void init_race(int u, int v, Lit l);
+
     bool add_guard_literal(Lit guard_literal, int u);
     std::vector<int> check_guard_literal(Lit guard_literal);
 
     bool activate_edge(int u, int v, edge_kindt kind, literal_vector& reason);
-    bool activate_directed_edge(closure_edget &edge, std::set<Lit>& assigned_lit, bool need_closure = true);
-    bool activate_epo(int u, int v);
+    bool activate_directed_edge(closure_edget &edge, bool need_closure = true);
+    bool activate_apo(int u, int v);
 
-    void preventive_propagation(std::set<Lit>& assigned_lit);
+    void preventive_propagation();
+
+    void add_trinary_pattern(int w1, int w2, int r);
+    void check_trinary_pattern();
 
     void atomic_remove_self();
 
@@ -180,6 +123,8 @@ public:
 
     void show_edges();
     void show_rf();
+    void show_model();
+    void show_race();
     void final_check();
     literal_vector conflict_lv;
 

@@ -6,52 +6,29 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+
 #include "boolbv.h"
 
-/*******************************************************************\
-
-Function: boolbvt::convert_vector
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void boolbvt::convert_vector(const exprt &expr, bvt &bv)
+bvt boolbvt::convert_vector(const vector_exprt &expr)
 {
-  unsigned width=boolbv_width(expr.type());
-  
-  if(width==0)
-    return conversion_failed(expr, bv);
-    
+  std::size_t width=boolbv_width(expr.type());
+
+  const exprt::operandst &operands = expr.operands();
+
+  bvt bv;
   bv.reserve(width);
 
-  if(expr.type().id()==ID_vector)
+  if(!operands.empty())
   {
-    const exprt::operandst &operands=expr.operands();
-    
-    if(!operands.empty())
+    std::size_t op_width = width / operands.size();
+
+    for(const auto &op : operands)
     {
-      std::size_t op_width=width/operands.size();
-    
-      forall_expr(it, operands)
-      {
-        const bvt &tmp=convert_bv(*it);
+      const bvt &tmp = convert_bv(op, op_width);
 
-        if(tmp.size()!=op_width)
-          throw "convert_vector: unexpected operand width";
-
-        forall_literals(it2, tmp)
-          bv.push_back(*it2);
-      }   
+      bv.insert(bv.end(), tmp.begin(), tmp.end());
     }
-
-    return;
   }
-  
-  conversion_failed(expr, bv);
-}
 
+  return bv;
+}

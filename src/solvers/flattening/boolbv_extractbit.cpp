@@ -6,103 +6,82 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
+#include "boolbv.h"
+
 #include <algorithm>
 
 #include <util/arith_tools.h>
+#include <util/bitvector_expr.h>
+#include <util/bitvector_types.h>
+#include <util/exception_utils.h>
 #include <util/std_expr.h>
-#include <util/std_types.h>
-
-#include "boolbv.h"
-
-/*******************************************************************\
-
-Function: boolbvt::convert_extractbit
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 literalt boolbvt::convert_extractbit(const extractbit_exprt &expr)
 {
-  const exprt::operandst &operands=expr.operands();
-
-  if(operands.size()!=2)
-    throw "extractbit takes two operands";
-    
-  const bvt &bv0=convert_bv(operands[0]);
+  const bvt &src_bv = convert_bv(expr.src());
+  const auto &index = expr.index();
 
   // constant?
-  if(operands[1].is_constant())
+  if(index.is_constant())
   {
-    mp_integer o;
-  
-    if(to_integer(operands[1], o))
-      throw "extractbit failed to convert constant index";
+    mp_integer index_as_integer =
+      numeric_cast_v<mp_integer>(to_constant_expr(index));
 
-    if(o<0 || o>=bv0.size())
+    if(index_as_integer < 0 || index_as_integer >= src_bv.size())
       return prop.new_variable(); // out of range!
     else
-      return bv0[integer2long(o)];
+      return src_bv[numeric_cast_v<std::size_t>(index_as_integer)];
   }
 
-  if(operands[0].type().id()==ID_verilogbv)
+  if(
+    expr.src().type().id() == ID_verilog_signedbv ||
+    expr.src().type().id() == ID_verilog_unsignedbv)
   {
-    // TODO
-    assert(false);
+    throw unsupported_operation_exceptiont(
+      "extractbit expression not implemented for verilog integers in "
+      "flattening solver");
   }
   else
   {
-    unsigned width_op0=boolbv_width(operands[0].type());
-    unsigned width_op1=boolbv_width(operands[1].type());
+    std::size_t src_bv_width = boolbv_width(expr.src().type());
+    std::size_t index_bv_width = boolbv_width(index.type());
 
-    if(width_op0==0 || width_op1==0)
+    if(src_bv_width == 0 || index_bv_width == 0)
       return SUB::convert_rest(expr);
 
-    mp_integer index_width=
-      std::max(address_bits(width_op0), mp_integer(width_op1));
+    std::size_t index_width =
+      std::max(address_bits(src_bv_width), index_bv_width);
+    unsignedbv_typet index_type(index_width);
 
-    unsignedbv_typet index_type;
-    index_type.set_width(integer2unsigned(index_width));
-
-    equal_exprt equality;
-    equality.lhs()=operands[1]; // index operand
-
-    if(index_type!=equality.lhs().type())
-      equality.lhs().make_typecast(index_type);
+    equal_exprt equality(
+      typecast_exprt::conditional_cast(index, index_type), exprt());
 
     if(prop.has_set_to())
     {
       // free variable
-      literalt l=prop.new_variable();
+      literalt literal = prop.new_variable();
 
       // add implications
-      for(unsigned i=0; i<bv0.size(); i++)
+      for(std::size_t i = 0; i < src_bv.size(); i++)
       {
         equality.rhs()=from_integer(i, index_type);
-        literalt equal=prop.lequal(l, bv0[i]);
+        literalt equal = prop.lequal(literal, src_bv[i]);
         prop.l_set_to_true(prop.limplies(convert(equality), equal));
       }
 
-      return l;
+      return literal;
     }
     else
     {
-      literalt l=prop.new_variable();
+      literalt literal = prop.new_variable();
 
-      for(unsigned i=0; i<bv0.size(); i++)
+      for(std::size_t i = 0; i < src_bv.size(); i++)
       {
         equality.rhs()=from_integer(i, index_type);
-        l=prop.lselect(convert(equality), bv0[i], l);
+        literal = prop.lselect(convert(equality), src_bv[i], literal);
       }
 
-      return l;
+      return literal;
     }
   }
-   
-  return SUB::convert_rest(expr);
 }

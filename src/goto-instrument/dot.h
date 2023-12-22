@@ -6,14 +6,18 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_DOT_H
-#define CPROVER_DOT_H
+/// \file
+/// Dump Goto-Program as DOT Graph
 
-#include <goto-programs/goto_functions.h>
+#ifndef CPROVER_GOTO_INSTRUMENT_DOT_H
+#define CPROVER_GOTO_INSTRUMENT_DOT_H
+
+#include <iosfwd>
+
+class goto_modelt;
 
 void dot(
-  const goto_functionst &src,
-  const namespacet &ns,
+  const goto_modelt &,
   std::ostream &out);
 
-#endif
+#endif // CPROVER_GOTO_INSTRUMENT_DOT_H

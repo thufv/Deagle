@@ -6,61 +6,34 @@ Author: Michael Tautschnig, michael.tautschnig@cs.ox.ac.uk
 
 \*******************************************************************/
 
+/// \file
+/// Memory model for partial order concurrency
+
 #include "memory_model_pso.h"
 
-/*******************************************************************\
-
-Function: memory_model_psot::operator()
-
-  Inputs: 
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void memory_model_psot::operator()(symex_target_equationt &equation)
+void memory_model_psot::
+operator()(symex_target_equationt &equation, message_handlert &message_handler)
 {
-  print(8, "Adding PSO constraints");
+  messaget log{message_handler};
+  log.statistics() << "Adding PSO constraints" << messaget::eom;
 
-  build_event_lists(equation);
-  build_clock_type(equation);
-  
+  build_event_lists(equation, message_handler);
+  build_clock_type();
+
   read_from(equation);
-  if(solve_method == solve_method_smt2)
-    write_serialization_external(equation);
+  write_serialization_external(equation);
   program_order(equation);
-//#ifndef CPROVER_MEMORY_MODEL_SUP_CLOCK
-//  from_read(equation);
-//#endif
-
-// __SZH_ADD_BEGIN__
-#if front_deduce_all_fr
+#ifndef CPROVER_MEMORY_MODEL_SUP_CLOCK
   from_read(equation);
 #endif
-// __SZH_ADD_END__
-
 }
-
-/*******************************************************************\
-
-Function: memory_model_psot::program_order_is_relaxed
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bool memory_model_psot::program_order_is_relaxed(
   partial_order_concurrencyt::event_it e1,
   partial_order_concurrencyt::event_it e2) const
 {
-  assert(is_shared_read(e1) || is_shared_write(e1));
-  assert(is_shared_read(e2) || is_shared_write(e2));
+  PRECONDITION(e1->is_shared_read() || e1->is_shared_write());
+  PRECONDITION(e2->is_shared_read() || e2->is_shared_write());
 
   // no po relaxation within atomic sections
   if(e1->atomic_section_id!=0 &&
@@ -68,11 +41,10 @@ bool memory_model_psot::program_order_is_relaxed(
     return false;
 
   // no relaxation if induced wsi
-  if(is_shared_write(e1) && is_shared_write(e2) &&
+  if(e1->is_shared_write() && e2->is_shared_write() &&
      address(e1)==address(e2))
     return false;
 
   // only read/read and read/write are maintained
-  return is_shared_write(e1);
+  return e1->is_shared_write();
 }
-

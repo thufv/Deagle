@@ -6,6 +6,9 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+/// \file
+/// ANSI-C Language Type Checking
+
 #ifndef CPROVER_ANSI_C_DESIGNATOR_H
 #define CPROVER_ANSI_C_DESIGNATOR_H
 
@@ -21,19 +24,21 @@ public:
   {
     size_t index;
     size_t size;
+    bool vla_permitted;
     typet type, subtype;
-    
-    entryt():index(0), size(0)
+
+    explicit entryt(const typet &type):
+      index(0), size(0), vla_permitted(false), type(type)
     {
     }
   };
 
-  bool empty() const { return index_list.empty(); }  
+  bool empty() const { return index_list.empty(); }
   size_t size() const { return index_list.size(); }
   const entryt &operator[](size_t i) const { return index_list[i]; }
   entryt &operator[](size_t i) { return index_list[i]; }
-  const entryt &back() const { return index_list.back(); };
-  const entryt &front() const { return index_list.front(); };
+  const entryt &back() const { return index_list.back(); }
+  const entryt &front() const { return index_list.front(); }
 
   designatort() { }
 
@@ -41,7 +46,7 @@ public:
   {
     index_list.push_back(entry);
   }
-  
+
   void pop_entry()
   {
     index_list.pop_back();
@@ -61,4 +66,4 @@ inline std::ostream &operator << (std::ostream &os, const designatort &d)
   return os;
 }
 
-#endif
+#endif // CPROVER_ANSI_C_DESIGNATOR_H

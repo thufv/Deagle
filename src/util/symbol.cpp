@@ -6,177 +6,86 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cstdlib>
+#include "symbol.h"
+
 #include <ostream>
 
-#include "symbol.h"
 #include "source_location.h"
 #include "std_expr.h"
+#include "suffix.h"
 
-/*******************************************************************\
-
-Function: symbolt::show
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-   
+/// Dump the state of a symbol object to a given output stream.
+/// \param out: The stream to output object state to.
 void symbolt::show(std::ostream &out) const
 {
-  out << "  " << name << std::endl;
-  out << "    type:  " << type.pretty(4) << std::endl
-      << "    value: " << value.pretty(4) << std::endl;
+  out << "  " << name << '\n';
+  out << "    type:  " << type.pretty(4) << '\n'
+      << "    value: " << value.pretty(4) << '\n';
 
   out << "  flags:";
-  if(is_lvalue)          out << " lvalue";
-  if(is_static_lifetime) out << " static_lifetime";
-  if(is_thread_local)    out << " thread_local";
-  if(is_file_local)      out << " file_local";
-  if(is_type)            out << " type";
-  if(is_extern)          out << " extern";
-  if(is_input)           out << " input";
-  if(is_output)          out << " output";
-  if(is_macro)           out << " macro";
-  if(is_parameter)       out << " parameter";
-  if(is_property)        out << " property";
-  if(is_state_var)       out << " state_var";
-  if(mode!="")           out << " mode=" << mode;
-  if(base_name!="")      out << " base_name=" << base_name;
-  if(module!="")         out << " module=" << module;
-  if(pretty_name!="")    out << " pretty_name=" << pretty_name;
-  out << std::endl;
-  out << "  location: " << location << std::endl;
+  if(is_lvalue)
+    out << " lvalue";
+  if(is_static_lifetime)
+    out << " static_lifetime";
+  if(is_thread_local)
+    out << " thread_local";
+  if(is_file_local)
+    out << " file_local";
+  if(is_type)
+    out << " type";
+  if(is_extern)
+    out << " extern";
+  if(is_input)
+    out << " input";
+  if(is_output)
+    out << " output";
+  if(is_macro)
+    out << " macro";
+  if(is_parameter)
+    out << " parameter";
+  if(is_auxiliary)
+    out << " auxiliary";
+  if(is_weak)
+    out << " weak";
+  if(is_property)
+    out << " property";
+  if(is_state_var)
+    out << " state_var";
+  if(is_exported)
+    out << " exported";
+  if(is_volatile)
+    out << " volatile";
+  if(!mode.empty())
+    out << " mode=" << mode;
+  if(!base_name.empty())
+    out << " base_name=" << base_name;
+  if(!module.empty())
+    out << " module=" << module;
+  if(!pretty_name.empty())
+    out << " pretty_name=" << pretty_name;
+  out << '\n';
+  out << "  location: " << location << '\n';
 
-  out << "  hierarchy:";
-
-  for(std::list<irep_idt>::const_iterator it=hierarchy.begin();
-      it!=hierarchy.end();
-      it++)
-    out << " " << *it;
-
-  out << std::endl;  
-  out << std::endl;  
+  out << '\n';
 }
 
-/*******************************************************************\
-
-Function: operator<<
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Overload of stream operator to work with symbols.
+/// \param out: A given stream to dump symbol state to.
+/// \param symbol: The symbol whose state is about to be dumped.
+/// \return The output stream.
 std::ostream &operator<<(std::ostream &out,
                          const symbolt &symbol)
 {
   symbol.show(out);
   return out;
-}                        
-
-/*******************************************************************\
-
-Function: symbolt::to_irep
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void symbolt::to_irep(irept &dest) const
-{
-  dest.clear();
-  dest.add(ID_type)=type;
-  dest.add(ID_value)=value;
-  dest.add(ID_location)=location;
-  dest.set(ID_name, name);
-  dest.set(ID_module, module);
-  dest.set(ID_base_name, base_name);
-  dest.set(ID_mode, mode);
-  dest.set(ID_pretty_name, pretty_name);
-
-  if(is_type) dest.set("is_type", true);
-  if(is_macro) dest.set("is_macro", true);
-  if(is_exported) dest.set("is_exported", true);
-  if(is_input) dest.set("is_input", true);
-  if(is_output) dest.set("is_output", true);
-  if(is_state_var) dest.set("is_statevar", true);
-  if(is_parameter) dest.set("is_parameter", true);
-  if(is_property) dest.set("is_property", true);
-  if(is_lvalue) dest.set("is_lvalue", true);
-  if(is_static_lifetime) dest.set("is_static_lifetime", true);
-  if(is_thread_local) dest.set("is_thread_local", true);
-  if(is_file_local) dest.set("is_file_local", true);
-  if(is_extern) dest.set("is_extern", true);
-  if(is_volatile) dest.set("is_volatile", true);       
 }
 
-/*******************************************************************\
-
-Function: symbolt::from_irep
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-void symbolt::from_irep(const irept &src)
-{
-  type=static_cast<const typet &>(src.find(ID_type));
-  value=static_cast<const exprt &>(src.find(ID_value));
-  location=static_cast<const source_locationt &>(src.find(ID_location));
-
-  name=src.get(ID_name);
-  module=src.get(ID_module);
-  base_name=src.get(ID_base_name);
-  mode=src.get(ID_mode);
-  pretty_name=src.get(ID_pretty_name);
-
-  is_type=src.get_bool("is_type");
-  is_macro=src.get_bool("is_macro");
-  is_exported=src.get_bool("is_exported");
-  is_input=src.get_bool("is_input");
-  is_output=src.get_bool("is_output");
-  is_state_var=src.get_bool("is_state_var");
-  is_parameter=src.get_bool("is_parameter");
-  is_property=src.get_bool("property");
-  is_lvalue=src.get_bool("lvalue");
-  is_static_lifetime=src.get_bool("static_lifetime");
-  is_thread_local=src.get_bool("thread_local");
-  is_file_local=src.get_bool("file_local");
-  is_extern=src.get_bool("is_extern");
-  is_volatile=src.get_bool("is_volatile");
-}
-
-/*******************************************************************\
-
-Function: symbolt::swap
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Swap values between two symbols.
+/// \param b: The second symbol to swap values with.
 void symbolt::swap(symbolt &b)
 {
   #define SYM_SWAP1(x) x.swap(b.x)
-  
+
   SYM_SWAP1(type);
   SYM_SWAP1(value);
   SYM_SWAP1(name);
@@ -187,14 +96,17 @@ void symbolt::swap(symbolt &b)
   SYM_SWAP1(location);
 
   #define SYM_SWAP2(x) std::swap(x, b.x)
-  
+
   SYM_SWAP2(is_type);
   SYM_SWAP2(is_macro);
   SYM_SWAP2(is_exported);
   SYM_SWAP2(is_input);
   SYM_SWAP2(is_output);
   SYM_SWAP2(is_state_var);
+  SYM_SWAP2(is_property);
   SYM_SWAP2(is_parameter);
+  SYM_SWAP2(is_auxiliary);
+  SYM_SWAP2(is_weak);
   SYM_SWAP2(is_lvalue);
   SYM_SWAP2(is_static_lifetime);
   SYM_SWAP2(is_thread_local);
@@ -203,20 +115,122 @@ void symbolt::swap(symbolt &b)
   SYM_SWAP2(is_volatile);
 }
 
-/*******************************************************************\
-
-Function: symbolt::symbol_expr
-
-  Inputs: symbol
-
- Outputs: symbol_exprt
-
- Purpose: produces a symbol_exprt for a symbol
-
-\*******************************************************************/
-
+/// Produces a symbol_exprt for a symbol
+/// \return A new symbol_exprt with the name and
+///   type of the symbol object.
 symbol_exprt symbolt::symbol_expr() const
 {
   return symbol_exprt(name, type);
 }
 
+/// Check that the instance object is well formed.
+/// \return true if well-formed; false otherwise.
+bool symbolt::is_well_formed() const
+{
+  // Well-formedness criterion number 1 is for a symbol
+  // to have a non-empty mode (see #1880)
+  if(mode.empty())
+  {
+    return false;
+  }
+
+  // Well-formedness criterion number 2 is for a symbol
+  // to have it's base name as a suffix to it's more
+  // general name.
+
+  // Exception: Java symbols' base names do not have type signatures
+  // (for example, they can have name "someclass.method:(II)V" and base name
+  // "method")
+  if(
+    !has_suffix(id2string(name), id2string(base_name)) && mode != ID_java &&
+    mode != ID_cpp)
+  {
+    bool criterion_must_hold = true;
+
+    // There are some special cases where this criterion doesn't hold, check
+    // to see if we have one of those cases
+
+    if(is_type)
+    {
+      // Typedefs
+      if(
+        type.find(ID_C_typedef).is_not_nil() &&
+        type.find(ID_C_typedef).id() == base_name)
+      {
+        criterion_must_hold = false;
+      }
+
+      // Tag types
+      if(type.find(ID_tag).is_not_nil() && type.find(ID_tag).id() == base_name)
+      {
+        criterion_must_hold = false;
+      }
+    }
+
+    // Linker renaming may have added $linkN suffixes to the name, and other
+    // suffixes such as #return_value may have then be subsequently added.
+    // Strip out the first $linkN substring and then see if the criterion holds
+    const auto &unstripped_name = id2string(name);
+    const size_t dollar_link_start_pos = unstripped_name.find("$link");
+
+    if(dollar_link_start_pos != std::string::npos)
+    {
+      size_t dollar_link_end_pos = dollar_link_start_pos + 5;
+      while(isdigit(unstripped_name[dollar_link_end_pos]))
+      {
+        ++dollar_link_end_pos;
+      }
+
+      const auto stripped_name =
+        unstripped_name.substr(0, dollar_link_start_pos) +
+        unstripped_name.substr(dollar_link_end_pos, std::string::npos);
+
+      if(has_suffix(stripped_name, id2string(base_name)))
+        criterion_must_hold = false;
+    }
+
+    if(criterion_must_hold)
+    {
+      // For all other cases this criterion should hold
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool symbolt::operator==(const symbolt &other) const
+{
+  // clang-format off
+  return
+    type == other.type &&
+    value == other.value &&
+    location == other.location &&
+    name == other.name &&
+    module == other.module &&
+    base_name == other.base_name &&
+    mode == other.mode &&
+    pretty_name == other.pretty_name &&
+    is_type == other.is_type &&
+    is_macro == other.is_macro &&
+    is_exported == other.is_exported &&
+    is_input == other.is_input &&
+    is_output == other.is_output &&
+    is_state_var == other.is_state_var &&
+    is_property == other.is_property &&
+    is_parameter == other.is_parameter &&
+    is_auxiliary == other.is_auxiliary &&
+    is_weak == other.is_weak &&
+    is_lvalue == other.is_lvalue &&
+    is_static_lifetime == other.is_static_lifetime &&
+    is_thread_local == other.is_thread_local &&
+    is_file_local == other.is_file_local &&
+    is_extern == other.is_extern &&
+    is_volatile == other.is_volatile;
+  // clang-format on
+}
+
+bool symbolt::operator!=(const symbolt &other) const
+{
+  return !(*this == other);
+}

@@ -6,46 +6,30 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <util/std_types.h>
+/// \file
+/// C++ Language Type Checking
 
 #include "cpp_typecheck.h"
 
-/*******************************************************************\
-
-Function: cpp_typecheckt::convert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <util/string_constant.h>
 
 void cpp_typecheckt::convert(cpp_static_assertt &cpp_static_assert)
 {
   typecheck_expr(cpp_static_assert.op0());
   typecheck_expr(cpp_static_assert.op1());
 
-  cpp_static_assert.op0().make_typecast(bool_typet());
+  implicit_typecast_bool(cpp_static_assert.op0());
   make_constant(cpp_static_assert.op0());
 
-  if(cpp_static_assert.op0().is_true())
-  {
-    // ok
-  }
-  else if(cpp_static_assert.op0().is_false())
+  if(cpp_static_assert.op0().is_false())
   {
     // failed
-    err_location(cpp_static_assert);
-    str << "static assertion failed: ";
-    throw 0;
-  }
-  else
-  {
-    // not true or false
-    err_location(cpp_static_assert);
-    str << "static assertion is not constant";
+    error().source_location=cpp_static_assert.source_location();
+    error() << "static assertion failed";
+    if(cpp_static_assert.op1().id()==ID_string_constant)
+      error() << ": "
+              << to_string_constant(cpp_static_assert.op1()).get_value();
+    error() << eom;
     throw 0;
   }
 }

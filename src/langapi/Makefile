@@ -1,5 +1,8 @@
-SRC = mode.cpp language_ui.cpp languages.cpp language_util.cpp
-
+SRC = language_util.cpp \
+      language_file.cpp \
+      language.cpp \
+      mode.cpp \
+      # Empty last line
 INCLUDES= -I ..
 
 include ../config.inc
@@ -13,4 +16,3 @@ all: langapi$(LIBEXT)
 
 langapi$(LIBEXT): $(OBJ)
 	$(LINKLIB)
-	

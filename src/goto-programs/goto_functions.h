@@ -8,52 +8,112 @@ Date: June 2003
 
 \*******************************************************************/
 
-#ifndef CPROVER_GOTO_FUNCTIONS_H
-#define CPROVER_GOTO_FUNCTIONS_H
+/// \file
+/// Goto Programs with Functions
 
-#include "goto_program.h"
-#include "goto_functions_template.h"
+#ifndef CPROVER_GOTO_PROGRAMS_GOTO_FUNCTIONS_H
+#define CPROVER_GOTO_PROGRAMS_GOTO_FUNCTIONS_H
 
-class goto_functionst:public goto_functions_templatet<goto_programt>
+#include "goto_function.h"
+
+#include <util/cprover_prefix.h>
+
+#include <map>
+
+/// A collection of goto functions
+class goto_functionst
 {
 public:
-	bool is_same_func(const namespacet &ns, irep_idt func_name1, irep_idt func_name2) {
-		goto_programt& func1 = function_map[func_name1].body;
-		goto_programt& func2 = function_map[func_name2].body;
+  using goto_functiont=::goto_functiont;
+  typedef std::map<irep_idt, goto_functiont> function_mapt;
+  function_mapt function_map;
 
-		if (func1.instructions.size() != func2.instructions.size())
-			return false;
+private:
+  /// A location number such that numbers in the interval
+  /// [unused_location_number, MAX_UINT] are all unused. There might still be
+  /// unused numbers below this.
+  /// If numbering a new function or renumbering a function, starting from this
+  /// number is safe.
+  unsigned unused_location_number;
 
-		typedef std::list<goto_program_templatet<codet, exprt>::instructiont> instructions_t;
-		instructions_t::iterator it = func1.instructions.begin();
-		instructions_t::iterator jt = func2.instructions.begin();
-		for (; it != func1.instructions.end(); it++, jt++) {
-			std::string code1 = from_expr(ns, "", it->code);
-			std::string code2 = from_expr(ns, "", jt->code);
+public:
+  goto_functionst():
+    unused_location_number(0)
+  {
+  }
 
-			if (code1.find(as_string(func_name1).substr(3, func_name1.size() - 3), 0) != std::string::npos &&
-				code2.find(as_string(func_name2).substr(3, func_name1.size() - 3), 0) != std::string::npos)
-				continue;
+  // Copying is unavailable as base class copy is deleted
+  // MSVC is unable to automatically determine this
+  goto_functionst(const goto_functionst &)=delete;
+  goto_functionst &operator=(const goto_functionst &)=delete;
 
-			if (code1 != code2)
-			{
-				return false;
-			}
-		}
-		return true;
-	}
+  // Move operations need to be explicitly enabled as they are deleted with the
+  // copy operations
+  // default for move operations isn't available on Windows yet, so define
+  //  explicitly (see https://msdn.microsoft.com/en-us/library/hh567368.aspx
+  //  under "Defaulted and Deleted Functions")
+
+  goto_functionst(goto_functionst &&other):
+    function_map(std::move(other.function_map)),
+    unused_location_number(other.unused_location_number)
+  {
+  }
+
+  goto_functionst &operator=(goto_functionst &&other)
+  {
+    function_map=std::move(other.function_map);
+    unused_location_number=other.unused_location_number;
+    return *this;
+  }
+
+  /// Remove function from the function map
+  void unload(const irep_idt &name) { function_map.erase(name); }
+
+  void clear()
+  {
+    function_map.clear();
+  }
+
+  void compute_location_numbers();
+  void compute_location_numbers(goto_programt &);
+  void compute_loop_numbers();
+  void compute_target_numbers();
+  void compute_incoming_edges();
+
+  void update()
+  {
+    compute_incoming_edges();
+    compute_target_numbers();
+    compute_location_numbers();
+    compute_loop_numbers();
+  }
+
+  /// Get the identifier of the entry point to a goto model
+  static inline irep_idt entry_point()
+  {
+    // do not confuse with C's "int main()"
+    return CPROVER_PREFIX "_start";
+  }
+
+  void swap(goto_functionst &other)
+  {
+    function_map.swap(other.function_map);
+  }
+
+  void copy_from(const goto_functionst &other)
+  {
+    for(const auto &fun : other.function_map)
+      function_map[fun.first].copy_from(fun.second);
+  }
+
+  std::vector<function_mapt::const_iterator> sorted() const;
+  std::vector<function_mapt::iterator> sorted();
+
+  /// Check that the goto functions are well-formed
+  ///
+  /// The validation mode indicates whether well-formedness check failures are
+  /// reported via DATA_INVARIANT violations or exceptions.
+  void validate(const namespacet &, validation_modet) const;
 };
 
-#define Forall_goto_functions(it, functions) \
-  for(goto_functionst::function_mapt::iterator it=(functions).function_map.begin(); \
-      it!=(functions).function_map.end(); it++)
- 
-#define forall_goto_functions(it, functions) \
-  for(goto_functionst::function_mapt::const_iterator it=(functions).function_map.begin(); \
-      it!=(functions).function_map.end(); it++)
-
-void get_local_identifiers(
-  const goto_function_templatet<goto_programt> &goto_function,
-  std::set<irep_idt> &dest);
-
-#endif
+#endif // CPROVER_GOTO_PROGRAMS_GOTO_FUNCTIONS_H

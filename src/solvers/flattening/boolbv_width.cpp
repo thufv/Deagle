@@ -6,75 +6,32 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+#include "boolbv_width.h"
+
 #include <algorithm>
 
 #include <util/arith_tools.h>
-#include <util/config.h>
+#include <util/c_types.h>
+#include <util/invariant.h>
+#include <util/namespace.h>
 #include <util/std_types.h>
-#include <util/bitvector.h>
-
-#include "boolbv_width.h"
-
-/*******************************************************************\
-
-Function: boolbv_widtht::boolbv_widtht
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 boolbv_widtht::boolbv_widtht(const namespacet &_ns):ns(_ns)
 {
-  cache=new cachet;
 }
-
-/*******************************************************************\
-
-Function: boolbv_widtht::~boolbv_widtht
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-boolbv_widtht::~boolbv_widtht()
-{
-  delete cache;
-}
-
-/*******************************************************************\
-
-Function: boolbv_widtht::get_entry
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const boolbv_widtht::entryt &boolbv_widtht::get_entry(const typet &type) const
 {
   // check cache first
 
-  std::pair<cachet::iterator, bool> cache_result=
-    cache->insert(std::pair<typet, entryt>(type, entryt()));
-    
-  entryt &entry=cache_result.first->second;
+  std::pair<cachet::iterator, bool> cache_result =
+    cache.emplace(type, entryt{});
+
+  auto &cache_entry = cache_result.first->second;
 
   if(!cache_result.second) // found!
-    return entry;
-    
-  entry.total_width=0;
-  
+    return cache_entry;
+
   const irep_idt type_id=type.id();
 
   if(type_id==ID_struct)
@@ -83,75 +40,82 @@ const boolbv_widtht::entryt &boolbv_widtht::get_entry(const typet &type) const
       to_struct_type(type).components();
 
     std::size_t offset=0;
+    defined_entryt entry{0};
     entry.members.resize(components.size());
-  
+
     for(std::size_t i=0; i<entry.members.size(); i++)
     {
-      std::size_t sub_width=operator()(components[i].type());
+      auto sub_width = get_width_opt(components[i].type());
+      if(!sub_width.has_value())
+        return cache_entry;
       entry.members[i].offset=offset;
-      entry.members[i].width=sub_width;
-      offset+=sub_width;
+      entry.members[i].width = *sub_width;
+      offset += *sub_width;
     }
-    
+
     entry.total_width=offset;
+
+    cache_entry = std::move(entry);
   }
   else if(type_id==ID_union)
   {
     const union_typet::componentst &components=
       to_union_type(type).components();
 
+    defined_entryt entry{0};
     entry.members.resize(components.size());
-    
+
     std::size_t max_width=0;
-  
+
     for(std::size_t i=0; i<entry.members.size(); i++)
     {
-    	// added by ylz
-//      std::string str_type = components[i].type().to_string();
-//	  if (str_type.find("pthread_mutex") !=std::string::npos) {
-//		 entry.total_width = 32;
-//		 return entry;
-//	  }
-
-      std::size_t sub_width=operator()(components[i].type());
-      entry.members[i].width=sub_width;
-      max_width=std::max(max_width, sub_width);
+      auto sub_width = get_width_opt(components[i].type());
+      if(!sub_width.has_value())
+        return cache_entry;
+      entry.members[i].width = *sub_width;
+      max_width = std::max(max_width, *sub_width);
     }
 
     entry.total_width=max_width;
+
+    cache_entry = std::move(entry);
   }
   else if(type_id==ID_bool)
-    entry.total_width=1;
+  {
+    cache_entry = defined_entryt{1};
+  }
+  else if(type_id==ID_c_bool)
+  {
+    cache_entry = defined_entryt{to_c_bool_type(type).get_width()};
+  }
   else if(type_id==ID_signedbv)
   {
-    entry.total_width=to_signedbv_type(type).get_width();
-    assert(entry.total_width!=0);
+    cache_entry = defined_entryt{to_signedbv_type(type).get_width()};
   }
   else if(type_id==ID_unsignedbv)
   {
-    entry.total_width=to_unsignedbv_type(type).get_width();
-    assert(entry.total_width!=0);
+    cache_entry = defined_entryt{to_unsignedbv_type(type).get_width()};
   }
   else if(type_id==ID_floatbv)
   {
-    entry.total_width=to_floatbv_type(type).get_width();
-    assert(entry.total_width!=0);
+    cache_entry = defined_entryt{to_floatbv_type(type).get_width()};
   }
   else if(type_id==ID_fixedbv)
   {
-    entry.total_width=to_fixedbv_type(type).get_width();
-    assert(entry.total_width!=0);
+    cache_entry = defined_entryt{to_fixedbv_type(type).get_width()};
   }
   else if(type_id==ID_bv)
   {
-    entry.total_width=to_bv_type(type).get_width();
-    assert(entry.total_width!=0);
+    cache_entry = defined_entryt{to_bv_type(type).get_width()};
   }
-  else if(type_id==ID_verilogbv)
+  else if(type_id==ID_verilog_signedbv ||
+          type_id==ID_verilog_unsignedbv)
   {
     // we encode with two bits
-    entry.total_width=type.get_int(ID_width)*2;
-    assert(entry.total_width!=0);
+    std::size_t size = to_bitvector_type(type).get_width();
+    DATA_INVARIANT(
+      size > 0, "verilog bitvector width shall be greater than zero");
+    cache_entry = defined_entryt{size * 2};
   }
   else if(type_id==ID_range)
   {
@@ -160,170 +124,117 @@ const boolbv_widtht::entryt &boolbv_widtht::get_entry(const typet &type) const
 
     mp_integer size=to-from+1;
 
-    if(size>=1)
-    {
-      entry.total_width=integer2unsigned(address_bits(size));
-      assert(entry.total_width!=0);
-    }
+    if(size < 0)
+      return cache_entry;
+    else if(size == 0)
+      cache_entry = defined_entryt{0};
+    else
+      cache_entry = defined_entryt{address_bits(size)};
   }
   else if(type_id==ID_array)
   {
     const array_typet &array_type=to_array_type(type);
-    std::size_t sub_width=operator()(array_type.subtype());
+    auto sub_width = get_width_opt(array_type.element_type());
+    if(!sub_width.has_value())
+      return cache_entry;
 
-    mp_integer array_size;
+    const auto array_size = numeric_cast<mp_integer>(array_type.size());
 
-    if(to_integer(array_type.size(), array_size))
-    {
-      // we can still use the theory of arrays for this
-      entry.total_width=0;
-    }
+    if(!array_size.has_value() || *array_size < 0)
+      return cache_entry;
+
+    mp_integer total = *array_size * *sub_width;
+    if(total > (1 << 30)) // realistic limit
+      throw analysis_exceptiont("array too large for flattening");
     else
-    {
-      mp_integer total=array_size*sub_width;
-      if(total>(1<<30)) // realistic limit
-        throw "array too large for flattening";
-
-      entry.total_width=integer2unsigned(total);
-    }
+      cache_entry = defined_entryt{numeric_cast_v<std::size_t>(total)};
   }
   else if(type_id==ID_vector)
   {
     const vector_typet &vector_type=to_vector_type(type);
-    std::size_t sub_width=operator()(vector_type.subtype());
+    auto sub_width = get_width_opt(vector_type.element_type());
+    if(!sub_width.has_value())
+      return cache_entry;
 
-    mp_integer vector_size;
+    const auto vector_size = numeric_cast_v<mp_integer>(vector_type.size());
 
-    if(to_integer(vector_type.size(), vector_size))
-    {
-      // we can still use the theory of arrays for this
-      entry.total_width=0;
-    }
+    mp_integer total = vector_size * *sub_width;
+    if(total > (1 << 30)) // realistic limit
+      throw analysis_exceptiont("vector too large for flattening");
     else
-    {
-      mp_integer total=vector_size*sub_width;
-      if(total>(1<<30)) // realistic limit
-        throw "vector too large for flattening";
-
-      entry.total_width=integer2unsigned(vector_size*sub_width);
-    }
+      cache_entry = defined_entryt{numeric_cast_v<std::size_t>(total)};
   }
   else if(type_id==ID_complex)
   {
-    std::size_t sub_width=operator()(type.subtype());
-    entry.total_width=integer2unsigned(2*sub_width);
+    auto sub_width = get_width_opt(to_complex_type(type).subtype());
+    if(!sub_width.has_value())
+      return cache_entry;
+    cache_entry =
+      defined_entryt{numeric_cast_v<std::size_t>(2 * mp_integer{*sub_width})};
   }
   else if(type_id==ID_code)
   {
+    cache_entry = defined_entryt{0};
   }
-	  //// __FHY_ADD_BEGIN__
-  else if(type_id == ID_oc || type_id == ID_integer)
-  {
-	  entry.total_width=32;
-  }
-	  //// __FHY_ADD_END__
-  else if(type_id==ID_enum)
+  else if(type_id==ID_enumeration)
   {
     // get number of necessary bits
-
-    std::size_t size=type.find(ID_elements).get_sub().size();
-    entry.total_width=integer2unsigned(address_bits(size));
-    assert(entry.total_width!=0);
+    std::size_t size=to_enumeration_type(type).elements().size();
+    if(size == 0)
+      cache_entry = defined_entryt{0};
+    else
+      cache_entry = defined_entryt{address_bits(size)};
   }
-  else if(type_id==ID_c_enum ||
-          type_id==ID_incomplete_c_enum)
+  else if(type_id==ID_c_enum)
   {
     // these have a subtype
-    entry.total_width=type.subtype().get_int(ID_width);
-    assert(entry.total_width!=0);
+    cache_entry = defined_entryt{
+      to_bitvector_type(to_c_enum_type(type).underlying_type()).get_width()};
+    CHECK_RETURN(cache_entry->total_width > 0);
   }
-  else if(type_id==ID_pointer ||
-          type_id==ID_reference)
+  else if(type_id==ID_pointer)
   {
-    entry.total_width=config.ansi_c.pointer_width;
-  }
-  else if(type_id==ID_symbol) {
-	  // added by ylz
-//	  std::string str_type = type.to_string();
-//	  if (str_type.find("pthread_mutex") !=std::string::npos) {
-//		  entry.total_width = 32;
-//	  }
-//	  else
-		  entry=get_entry(ns.follow(type));
+    cache_entry =
+      defined_entryt{type_checked_cast<pointer_typet>(type).get_width()};
   }
   else if(type_id==ID_struct_tag)
-    entry=get_entry(ns.follow_tag(to_struct_tag_type(type)));
+  {
+    cache_entry = get_entry(ns.follow_tag(to_struct_tag_type(type)));
+  }
   else if(type_id==ID_union_tag)
-    entry=get_entry(ns.follow_tag(to_union_tag_type(type)));
+  {
+    cache_entry = get_entry(ns.follow_tag(to_union_tag_type(type)));
+  }
   else if(type_id==ID_c_enum_tag)
-    entry=get_entry(ns.follow_tag(to_c_enum_tag_type(type)));
-  
-  return entry;
+  {
+    cache_entry = get_entry(ns.follow_tag(to_c_enum_tag_type(type)));
+  }
+  else if(type_id==ID_c_bit_field)
+  {
+    cache_entry = defined_entryt{to_c_bit_field_type(type).get_width()};
+  }
+  else if(type_id==ID_string)
+  {
+    cache_entry = defined_entryt{32};
+  }
+  else if(type_id == ID_empty)
+  {
+    cache_entry = defined_entryt{0};
+  }
+  else
+    UNIMPLEMENTED;
+
+  return cache_entry;
 }
-
-/*******************************************************************\
-
-Function: boolbv_widtht::get_member
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 const boolbv_widtht::membert &boolbv_widtht::get_member(
   const struct_typet &type,
   const irep_idt &member) const
 {
-  unsigned component_number=type.component_number(member);
+  const auto &entry_opt = get_entry(type);
+  CHECK_RETURN(entry_opt.has_value());
+  std::size_t component_number=type.component_number(member);
+  PRECONDITION(entry_opt->members.size() > component_number);
 
-  return get_entry(type).members[component_number];
+  return entry_opt->members[component_number];
 }
-
-/*******************************************************************\
-
-Function: boolbv_get_width
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-#if 0
-bool boolbv_get_width(
-  const typet &type,
-  std::size_t &width,
-  const namespacet &ns)
-{
-  boolbv_widtht boolbv_width(ns);
-  width=boolbv_width(type);
-  return false;
-}
-
-/*******************************************************************\
-
-Function: boolbv_member_offset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-bool boolbv_member_offset(
-  const struct_typet &type,
-  const irep_idt &member,
-  std::size_t &width,
-  const namespacet &ns)
-{
-  boolbv_widtht boolbv_width(ns);
-  return boolbv_width.get_member(type, member).offset;
-}
-#endif

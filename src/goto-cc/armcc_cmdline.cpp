@@ -1,28 +1,28 @@
 /*******************************************************************\
 
-Module: A special command line object to mimick ARM's armcc
+Module: A special command line object to mimic ARM's armcc
 
 Author: Daniel Kroening
 
 \*******************************************************************/
 
-#include <cstring>
-#include <iostream>
+/// \file
+/// A special command line object to mimic ARM's armcc
 
 #include "armcc_cmdline.h"
 
-/*******************************************************************\
- 
-Function: armcc_cmdlinet::parse
- 
-  Inputs: argument count, argument strings
- 
- Outputs: none
- 
- Purpose: parses the commandline options into a cmdlinet
- 
-\*******************************************************************/
+#include <util/optional.h>
+#include <util/prefix.h>
 
+#include <algorithm>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+/// parses the command line options into a cmdlinet
+/// \par parameters: argument count, argument strings
+/// \return none
 // see
 // http://infocenter.arm.com/help/topic/com.arm.doc.dui0472c/Cchbggjb.html
 
@@ -41,10 +41,9 @@ static const char *options_no_arg[]=
   "--i386-macos",
   "--i386-linux",
   "--i386-win32",
-  "--no-arch",
   "--no-library",
   "--string-abstraction",
-                  
+
   // armcc
   "--help",
   "--show_cmdline",
@@ -93,8 +92,8 @@ static const char *options_no_arg[]=
   "--no_implicit_include_searches",
   "--implicit_typename",
   "--no_implicit_typename",
-  "--nonstd_qualifider_deduction",
-  "--no_nonstd_qualifider_deduction",
+  "--nonstd_qualifier_deduction",
+  "--no_nonstd_qualifier_deduction",
   "--old_specializations",
   "--no_old_specializations",
   "--parse_templates",
@@ -198,10 +197,11 @@ static const char *options_no_arg[]=
   "--translate_gcc",
   "--translate_gld",
   "-W",
-  NULL
+  nullptr
 };
 
-static const char *options_with_prefix[]=
+// clang-format off
+static const std::vector<std::string> options_with_prefix
 {
   "--project=",
   "--workdir=",
@@ -247,11 +247,10 @@ static const char *options_with_prefix[]=
   "--configure_sysroot=",
   "--configure_cpp_headers=",
   "--configure_extra_includes=",
-  "--configure_extra_libraries=",
-  NULL
+  "--configure_extra_libraries="
 };
 
-static const char *options_with_arg[]=
+static const std::vector<std::string> options_with_arg
 {
   // goto-cc specific
   "--verbosity",
@@ -267,9 +266,21 @@ static const char *options_with_arg[]=
   "-Warmcc,",
   "-o",
   "--cpu",
-  "--apcs",
-  NULL
+  "--apcs"
 };
+// clang-format on
+
+optionalt<std::string>
+prefix_in_list(const std::string &option, const std::vector<std::string> &list)
+{
+  const auto found =
+    std::find_if(list.cbegin(), list.cend(), [&](const std::string &argument) {
+      return has_prefix(argument, option);
+    });
+  if(found == list.cend())
+    return {};
+  return {*found};
+}
 
 bool armcc_cmdlinet::parse(int argc, const char **argv)
 {
@@ -280,43 +291,42 @@ bool armcc_cmdlinet::parse(int argc, const char **argv)
     {
       args.push_back(argv[i]);
       continue;
-    }    
-    
-    // it starts with - and it isn't "-"
+    }
 
-    std::string prefix;
+    // it starts with - and it isn't "-"
+    optionalt<std::string> prefix;
 
     if(in_list(argv[i], options_no_arg))
     {
       // options that don't have any arguments
       set(argv[i]);
     }
-    else if(prefix_in_list(argv[i], options_with_arg, prefix))
+    else if((prefix = prefix_in_list(argv[i], options_with_arg)))
     {
       // options that have a separated _or_ concatenated argument
-      if(strlen(argv[i])>prefix.size()) // concatenated?
-        set(prefix, std::string(argv[i], prefix.size(), std::string::npos));
+      if(strlen(argv[i]) > prefix->size()) // Concatenated.
+        set(*prefix, std::string(argv[i], prefix->size(), std::string::npos));
       else
       {
         // Separated.
         if(i!=argc-1) // Guard against end of command line.
         {
-          set(prefix, argv[i+1]);
+          set(*prefix, argv[i + 1]);
           i++;
         }
         else
-          set(prefix, "");
+          set(*prefix, "");
       }
-    } 
-    else if(prefix_in_list(argv[i], options_with_prefix, prefix))
+    }
+    else if((prefix = prefix_in_list(argv[i], options_with_prefix)))
     {
       // options that have a concatenated argument
-      set(prefix, std::string(argv[i], prefix.size(), std::string::npos));
+      set(*prefix, std::string(argv[i], prefix->size(), std::string::npos));
     }
     else
     { // unrecognized option
-      std::cout << "Warning: uninterpreted armcc option '" 
-                << argv[i] << "'" << std::endl;
+      std::cout << "Warning: uninterpreted armcc option '"
+                << argv[i] << "'\n";
     }
   }
 

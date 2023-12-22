@@ -6,11 +6,14 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_HAVOC_LOOPS_H
-#define CPROVER_HAVOC_LOOPS_H
+/// \file
+/// Havoc Loops
 
-#include <goto-programs/goto_functions.h>
+#ifndef CPROVER_GOTO_INSTRUMENT_HAVOC_LOOPS_H
+#define CPROVER_GOTO_INSTRUMENT_HAVOC_LOOPS_H
 
-void havoc_loops(goto_functionst &goto_functions);
+class goto_modelt;
 
-#endif
+void havoc_loops(goto_modelt &);
+
+#endif // CPROVER_GOTO_INSTRUMENT_HAVOC_LOOPS_H

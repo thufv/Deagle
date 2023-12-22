@@ -1,0 +1,17 @@
+let fr = rf^-1 ; co
+let rfe = ext(rf)
+let coe = ext(co)
+let fre = ext(fr)
+
+let com = (co | fr | rf)
+let poloc = po & loc
+irreflexive (poloc | com)+ as uniproc
+
+empty rmw & (fre;coe)
+let implied = po & W*R & ((M * A) | (A * M))
+let comtso = (co | fr | rfe)
+let potso = (po & ((R*M) | (W*W)))
+
+let ghbtso = potso | comtso | implied
+
+irreflexive ghbtso+ as tso

@@ -1,0 +1,66 @@
+let asw = IW * (M \ IW)
+
+let cacq = ACQ | (SC & (R | F)) | ACQ_REL | (F & CON)
+let crel = REL | (SC & (W | F)) | ACQ_REL
+let ccon = R & CON
+
+let fr = rf^-1 ; co
+let fre = ext(fr)
+
+let dd = (data | addr)+
+
+let fpo = po & (F * _)
+let pof = po & (_ * F)
+
+let rs_prime = int(_ * (R & W))
+let rs = co & rs_prime \ ((co \ rs_prime) ; co)
+
+let swra =
+ ext(
+ ([crel] ; fpo? ; [A & W] ; rs? ; rf ;
+ [R & A] ; pof? ; [cacq]))
+
+let pp_asw = asw \ (asw ; po)
+let sw = pp_asw | swra
+
+let cad = ((rf & po) | dd)+
+let dob =
+ ext([W & crel] ; fpo? ; [A & W] ; rs?; rf; [ccon]);
+ cad?
+
+let ithbr = sw | dob | (sw ; po)
+let ithb = (ithbr | (po ; ithbr))+
+let hb = po | ithb
+acyclic hb as Hb
+
+let hbl = hb & loc
+
+irreflexive ((rf^-1)? ; co ; rf? ; hb) as Coh
+
+let vis = (hbl & (W * R)) \ (hbl; [W] ; hbl)
+
+irreflexive (rf ; hb) as Rf
+
+empty ((rf ; [R\A]) \ vis) as NaRf
+
+irreflexive (rf | (co ; co ; rf^-1) | (co ; rf)) as Rmw
+
+let r1 = hb
+let r2 = fpo? ; co ; pof?
+let r3 = rf^-1; [SC] ; co
+let r4 = rf^-1 ; hbl ; [W]
+let r5 = fpo ; fr
+let r6 = fr ; pof
+let r7 = fpo ; fr ; pof
+
+let scp = r1|r2|r3|r4|r5|r6|r7
+
+acyclic (((SC * SC) & scp) \ id) as Spartial
+
+//undefined_unless empty dr as Dr
+//undefined_unless empty ur as unsequencedRace
+//undefined_unless empty bl as badLock
+//undefined_unless empty lu as badUnlock
+
+// Atomicity
+empty rmw & (fre; ext(co)) as atomic

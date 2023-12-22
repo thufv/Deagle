@@ -6,42 +6,88 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_POINTER_ANALYSIS_INVARIANT_SET_DOMAIN_H
-#define CPROVER_POINTER_ANALYSIS_INVARIANT_SET_DOMAIN_H
+/// \file
+/// Value Set
 
-#include "static_analysis.h"
+#ifndef CPROVER_ANALYSES_INVARIANT_SET_DOMAIN_H
+#define CPROVER_ANALYSES_INVARIANT_SET_DOMAIN_H
+
+#include <util/threeval.h>
+
+#include "ai_domain.h"
 #include "invariant_set.h"
 
-class invariant_set_domaint:public domain_baset
+class invariant_set_domaint:public ai_domain_baset
 {
 public:
+  invariant_set_domaint(
+    value_setst &value_sets,
+    inv_object_storet &object_store,
+    const namespacet &ns)
+    : has_values(false), invariant_set(value_sets, object_store, ns)
+  {
+  }
+
+  tvt has_values;
   invariant_sett invariant_set;
 
-  // overloading  
+  // overloading
 
-  inline bool merge(const invariant_set_domaint &other, locationt to)
+  bool merge(const invariant_set_domaint &other, trace_ptrt, trace_ptrt)
   {
-    return invariant_set.make_union(other.invariant_set);
+    bool changed=invariant_set.make_union(other.invariant_set) ||
+                 has_values.is_false();
+    has_values=tvt::unknown();
+
+    return changed;
   }
 
-  virtual void output(
-    const namespacet &ns,
-    std::ostream &out) const
+  void output(
+    std::ostream &out,
+    const ai_baset &,
+    const namespacet &) const final override
   {
-    invariant_set.output("", out);
-  }
-    
-  virtual void initialize(
-    const namespacet &ns,
-    locationt l)
-  {
-    invariant_set.make_true();
+    if(has_values.is_known())
+      out << has_values.to_string() << '\n';
+    else
+      invariant_set.output(out);
   }
 
   virtual void transform(
-    const namespacet &ns,
-    locationt from_l,
-    locationt to_l);
+    const irep_idt &function_from,
+    trace_ptrt trace_from,
+    const irep_idt &function_to,
+    trace_ptrt trace_to,
+    ai_baset &ai,
+    const namespacet &ns) final override;
+
+  void make_top() final override
+  {
+    invariant_set.make_true();
+    has_values=tvt(true);
+  }
+
+  void make_bottom() final override
+  {
+    invariant_set.make_false();
+    has_values=tvt(false);
+  }
+
+  void make_entry() final override
+  {
+    invariant_set.make_true();
+    has_values=tvt(true);
+  }
+
+  bool is_top() const override final
+  {
+    return has_values.is_true();
+  }
+
+  bool is_bottom() const override final
+  {
+    return has_values.is_false();
+  }
 };
 
-#endif
+#endif // CPROVER_ANALYSES_INVARIANT_SET_DOMAIN_H

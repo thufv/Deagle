@@ -6,59 +6,42 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <iostream>
+/// \file
+/// Show Value Sets
 
+#include "show_value_sets.h"
+#include "value_set_analysis.h"
+
+#include <goto-programs/goto_model.h>
+
+#include <util/invariant.h>
 #include <util/xml.h>
 
-#include "value_set_analysis.h"
-#include "show_value_sets.h"
-
-/*******************************************************************\
-
-Function: show_value_sets
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <iostream>
 
 void show_value_sets(
   ui_message_handlert::uit ui,
-  const goto_functionst &goto_functions,
+  const goto_modelt &goto_model,
   const value_set_analysist &value_set_analysis)
 {
   switch(ui)
   {
-  case ui_message_handlert::XML_UI:
+  case ui_message_handlert::uit::XML_UI:
     {
       xmlt xml;
-      convert(goto_functions, value_set_analysis, xml);
-      std::cout << xml << std::endl;
+      convert(goto_model.goto_functions, value_set_analysis, xml);
+      std::cout << xml << '\n';
     }
     break;
-    
-  case ui_message_handlert::PLAIN:
-    value_set_analysis.output(goto_functions, std::cout);
+
+  case ui_message_handlert::uit::PLAIN:
+    value_set_analysis.output(goto_model.goto_functions, std::cout);
     break;
-      
-  default:;
+
+  case ui_message_handlert::uit::JSON_UI:
+    UNIMPLEMENTED;
   }
 }
-
-/*******************************************************************\
-
-Function: show_value_sets
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void show_value_sets(
   ui_message_handlert::uit ui,
@@ -67,18 +50,19 @@ void show_value_sets(
 {
   switch(ui)
   {
-  case ui_message_handlert::XML_UI:
+  case ui_message_handlert::uit::XML_UI:
     {
       xmlt xml;
       convert(goto_program, value_set_analysis, xml);
-      std::cout << xml << std::endl;
+      std::cout << xml << '\n';
     }
     break;
-    
-  case ui_message_handlert::PLAIN:
+
+  case ui_message_handlert::uit::PLAIN:
     value_set_analysis.output(goto_program, std::cout);
     break;
-      
-  default:;
+
+  case ui_message_handlert::uit::JSON_UI:
+    UNIMPLEMENTED;
   }
 }

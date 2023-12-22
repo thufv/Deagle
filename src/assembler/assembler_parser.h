@@ -6,11 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#ifndef CPROVER_ASSEMBLER_PARSER_H
-#define CPROVER_ASSEMBLER_PARSER_H
+
+#ifndef CPROVER_ASSEMBLER_ASSEMBLER_PARSER_H
+#define CPROVER_ASSEMBLER_ASSEMBLER_PARSER_H
 
 #include <util/parser.h>
-#include <util/expr.h>
+
+#include <list>
 
 int yyassemblerlex();
 int yyassemblererror(const std::string &error);
@@ -21,7 +23,7 @@ class assembler_parsert:public parsert
 public:
   typedef std::vector<irept> instructiont;
   std::list<instructiont> instructions;
-  
+
   void add_token(const irept &irep)
   {
     if(instructions.empty())
@@ -29,16 +31,16 @@ public:
 
     instructions.back().push_back(irep);
   }
-  
+
   void new_instruction()
   {
     instructions.push_back(instructiont());
   }
-  
+
   assembler_parsert()
   {
   }
-  
+
   virtual bool parse()
   {
     yyassemblerlex();
@@ -49,10 +51,10 @@ public:
   {
     parsert::clear();
     instructions.clear();
-    //assembler_scanner_init();
+    // assembler_scanner_init();
   }
 };
 
 extern assembler_parsert assembler_parser;
 
-#endif
+#endif // CPROVER_ASSEMBLER_ASSEMBLER_PARSER_H

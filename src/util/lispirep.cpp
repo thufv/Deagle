@@ -6,32 +6,22 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+
 #include "lispirep.h"
+
 #include "irep.h"
 #include "lispexpr.h"
-
-/*******************************************************************\
-
-Function:
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void lisp2irep(const lispexprt &src, irept &dest)
 {
   dest.make_nil();
 
-  if(src.type!=lispexprt::List || src.size()<1)
+  if(src.type!=lispexprt::List || src.empty())
     return;
 
   dest.id(src[0].value);
 
-  for(unsigned i=1; i<src.size(); i++)
+  for(std::size_t i=1; i<src.size(); i++)
     if(!src[i].is_nil())
     {
       const std::string &name=src[i].value;
@@ -42,7 +32,7 @@ void lisp2irep(const lispexprt &src, irept &dest)
         irept sub;
         lisp2irep(src[i], sub);
 
-        if(name=="")
+        if(name.empty())
           dest.move_to_sub(sub);
         else
           dest.move_to_named_sub(name, sub);
@@ -53,56 +43,47 @@ void lisp2irep(const lispexprt &src, irept &dest)
 void irep2lisp(const irept &src, lispexprt &dest)
 {
   dest.clear();
-  dest.value="";
+  dest.value.clear();
   dest.type=lispexprt::List;
 
-  dest.reserve(2+2*src.get_sub().size()
-                +2*src.get_named_sub().size()
-                +2*src.get_comments().size());
+#if NAMED_SUB_IS_FORWARD_LIST
+  const std::size_t named_sub_size =
+    std::distance(src.get_named_sub().begin(), src.get_named_sub().end());
+#else
+  const std::size_t named_sub_size = src.get_named_sub().size();
+#endif
+  dest.reserve(2 + 2 * src.get_sub().size() + 2 * named_sub_size);
 
   lispexprt id;
   id.type=lispexprt::String;
   id.value=src.id_string();
   dest.push_back(id);
 
-  // reserve objects for extra performace
+  // reserve objects for extra performance
 
-  forall_irep(it, src.get_sub())
+  for(const auto &irep : src.get_sub())
   {
     lispexprt name;
     name.type=lispexprt::String;
-    name.value="";
+    name.value.clear();
     dest.push_back(name);
 
     lispexprt sub;
 
-    irep2lisp(*it, sub);
+    irep2lisp(irep, sub);
     dest.push_back(sub);
   }
 
-  forall_named_irep(it, src.get_named_sub())
+  for(const auto &irep_entry : src.get_named_sub())
   {
     lispexprt name;
     name.type=lispexprt::String;
-    name.value=name2string(it->first);
+    name.value = id2string(irep_entry.first);
     dest.push_back(name);
 
     lispexprt sub;
 
-    irep2lisp(it->second, sub);
-    dest.push_back(sub);
-  }
-
-  forall_named_irep(it, src.get_comments())
-  {
-    lispexprt name;
-    name.type=lispexprt::String;
-    name.value=name2string(it->first);
-    dest.push_back(name);
-
-    lispexprt sub;
-
-    irep2lisp(it->second, sub);
+    irep2lisp(irep_entry.second, sub);
     dest.push_back(sub);
   }
 

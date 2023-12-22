@@ -6,48 +6,44 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#include <ostream>
+/// \file
+/// C++ Language Type Checking
 
 #include "template_map.h"
 
-/*******************************************************************\
+#include <util/c_types.h>
+#include <util/invariant.h>
+#include <util/std_expr.h>
 
-Function: template_mapt::apply
+#include "cpp_template_parameter.h"
+#include "cpp_template_type.h"
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <ostream>
 
 void template_mapt::apply(typet &type) const
 {
   if(type.id()==ID_array)
   {
-    apply(type.subtype());
-    apply(static_cast<exprt &>(type.add(ID_size)));
+    apply(to_array_type(type).element_type());
+    apply(to_array_type(type).size());
   }
   else if(type.id()==ID_pointer)
   {
-    apply(type.subtype());
+    apply(to_pointer_type(type).base_type());
   }
   else if(type.id()==ID_struct ||
           type.id()==ID_union)
   {
-    irept::subt &components=type.add(ID_components).get_sub();
-
-    Forall_irep(it, components)
+    for(auto &c : to_struct_union_type(type).components())
     {
-      typet &subtype=static_cast<typet &>(it->add(ID_type));
+      typet &subtype = c.type();
       apply(subtype);
     }
   }
-  else if(type.id()==ID_symbol)
+  else if(type.id() == ID_template_parameter_symbol_type)
   {
-    type_mapt::const_iterator m_it=
-      type_map.find(type.get(ID_identifier));
+    type_mapt::const_iterator m_it =
+      type_map.find(to_template_parameter_symbol_type(type).get_identifier());
 
     if(m_it!=type_map.end())
     {
@@ -57,34 +53,22 @@ void template_mapt::apply(typet &type) const
   }
   else if(type.id()==ID_code)
   {
-    apply(static_cast<typet &>(type.add(ID_return_type)));
+    apply(to_code_type(type).return_type());
 
     irept::subt &parameters=type.add(ID_parameters).get_sub();
 
-    Forall_irep(it, parameters)
+    for(auto &parameter : parameters)
     {
-      if(it->id()==ID_parameter)
-        apply(static_cast<typet &>(it->add(ID_type)));
+      if(parameter.id() == ID_parameter)
+        apply(static_cast<typet &>(parameter.add(ID_type)));
     }
   }
   else if(type.id()==ID_merged_type)
   {
-    Forall_subtypes(it, type)
-      apply(*it);
+    for(typet &subtype : to_type_with_subtypes(type).subtypes())
+      apply(subtype);
   }
 }
-
-/*******************************************************************\
-
-Function: template_mapt::apply
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void template_mapt::apply(exprt &expr) const
 {
@@ -92,8 +76,8 @@ void template_mapt::apply(exprt &expr) const
 
   if(expr.id()==ID_symbol)
   {
-    expr_mapt::const_iterator m_it=
-      expr_map.find(expr.get(ID_identifier));
+    expr_mapt::const_iterator m_it =
+      expr_map.find(to_symbol_expr(expr).get_identifier());
 
     if(m_it!=expr_map.end())
     {
@@ -105,18 +89,6 @@ void template_mapt::apply(exprt &expr) const
   Forall_operands(it, expr)
     apply(*it);
 }
-
-/*******************************************************************\
-
-Function: template_mapt::lookup
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 exprt template_mapt::lookup(const irep_idt &identifier) const
 {
@@ -139,18 +111,6 @@ exprt template_mapt::lookup(const irep_idt &identifier) const
   return static_cast<const exprt &>(get_nil_irep());
 }
 
-/*******************************************************************\
-
-Function: template_mapt::lookup_type
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 typet template_mapt::lookup_type(const irep_idt &identifier) const
 {
   type_mapt::const_iterator t_it=
@@ -161,18 +121,6 @@ typet template_mapt::lookup_type(const irep_idt &identifier) const
 
   return static_cast<const typet &>(get_nil_irep());
 }
-
-/*******************************************************************\
-
-Function: template_mapt::lookup_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 exprt template_mapt::lookup_expr(const irep_idt &identifier) const
 {
@@ -185,42 +133,14 @@ exprt template_mapt::lookup_expr(const irep_idt &identifier) const
   return static_cast<const exprt &>(get_nil_irep());
 }
 
-/*******************************************************************\
-
-Function: template_mapt::print
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void template_mapt::print(std::ostream &out) const
 {
-  for(type_mapt::const_iterator it=type_map.begin();
-      it!=type_map.end();
-      it++)
-    out << it->first << " = " << it->second.pretty() << std::endl;
+  for(const auto &mapping : type_map)
+    out << mapping.first << " = " << mapping.second.pretty() << '\n';
 
-  for(expr_mapt::const_iterator it=expr_map.begin();
-      it!=expr_map.end();
-      it++)
-    out << it->first << " = " << it->second.pretty() << std::endl;
+  for(const auto &mapping : expr_map)
+    out << mapping.first << " = " << mapping.second.pretty() << '\n';
 }
-
-/*******************************************************************\
-
-Function: template_mapt::build
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void template_mapt::build(
   const template_typet &template_type,
@@ -238,7 +158,7 @@ void template_mapt::build(
   if(instance.size()<template_parameters.size())
   {
     // check for default parameters
-    for(unsigned i=instance.size();
+    for(std::size_t i=instance.size();
         i<template_parameters.size();
         i++)
     {
@@ -252,29 +172,18 @@ void template_mapt::build(
   }
 
   // these should have been typechecked before
-  assert(instance.size()==template_parameters.size());
+  DATA_INVARIANT(
+    instance.size() == template_parameters.size(),
+    "template instantiation expected to match declaration");
 
   for(cpp_template_args_tct::argumentst::const_iterator
       i_it=instance.begin();
       i_it!=instance.end();
       i_it++, t_it++)
   {
-    assert(t_it!=template_parameters.end());
     set(*t_it, *i_it);
   }
 }
-
-/*******************************************************************\
-
-Function: template_mapt::set
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void template_mapt::set(
   const template_parametert &parameter,
@@ -283,7 +192,7 @@ void template_mapt::set(
   if(parameter.id()==ID_type)
   {
     if(parameter.id()!=ID_type)
-      assert(false); // typechecked before!
+      UNREACHABLE; // typechecked before!
 
     typet tmp=value.type();
 
@@ -293,40 +202,20 @@ void template_mapt::set(
   else
   {
     // must be non-type
-  
+
     if(value.id()==ID_type)
-      assert(false); // typechecked before!
+      UNREACHABLE; // typechecked before!
 
     irep_idt identifier=parameter.get(ID_identifier);
     expr_map[identifier]=value;
-  }    
+  }
 }
-
-/*******************************************************************\
-
-Function: template_mapt::build_unassigned
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void template_mapt::build_unassigned(
   const template_typet &template_type)
 {
-  const template_typet::template_parameterst &template_parameters=
-    template_type.template_parameters();
-
-  for(template_typet::template_parameterst::const_iterator
-      t_it=template_parameters.begin();
-      t_it!=template_parameters.end();
-      t_it++)
+  for(const auto &t : template_type.template_parameters())
   {
-    const template_parametert &t=*t_it;
-    
     if(t.id()==ID_type)
     {
       typet tmp(ID_unassigned);
@@ -340,21 +229,9 @@ void template_mapt::build_unassigned(
       tmp.set(ID_identifier, t.get(ID_identifier));
       tmp.add_source_location()=t.source_location();
       expr_map[t.get(ID_identifier)]=tmp;
-    }    
+    }
   }
 }
-
-/*******************************************************************\
-
-Function: template_mapt::build_template_args
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 cpp_template_args_tct template_mapt::build_template_args(
   const template_typet &template_type) const
@@ -364,11 +241,11 @@ cpp_template_args_tct template_mapt::build_template_args(
 
   cpp_template_args_tct template_args;
   template_args.arguments().resize(template_parameters.size());
-  
-  for(unsigned i=0; i<template_parameters.size(); i++)
+
+  for(std::size_t i=0; i<template_parameters.size(); i++)
   {
     const template_parametert &t=template_parameters[i];
-    
+
     if(t.id()==ID_type)
     {
       template_args.arguments()[i]=
@@ -378,9 +255,8 @@ cpp_template_args_tct template_mapt::build_template_args(
     {
       template_args.arguments()[i]=
         lookup_expr(t.get(ID_identifier));
-    }    
+    }
   }
-  
+
   return template_args;
 }
-

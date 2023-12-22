@@ -67,7 +67,7 @@ public:
     bool activate_directed_edge(ICD_edget edge);
 
     bool activate_edge(int u, int v, edge_kindt kind, ICD_reasont reason);
-    bool activate_epo(int u, int v);
+    bool activate_apo(int u, int v);
 
     void atomic_remove_self();
 

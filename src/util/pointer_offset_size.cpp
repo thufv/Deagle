@@ -6,147 +6,148 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
-
-#include "expr.h"
-#include "arith_tools.h"
-#include "std_types.h"
-#include "std_expr.h"
-#include "expr_util.h"
-#include "config.h"
-#include "simplify_expr.h"
-#include "namespace.h"
-#include "symbol.h"
+/// \file
+/// Pointer Logic
 
 #include "pointer_offset_size.h"
 
-/*******************************************************************\
+#include "arith_tools.h"
+#include "byte_operators.h"
+#include "c_types.h"
+#include "invariant.h"
+#include "namespace.h"
+#include "pointer_expr.h"
+#include "simplify_expr.h"
+#include "ssa_expr.h"
+#include "std_expr.h"
 
-Function: member_offset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-mp_integer member_offset(
-  const namespacet &ns,
+optionalt<mp_integer> member_offset(
   const struct_typet &type,
-  const irep_idt &member)
+  const irep_idt &member,
+  const namespacet &ns)
 {
-  const struct_typet::componentst &components=type.components();
-  
-  mp_integer result=0;
-  unsigned bit_field_bits=0;
-  
-  for(struct_typet::componentst::const_iterator
-      it=components.begin();
-      it!=components.end();
-      it++)
-  {
-    if(it->get_name()==member)
-      break;
+  mp_integer result = 0;
+  std::size_t bit_field_bits = 0;
 
-    if(it->get_is_bit_field())
+  for(const auto &comp : type.components())
+  {
+    if(comp.get_name() == member)
+      return result;
+
+    if(comp.type().id() == ID_c_bit_field)
     {
-      // take the extra bytes needed
-      unsigned w=it->type().get_int(ID_width);
-      for(; w>bit_field_bits; ++result, bit_field_bits+=8);
-      bit_field_bits-=w;
+      const std::size_t w = to_c_bit_field_type(comp.type()).get_width();
+      bit_field_bits += w;
+      result += bit_field_bits / 8;
+      bit_field_bits %= 8;
+    }
+    else if(comp.type().id() == ID_bool)
+    {
+      ++bit_field_bits;
+      result += bit_field_bits / 8;
+      bit_field_bits %= 8;
     }
     else
     {
-      const typet &subtype=it->type();
-      mp_integer sub_size=pointer_offset_size(ns, subtype);
-      if(sub_size==-1) return -1; // give up
-      result+=sub_size;
+      DATA_INVARIANT(
+        bit_field_bits == 0, "padding ensures offset at byte boundaries");
+      const auto sub_size = pointer_offset_size(comp.type(), ns);
+      if(!sub_size.has_value())
+        return {};
+      else
+        result += *sub_size;
     }
   }
 
   return result;
 }
 
-/*******************************************************************\
+optionalt<mp_integer> member_offset_bits(
+  const struct_typet &type,
+  const irep_idt &member,
+  const namespacet &ns)
+{
+  mp_integer offset=0;
+  const struct_typet::componentst &components=type.components();
 
-Function: pointer_offset_size
+  for(const auto &comp : components)
+  {
+    if(comp.get_name()==member)
+      return offset;
 
-  Inputs:
+    auto member_bits = pointer_offset_bits(comp.type(), ns);
+    if(!member_bits.has_value())
+      return {};
 
- Outputs:
+    offset += *member_bits;
+  }
 
- Purpose:
+  return {};
+}
 
-\*******************************************************************/
+/// Compute the size of a type in bytes, rounding up to full bytes
+optionalt<mp_integer>
+pointer_offset_size(const typet &type, const namespacet &ns)
+{
+  auto bits = pointer_offset_bits(type, ns);
 
-mp_integer pointer_offset_size(
-  const namespacet &ns,
-  const typet &type)
+  if(bits.has_value())
+    return (*bits + 7) / 8;
+  else
+    return {};
+}
+
+optionalt<mp_integer>
+pointer_offset_bits(const typet &type, const namespacet &ns)
 {
   if(type.id()==ID_array)
   {
-    mp_integer sub=pointer_offset_size(ns, type.subtype());
-  
-    // get size
-    const exprt &size=to_array_type(type).size();
+    auto sub = pointer_offset_bits(to_array_type(type).element_type(), ns);
+    if(!sub.has_value())
+      return {};
 
-    // constant?
-    mp_integer i;
-    
-    if(to_integer(size, i))
-      return -1; // we cannot distinguish the elements
-    
-    return sub*i;
+    // get size - we can only distinguish the elements if the size is constant
+    const auto size = numeric_cast<mp_integer>(to_array_type(type).size());
+    if(!size.has_value())
+      return {};
+
+    return (*sub) * (*size);
   }
   else if(type.id()==ID_vector)
   {
-    mp_integer sub=pointer_offset_size(ns, type.subtype());
-  
-    // get size
-    const exprt &size=to_vector_type(type).size();
+    auto sub = pointer_offset_bits(to_vector_type(type).element_type(), ns);
+    if(!sub.has_value())
+      return {};
 
-    // constant?
-    mp_integer i;
-    
-    if(to_integer(size, i))
-      return -1; // we cannot distinguish the elements
-    
-    return sub*i;
+    // get size
+    const mp_integer size =
+      numeric_cast_v<mp_integer>(to_vector_type(type).size());
+
+    return (*sub) * size;
   }
   else if(type.id()==ID_complex)
   {
-    mp_integer sub=pointer_offset_size(ns, type.subtype());
-    return sub*2;
+    auto sub = pointer_offset_bits(to_complex_type(type).subtype(), ns);
+
+    if(sub.has_value())
+      return (*sub) * 2;
+    else
+      return {};
   }
   else if(type.id()==ID_struct)
   {
     const struct_typet &struct_type=to_struct_type(type);
-    const struct_typet::componentst &components=
-      struct_type.components();
-      
     mp_integer result=0;
-    unsigned bit_field_bits=0;
-    
-    for(struct_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
+
+    for(const auto &c : struct_type.components())
     {
-      if(it->get_is_bit_field())
-      {
-        unsigned w=it->type().get_int(ID_width);
-        for(; w>bit_field_bits; ++result, bit_field_bits+=8);
-        bit_field_bits-=w;
-      }
-      else
-      {
-        const typet &subtype=it->type();
-        mp_integer sub_size=pointer_offset_size(ns, subtype);
-        if(sub_size==-1) return -1;
-        result+=sub_size;
-      }
+      const typet &subtype = c.type();
+      auto sub_size = pointer_offset_bits(subtype, ns);
+
+      if(!sub_size.has_value())
+        return {};
+
+      result += *sub_size;
     }
 
     return result;
@@ -154,77 +155,70 @@ mp_integer pointer_offset_size(
   else if(type.id()==ID_union)
   {
     const union_typet &union_type=to_union_type(type);
-    const union_typet::componentst &components=
-      union_type.components();
-      
-    mp_integer result=0;
 
-    // compute max
-    
-    for(union_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
-    {
-      const typet &subtype=it->type();
-      mp_integer sub_size=pointer_offset_size(ns, subtype);
-      if(sub_size>result) result=sub_size;
-    }
-    
-    return result;
+    if(union_type.components().empty())
+      return mp_integer{0};
+
+    const auto widest_member = union_type.find_widest_union_component(ns);
+
+    if(widest_member.has_value())
+      return widest_member->second;
+    else
+      return {};
   }
   else if(type.id()==ID_signedbv ||
           type.id()==ID_unsignedbv ||
           type.id()==ID_fixedbv ||
           type.id()==ID_floatbv ||
-          type.id()==ID_bv)
+          type.id()==ID_bv ||
+          type.id()==ID_c_bool ||
+          type.id()==ID_c_bit_field)
   {
-    unsigned width=to_bitvector_type(type).get_width();
-    unsigned bytes=width/8;
-    if(bytes*8!=width) bytes++;
-    return bytes;
+    return mp_integer(to_bitvector_type(type).get_width());
   }
   else if(type.id()==ID_c_enum)
   {
-    unsigned width=to_bitvector_type(type.subtype()).get_width();
-    unsigned bytes=width/8;
-    if(bytes*8!=width) bytes++;
-    return bytes;
+    return mp_integer(
+      to_bitvector_type(to_c_enum_type(type).underlying_type()).get_width());
   }
   else if(type.id()==ID_c_enum_tag)
-    return pointer_offset_size(ns, ns.follow_tag(to_c_enum_tag_type(type)));
+  {
+    return pointer_offset_bits(ns.follow_tag(to_c_enum_tag_type(type)), ns);
+  }
   else if(type.id()==ID_bool)
-    return 1;
+  {
+    return mp_integer(1);
+  }
   else if(type.id()==ID_pointer)
   {
-    unsigned width=config.ansi_c.pointer_width;
-    unsigned bytes=width/8;
-    if(bytes*8!=width) bytes++;
-    return bytes;
+    // the following is an MS extension
+    if(type.get_bool(ID_C_ptr32))
+      return mp_integer(32);
+
+    return mp_integer(to_bitvector_type(type).get_width());
   }
-  else if(type.id()==ID_symbol)
-    return pointer_offset_size(ns, ns.follow(type));
+  else if(type.id() == ID_union_tag)
+  {
+    return pointer_offset_bits(ns.follow_tag(to_union_tag_type(type)), ns);
+  }
+  else if(type.id() == ID_struct_tag)
+  {
+    return pointer_offset_bits(ns.follow_tag(to_struct_tag_type(type)), ns);
+  }
   else if(type.id()==ID_code)
-    return 0;
+  {
+    return mp_integer(0);
+  }
+  else if(type.id()==ID_string)
+  {
+    return mp_integer(32);
+  }
   else
-    return mp_integer(-1);
+    return {};
 }
 
-/*******************************************************************\
-
-Function: member_offset_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-exprt member_offset_expr(
-  const member_exprt &member_expr,
-  const namespacet &ns)
+optionalt<exprt>
+member_offset_expr(const member_exprt &member_expr, const namespacet &ns)
 {
   // need to distinguish structs and unions
   const typet &type=ns.follow(member_expr.struct_op().type());
@@ -232,202 +226,242 @@ exprt member_offset_expr(
     return member_offset_expr(
       to_struct_type(type), member_expr.get_component_name(), ns);
   else if(type.id()==ID_union)
-    return gen_zero(signedbv_typet(config.ansi_c.pointer_width));
+    return from_integer(0, size_type());
   else
-    return nil_exprt();
+    return {};
 }
 
-/*******************************************************************\
-
-Function: member_offset_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-exprt member_offset_expr(
+optionalt<exprt> member_offset_expr(
   const struct_typet &type,
   const irep_idt &member,
   const namespacet &ns)
 {
-  const struct_typet::componentst &components=type.components();
-  
-  exprt result=gen_zero(signedbv_typet(config.ansi_c.pointer_width));
-  unsigned bit_field_bits=0;
-  
-  for(struct_typet::componentst::const_iterator
-      it=components.begin();
-      it!=components.end();
-      it++)
-  {
-    if(it->get_name()==member) break;
+  PRECONDITION(size_type().get_width() != 0);
+  exprt result=from_integer(0, size_type());
+  std::size_t bit_field_bits=0;
 
-    if(it->get_is_bit_field())
+  for(const auto &c : type.components())
+  {
+    if(c.get_name() == member)
+      break;
+
+    if(c.type().id() == ID_c_bit_field)
     {
-      unsigned w=it->get_bit_field_bits(ns);
-      unsigned bytes;
-      for(bytes=0; w>bit_field_bits; ++bytes, bit_field_bits+=8);
-      bit_field_bits-=w;
-      result=plus_exprt(result, from_integer(bytes, result.type()));
+      std::size_t w = to_c_bit_field_type(c.type()).get_width();
+      bit_field_bits += w;
+      const std::size_t bytes = bit_field_bits / 8;
+      bit_field_bits %= 8;
+      if(bytes > 0)
+        result = plus_exprt(result, from_integer(bytes, result.type()));
+    }
+    else if(c.type().id() == ID_bool)
+    {
+      ++bit_field_bits;
+      const std::size_t bytes = bit_field_bits / 8;
+      bit_field_bits %= 8;
+      if(bytes > 0)
+        result = plus_exprt(result, from_integer(bytes, result.type()));
     }
     else
     {
-      const typet &subtype=it->type();
-      exprt sub_size=size_of_expr(subtype, ns);
-      if(sub_size.is_nil()) return nil_exprt(); // give up
-      result=plus_exprt(result, sub_size);
+      DATA_INVARIANT(
+        bit_field_bits == 0, "padding ensures offset at byte boundaries");
+      const typet &subtype = c.type();
+      auto sub_size = size_of_expr(subtype, ns);
+      if(!sub_size.has_value())
+        return {}; // give up
+      result = plus_exprt(result, sub_size.value());
     }
   }
 
-  simplify(result, ns);
-  
-  return result;
+  return simplify_expr(std::move(result), ns);
 }
 
-/*******************************************************************\
-
-Function: size_of_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-exprt size_of_expr(
-  const typet &type,
-  const namespacet &ns)
+optionalt<exprt> size_of_expr(const typet &type, const namespacet &ns)
 {
   if(type.id()==ID_array)
   {
-    exprt sub=size_of_expr(type.subtype(), ns);
-    if(sub.is_nil()) return nil_exprt();
-  
-    // get size
-    exprt size=to_array_type(type).size();
-    
-    if(size.is_nil()) return nil_exprt();
-    
-    if(size.type()!=sub.type())
-      size.make_typecast(sub.type());
-    
-    exprt result=mult_exprt(size, sub);
+    const auto &array_type = to_array_type(type);
 
-    simplify(result, ns);
+    // special-case arrays of bits
+    if(array_type.element_type().id() == ID_bool)
+    {
+      auto bits = pointer_offset_bits(array_type, ns);
 
-    return result;
+      if(bits.has_value())
+        return from_integer((*bits + 7) / 8, size_type());
+    }
+
+    auto sub = size_of_expr(array_type.element_type(), ns);
+    if(!sub.has_value())
+      return {};
+
+    const exprt &size = array_type.size();
+
+    if(size.is_nil())
+      return {};
+
+    const auto size_casted =
+      typecast_exprt::conditional_cast(size, sub.value().type());
+
+    return simplify_expr(mult_exprt{size_casted, sub.value()}, ns);
   }
   else if(type.id()==ID_vector)
   {
-    exprt sub=size_of_expr(type.subtype(), ns);
-    if(sub.is_nil()) return nil_exprt();
-  
-    // get size
-    exprt size=to_vector_type(type).size();
-    
-    if(size.is_nil()) return nil_exprt();
-    
-    if(size.type()!=sub.type())
-      size.make_typecast(sub.type());
-    
-    exprt result=mult_exprt(size, sub);
-    simplify(result, ns);
+    const auto &vector_type = to_vector_type(type);
 
-    return result;
+    // special-case vectors of bits
+    if(vector_type.element_type().id() == ID_bool)
+    {
+      auto bits = pointer_offset_bits(vector_type, ns);
+
+      if(bits.has_value())
+        return from_integer((*bits + 7) / 8, size_type());
+    }
+
+    auto sub = size_of_expr(vector_type.element_type(), ns);
+    if(!sub.has_value())
+      return {};
+
+    const exprt &size = to_vector_type(type).size();
+
+    if(size.is_nil())
+      return {};
+
+    const auto size_casted =
+      typecast_exprt::conditional_cast(size, sub.value().type());
+
+    return simplify_expr(mult_exprt{size_casted, sub.value()}, ns);
   }
   else if(type.id()==ID_complex)
   {
-    exprt sub=size_of_expr(type.subtype(), ns);
-    if(sub.is_nil()) return nil_exprt();
-  
-    const exprt size=from_integer(2, sub.type());
-    
-    exprt result=mult_exprt(size, sub);
-    simplify(result, ns);
+    auto sub = size_of_expr(to_complex_type(type).subtype(), ns);
+    if(!sub.has_value())
+      return {};
 
-    return result;
+    exprt size = from_integer(2, sub.value().type());
+    return simplify_expr(mult_exprt{std::move(size), sub.value()}, ns);
   }
   else if(type.id()==ID_struct)
   {
     const struct_typet &struct_type=to_struct_type(type);
-    const struct_typet::componentst &components=
-      struct_type.components();
-      
-    exprt result=gen_zero(signedbv_typet(config.ansi_c.pointer_width));
-    unsigned bit_field_bits=0;
-    
-    for(struct_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
+
+    exprt result=from_integer(0, size_type());
+    std::size_t bit_field_bits=0;
+
+    for(const auto &c : struct_type.components())
     {
-      if(it->get_is_bit_field())
+      if(c.type().id() == ID_c_bit_field)
       {
-        unsigned w=it->get_bit_field_bits(ns);
-        unsigned bytes;
-        for(bytes=0; w>bit_field_bits; ++bytes, bit_field_bits+=8);
-        bit_field_bits-=w;
-        result=plus_exprt(result, from_integer(bytes, result.type()));
+        std::size_t w = to_c_bit_field_type(c.type()).get_width();
+        bit_field_bits += w;
+        const std::size_t bytes = bit_field_bits / 8;
+        bit_field_bits %= 8;
+        if(bytes > 0)
+          result = plus_exprt(result, from_integer(bytes, result.type()));
+      }
+      else if(c.type().id() == ID_bool)
+      {
+        ++bit_field_bits;
+        const std::size_t bytes = bit_field_bits / 8;
+        bit_field_bits %= 8;
+        if(bytes > 0)
+          result = plus_exprt(result, from_integer(bytes, result.type()));
+      }
+      else if(c.type().get_bool(ID_C_flexible_array_member))
+      {
+        // flexible array members do not change the sizeof result
+        continue;
       }
       else
       {
-        const typet &subtype=it->type();
-        exprt sub_size=size_of_expr(subtype, ns);
-        if(sub_size.is_nil()) return nil_exprt();
+        DATA_INVARIANT(
+          bit_field_bits == 0, "padding ensures offset at byte boundaries");
+        const typet &subtype = c.type();
+        auto sub_size_opt = size_of_expr(subtype, ns);
+        if(!sub_size_opt.has_value())
+          return {};
 
-        result=plus_exprt(result, sub_size);
+        result = plus_exprt(result, sub_size_opt.value());
       }
     }
 
-    simplify(result, ns);
-    
-    return result;
+    return simplify_expr(std::move(result), ns);
   }
   else if(type.id()==ID_union)
   {
     const union_typet &union_type=to_union_type(type);
-    const union_typet::componentst &components=
-      union_type.components();
-      
-    mp_integer result=0;
+
+    mp_integer max_bytes=0;
+    exprt result=from_integer(0, size_type());
 
     // compute max
-    
-    for(union_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
+
+    for(const auto &c : union_type.components())
     {
-      const typet &subtype=it->type();
-      mp_integer sub_size=pointer_offset_size(ns, subtype);
-      if(sub_size>result) result=sub_size;
+      const typet &subtype = c.type();
+      exprt sub_size;
+
+      auto sub_bits = pointer_offset_bits(subtype, ns);
+
+      if(!sub_bits.has_value())
+      {
+        max_bytes=-1;
+
+        auto sub_size_opt = size_of_expr(subtype, ns);
+        if(!sub_size_opt.has_value())
+          return {};
+        sub_size = sub_size_opt.value();
+      }
+      else
+      {
+        mp_integer sub_bytes = (*sub_bits + 7) / 8;
+
+        if(max_bytes>=0)
+        {
+          if(max_bytes<sub_bytes)
+          {
+            max_bytes=sub_bytes;
+            result=from_integer(sub_bytes, size_type());
+          }
+
+          continue;
+        }
+
+        sub_size=from_integer(sub_bytes, size_type());
+      }
+
+      result=if_exprt(
+        binary_relation_exprt(result, ID_lt, sub_size),
+        sub_size, result);
+
+      simplify(result, ns);
     }
-    
-    return from_integer(result, signedbv_typet(config.ansi_c.pointer_width));
+
+    return result;
   }
   else if(type.id()==ID_signedbv ||
           type.id()==ID_unsignedbv ||
           type.id()==ID_fixedbv ||
           type.id()==ID_floatbv ||
-          type.id()==ID_bv)
+          type.id()==ID_bv ||
+          type.id()==ID_c_bool ||
+          type.id()==ID_c_bit_field)
   {
-    unsigned width=to_bitvector_type(type).get_width();
-    unsigned bytes=width/8;
-    if(bytes*8!=width) bytes++;
-    return from_integer(bytes, signedbv_typet(config.ansi_c.pointer_width));
+    std::size_t width=to_bitvector_type(type).get_width();
+    std::size_t bytes=width/8;
+    if(bytes*8!=width)
+      bytes++;
+    return from_integer(bytes, size_type());
   }
   else if(type.id()==ID_c_enum)
   {
-    unsigned width=to_bitvector_type(type.subtype()).get_width();
-    unsigned bytes=width/8;
-    if(bytes*8!=width) bytes++;
-    return from_integer(bytes, signedbv_typet(config.ansi_c.pointer_width));
+    std::size_t width =
+      to_bitvector_type(to_c_enum_type(type).underlying_type()).get_width();
+    std::size_t bytes=width/8;
+    if(bytes*8!=width)
+      bytes++;
+    return from_integer(bytes, size_type());
   }
   else if(type.id()==ID_c_enum_tag)
   {
@@ -435,142 +469,220 @@ exprt size_of_expr(
   }
   else if(type.id()==ID_bool)
   {
-    return gen_one(signedbv_typet(config.ansi_c.pointer_width));
+    return from_integer(1, size_type());
   }
   else if(type.id()==ID_pointer)
   {
-    unsigned width=config.ansi_c.pointer_width;
-    unsigned bytes=width/8;
-    if(bytes*8!=width) bytes++;
-    return from_integer(bytes, signedbv_typet(config.ansi_c.pointer_width));
+    // the following is an MS extension
+    if(type.get_bool(ID_C_ptr32))
+      return from_integer(4, size_type());
+
+    std::size_t width=to_bitvector_type(type).get_width();
+    std::size_t bytes=width/8;
+    if(bytes*8!=width)
+      bytes++;
+    return from_integer(bytes, size_type());
   }
-  else if(type.id()==ID_symbol)
+  else if(type.id() == ID_union_tag)
   {
-    return size_of_expr(ns.follow(type), ns);
+    return size_of_expr(ns.follow_tag(to_union_tag_type(type)), ns);
+  }
+  else if(type.id() == ID_struct_tag)
+  {
+    return size_of_expr(ns.follow_tag(to_struct_tag_type(type)), ns);
   }
   else if(type.id()==ID_code)
   {
-    return gen_zero(signedbv_typet(config.ansi_c.pointer_width));
+    return from_integer(0, size_type());
+  }
+  else if(type.id()==ID_string)
+  {
+    return from_integer(32/8, size_type());
   }
   else
-    return nil_exprt();
+    return {};
 }
 
-/*******************************************************************\
-
-Function: compute_pointer_offset
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-mp_integer compute_pointer_offset(
-  const namespacet &ns,
-  const exprt &expr)
+optionalt<mp_integer>
+compute_pointer_offset(const exprt &expr, const namespacet &ns)
 {
   if(expr.id()==ID_symbol)
-    return 0;
+  {
+    if(is_ssa_expr(expr))
+      return compute_pointer_offset(
+        to_ssa_expr(expr).get_original_expr(), ns);
+    else
+      return mp_integer(0);
+  }
   else if(expr.id()==ID_index)
   {
-    assert(expr.operands().size()==2);
-    
-    const typet &array_type=ns.follow(expr.op0().type());
-    assert(array_type.id()==ID_array);
+    const index_exprt &index_expr=to_index_expr(expr);
+    DATA_INVARIANT(
+      index_expr.array().type().id() == ID_array,
+      "index into array expected, found " +
+        index_expr.array().type().id_string());
 
-    mp_integer o=compute_pointer_offset(ns, expr.op0());
-    
-    if(o!=-1)
+    auto o = compute_pointer_offset(index_expr.array(), ns);
+
+    if(o.has_value())
     {
-      mp_integer sub_size=
-        pointer_offset_size(ns, array_type.subtype());
+      const auto &array_type = to_array_type(index_expr.array().type());
+      auto sub_size = pointer_offset_size(array_type.element_type(), ns);
 
-      mp_integer i;
-
-      if(sub_size!=0 && !to_integer(expr.op1(), i))
-        return o+i*sub_size;
+      if(sub_size.has_value() && *sub_size > 0)
+      {
+        const auto i = numeric_cast<mp_integer>(index_expr.index());
+        if(i.has_value())
+          return (*o) + (*i) * (*sub_size);
+      }
     }
-      
+
     // don't know
   }
   else if(expr.id()==ID_member)
   {
-    assert(expr.operands().size()==1);
-    const typet &type=ns.follow(expr.op0().type());
-    
-    assert(type.id()==ID_struct ||
-           type.id()==ID_union);
+    const member_exprt &member_expr=to_member_expr(expr);
+    const exprt &op=member_expr.struct_op();
+    const struct_union_typet &type=to_struct_union_type(ns.follow(op.type()));
 
-    mp_integer o=compute_pointer_offset(ns, expr.op0());
+    auto o = compute_pointer_offset(op, ns);
 
-    if(o!=-1)
-    {    
+    if(o.has_value())
+    {
       if(type.id()==ID_union)
-        return o;
-    
-      return o+member_offset(
-        ns, to_struct_type(type), expr.get(ID_component_name));
+        return *o;
+
+      auto member_offset = ::member_offset(
+        to_struct_type(type), member_expr.get_component_name(), ns);
+
+      if(member_offset.has_value())
+        return *o + *member_offset;
     }
   }
   else if(expr.id()==ID_string_constant)
-    return 0;
+    return mp_integer(0);
 
-  return -1; // don't know
+  return {}; // don't know
 }
 
-/*******************************************************************\
-
-Function: build_sizeof_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-exprt build_sizeof_expr(
-  const constant_exprt &expr,
+optionalt<exprt> get_subexpression_at_offset(
+  const exprt &expr,
+  const mp_integer &offset_bytes,
+  const typet &target_type_raw,
   const namespacet &ns)
 {
-  const typet &type=
-    static_cast<const typet &>(expr.find(ID_C_c_sizeof_type));
-
-  mp_integer type_size=-1, val=-1;
-
-  if(type.is_not_nil()) type_size=pointer_offset_size(ns, type);
-
-  if(type_size<0 ||
-     to_integer(expr, val) ||
-     val<type_size ||
-     (type_size==0 && val>0))
-    return nil_exprt();
-
-  assert(address_bits(val+1)<=config.ansi_c.pointer_width);
-  const unsignedbv_typet t(config.ansi_c.pointer_width);
-
-  mp_integer remainder=0;
-  if(type_size!=0)
+  if(offset_bytes == 0 && expr.type() == target_type_raw)
   {
-    remainder=val%type_size;
-    val-=remainder;
-    val/=type_size;
+    exprt result = expr;
+
+    if(expr.type() != target_type_raw)
+      result.type() = target_type_raw;
+
+    return result;
   }
 
-  exprt result(ID_sizeof, t);
-  result.set(ID_type_arg, type);
+  if(
+    offset_bytes == 0 && expr.type().id() == ID_pointer &&
+    target_type_raw.id() == ID_pointer)
+  {
+    return typecast_exprt(expr, target_type_raw);
+  }
 
-  if(val>1)
-    result=mult_exprt(result, from_integer(val, t));
-  if(remainder>0)
-    result=plus_exprt(result, from_integer(remainder, t));
+  const typet &source_type = ns.follow(expr.type());
+  const auto target_size_bits = pointer_offset_bits(target_type_raw, ns);
+  if(!target_size_bits.has_value())
+    return {};
 
-  if(result.type()!=expr.type())
-    result.make_typecast(expr.type());
+  if(source_type.id()==ID_struct)
+  {
+    const struct_typet &struct_type = to_struct_type(source_type);
 
-  return result;
+    mp_integer m_offset_bits = 0;
+    for(const auto &component : struct_type.components())
+    {
+      const auto m_size_bits = pointer_offset_bits(component.type(), ns);
+      if(!m_size_bits.has_value())
+        return {};
+
+      // if this member completely contains the target, and this member is
+      // byte-aligned, recurse into it
+      if(
+        offset_bytes * 8 >= m_offset_bits && m_offset_bits % 8 == 0 &&
+        offset_bytes * 8 + *target_size_bits <= m_offset_bits + *m_size_bits)
+      {
+        const member_exprt member(expr, component.get_name(), component.type());
+        return get_subexpression_at_offset(
+          member, offset_bytes - m_offset_bits / 8, target_type_raw, ns);
+      }
+
+      m_offset_bits += *m_size_bits;
+    }
+  }
+  else if(source_type.id()==ID_array)
+  {
+    const array_typet &array_type = to_array_type(source_type);
+
+    const auto elem_size_bits =
+      pointer_offset_bits(array_type.element_type(), ns);
+
+    // no arrays of non-byte-aligned, zero-, or unknown-sized objects
+    if(
+      elem_size_bits.has_value() && *elem_size_bits > 0 &&
+      *elem_size_bits % 8 == 0 && *target_size_bits <= *elem_size_bits)
+    {
+      const mp_integer elem_size_bytes = *elem_size_bits / 8;
+      const auto offset_inside_elem = offset_bytes % elem_size_bytes;
+      const auto target_size_bytes = *target_size_bits / 8;
+      // only recurse if the cell completely contains the target
+      if(offset_inside_elem + target_size_bytes <= elem_size_bytes)
+      {
+        return get_subexpression_at_offset(
+          index_exprt(
+            expr,
+            from_integer(
+              offset_bytes / elem_size_bytes, array_type.index_type())),
+          offset_inside_elem,
+          target_type_raw,
+          ns);
+      }
+    }
+  }
+  else if(
+    object_descriptor_exprt(expr).root_object().id() == ID_union &&
+    source_type.id() == ID_union)
+  {
+    const union_typet &union_type = to_union_type(source_type);
+
+    for(const auto &component : union_type.components())
+    {
+      const auto m_size_bits = pointer_offset_bits(component.type(), ns);
+      if(!m_size_bits.has_value())
+        continue;
+
+      // if this member completely contains the target, recurse into it
+      if(offset_bytes * 8 + *target_size_bits <= *m_size_bits)
+      {
+        const member_exprt member(expr, component.get_name(), component.type());
+        return get_subexpression_at_offset(
+          member, offset_bytes, target_type_raw, ns);
+      }
+    }
+  }
+
+  return make_byte_extract(
+    expr, from_integer(offset_bytes, c_index_type()), target_type_raw);
+}
+
+optionalt<exprt> get_subexpression_at_offset(
+  const exprt &expr,
+  const exprt &offset,
+  const typet &target_type,
+  const namespacet &ns)
+{
+  const auto offset_bytes = numeric_cast<mp_integer>(offset);
+
+  if(!offset_bytes.has_value())
+    return {};
+  else
+    return get_subexpression_at_offset(expr, *offset_bytes, target_type, ns);
 }

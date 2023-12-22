@@ -6,7 +6,11 @@ Author: CM Wintersteiger, 2006
 
 \*******************************************************************/
 
-#include <cstdio>
+/// \file
+/// Command line option container
+
+#include "goto_cc_mode.h"
+
 #include <iostream>
 
 #ifdef _WIN32
@@ -17,64 +21,37 @@ Author: CM Wintersteiger, 2006
 #include <sysexits.h>
 #endif
 
-#include <cbmc/version.h>
+#include <util/exception_utils.h>
+#include <util/message.h>
+#include <util/parse_options.h>
+#include <util/version.h>
 
-#include "goto_cc_mode.h"
+#include "goto_cc_cmdline.h"
 
-/*******************************************************************\
-
-Function: goto_cc_modet::goto_cc_modet
-
-  Inputs: 
-
- Outputs: 
-
- Purpose: constructor
-
-\*******************************************************************/
-
-goto_cc_modet::goto_cc_modet(goto_cc_cmdlinet &_cmdline):
-  language_uit("goto-cc " CBMC_VERSION, _cmdline),
-  cmdline(_cmdline)
+/// constructor
+goto_cc_modet::goto_cc_modet(
+  goto_cc_cmdlinet &_cmdline,
+  const std::string &_base_name,
+  message_handlert &_message_handler)
+  : cmdline(_cmdline), base_name(_base_name), message_handler(_message_handler)
 {
   register_languages();
 }
 
-/*******************************************************************\
-
-Function: goto_cc_modet::~goto_cc_modet
-
-  Inputs: 
-
- Outputs: 
-
- Purpose: constructor
-
-\*******************************************************************/
-
+/// constructor
 goto_cc_modet::~goto_cc_modet()
 {
 }
 
-/*******************************************************************\
-
-Function: goto_cc_modet::help
-
-  Inputs:
-
- Outputs:
-
- Purpose: display command line help
-
-\*******************************************************************/
-
+/// display command line help
 void goto_cc_modet::help()
 {
-  std::cout <<
-  "\n"
-  "* *         goto-cc " CBMC_VERSION "  - Copyright (C) 2006-2013          * *\n"
-  "* *        Daniel Kroening, Christoph Wintersteiger         * *\n"
-  "* *                 kroening@kroening.com                   * *\n"
+  // clang-format off
+  std::cout << '\n' << banner_string("goto-cc", CBMC_VERSION) << '\n'
+            << align_center_with_border("Copyright (C) 2006-2018") << '\n'
+            << align_center_with_border("Daniel Kroening, Michael Tautschnig,") << '\n' // NOLINT(*)
+            << align_center_with_border("Christoph Wintersteiger") << '\n'
+            <<
   "\n";
 
   help_mode();
@@ -83,21 +60,22 @@ void goto_cc_modet::help()
   "Usage:                       Purpose:\n"
   "\n"
   " --verbosity #               verbosity level\n"
+  " --function name             set entry point to name\n"
+  " --native-compiler cmd       command to invoke as preprocessor/compiler\n"
+  " --native-linker cmd         command to invoke as linker\n"
+  " --native-assembler cmd      command to invoke as assembler (goto-as only)\n"
+  " --export-file-local-symbols\n"
+  "                             name-mangle and export file-local symbols\n"
+  " --mangle-suffix suffix      append suffix to exported file-local symbols\n"
+  " --print-rejected-preprocessed-source file\n"
+  "                             copy failing (preprocessed) source to file\n"
+  " --object-bits               number of bits used for object addresses\n"
   "\n";
+  // clang-format on
 }
 
-/*******************************************************************\
-
-Function: goto_cc_modet::main
-
-  Inputs: argc/argv
-
- Outputs: error code
-
- Purpose: starts the compiler
-
-\*******************************************************************/
-
+/// starts the compiler
+/// \return error code
 int goto_cc_modet::main(int argc, const char **argv)
 {
   if(cmdline.parse(argc, argv))
@@ -108,48 +86,52 @@ int goto_cc_modet::main(int argc, const char **argv)
 
   try
   {
-    if(doit())
-      return EX_USAGE; // error
-    else
-      return EX_OK;
+    return doit();
   }
 
   catch(const char *e)
   {
-    error(e);
+    messaget log{message_handler};
+    log.error() << e << messaget::eom;
     return EX_SOFTWARE;
   }
 
-  catch(const std::string e)
+  catch(const std::string &e)
   {
-    error(e);
+    messaget log{message_handler};
+    log.error() << e << messaget::eom;
     return EX_SOFTWARE;
   }
 
-  catch(int e)
+  catch(int)
   {
     return EX_SOFTWARE;
   }
-  
-  catch(std::bad_alloc)
+
+  catch(const std::bad_alloc &)
   {
-    error() << "Out of memory" << eom;
+    messaget log{message_handler};
+    log.error() << "Out of memory" << messaget::eom;
+    return EX_SOFTWARE;
+  }
+
+  catch(const invalid_source_file_exceptiont &e)
+  {
+    messaget log{message_handler};
+    log.error().source_location = e.get_source_location();
+    log.error() << e.get_reason() << messaget::eom;
+    return EX_SOFTWARE;
+  }
+
+  catch(const cprover_exception_baset &e)
+  {
+    messaget log{message_handler};
+    log.error() << e.what() << messaget::eom;
     return EX_SOFTWARE;
   }
 }
 
-/*******************************************************************\
-
-Function: goto_cc_modet::usage_error
-
-  Inputs: none
-
- Outputs: none
-
- Purpose: prints a message informing the user about incorrect options
-
-\*******************************************************************/
-
+/// Prints a message informing the user about incorrect options.
 void goto_cc_modet::usage_error()
 {
   std::cerr << "Usage error!\n\n";

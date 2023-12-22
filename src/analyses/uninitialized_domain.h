@@ -8,31 +8,82 @@ Date: January 2010
 
 \*******************************************************************/
 
-#include "static_analysis.h"
+/// \file
+/// Detection for Uninitialized Local Variables
 
-class uninitialized_domaint:public domain_baset
+#ifndef CPROVER_ANALYSES_UNINITIALIZED_DOMAIN_H
+#define CPROVER_ANALYSES_UNINITIALIZED_DOMAIN_H
+
+#include <util/threeval.h>
+
+#include "ai.h"
+
+class uninitialized_domaint:public ai_domain_baset
 {
 public:
-  // locals that are not initialized
+  uninitialized_domaint():has_values(false)
+  {
+  }
+
+  // Locals that are declared but may not be initialized
   typedef std::set<irep_idt> uninitializedt;
   uninitializedt uninitialized;
 
-  virtual void transform(
-    const namespacet &ns,
-    locationt from,
-    locationt to);
+  void transform(
+    const irep_idt &function_from,
+    trace_ptrt trace_from,
+    const irep_idt &function_to,
+    trace_ptrt trace_to,
+    ai_baset &ai,
+    const namespacet &ns) final override;
 
-  virtual void output(
-    const namespacet &ns,
-    std::ostream &out) const;
-  
-  // returns true iff there is s.th. new
-  bool merge(const uninitialized_domaint &other, locationt to);
-  
-protected:
+  void output(
+    std::ostream &out,
+    const ai_baset &ai,
+    const namespacet &ns) const final;
+
+  void make_top() final override
+  {
+    uninitialized.clear();
+    has_values=tvt(true);
+  }
+
+  void make_bottom() final override
+  {
+    uninitialized.clear();
+    has_values=tvt(false);
+  }
+
+  void make_entry() final override
+  {
+    make_top();
+  }
+
+  bool is_top() const override final
+  {
+    DATA_INVARIANT(!has_values.is_true() || uninitialized.empty(),
+                   "If domain is top, the uninitialized set must be empty");
+    return has_values.is_true();
+  }
+
+  bool is_bottom() const override final
+  {
+    DATA_INVARIANT(!has_values.is_false() || uninitialized.empty(),
+                   "If domain is bottom, the uninitialized set must be empty");
+    return has_values.is_false();
+  }
+
+  // returns true iff there is something new
+  bool
+  merge(const uninitialized_domaint &other, trace_ptrt from, trace_ptrt to);
+
+private:
+  tvt has_values;
+
   void assign(const exprt &lhs);
 };
 
-typedef static_analysist<uninitialized_domaint>
+typedef ait<uninitialized_domaint>
   uninitialized_analysist;
 
+#endif // CPROVER_ANALYSES_UNINITIALIZED_DOMAIN_H

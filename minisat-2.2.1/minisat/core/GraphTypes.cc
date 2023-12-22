@@ -5,44 +5,40 @@ namespace Minisat
 
 edge_kindt str_to_kind(const std::string& str)
 {
-    if(str == "epo")
-        return OCLT_EPO;
+    if(str == "apo")
+        return OC_APO;
     if(str == "po")
-        return OCLT_PO;
-    if(str == "rfi")
-        return OCLT_RFI;
-    if(str == "rfe")
-        return OCLT_RFE;
-    if(str == "coi")
-        return OCLT_COI;
-    if(str == "coe")
-        return OCLT_COE;
+        return OC_PO;
+    if(str == "rf")
+        return OC_RF;
+    if(str == "ws")
+        return OC_WS;
     if(str == "fr")
-        return OCLT_FR;
+        return OC_FR;
+    if(str == "race")
+        return OC_RACE;
 
-    return OCLT_NA;
+    return OC_NA;
 }
 
 std::string kind_to_str(edge_kindt kind)
 {
     switch(kind)
     {
-        case OCLT_NA:
+        case OC_NA:
             return "na";
-        case OCLT_EPO:
-            return "epo";
-        case OCLT_PO:
+        case OC_APO:
+            return "apo";
+        case OC_PO:
             return "po";
-        case OCLT_RFI:
-            return "rfi";
-        case OCLT_RFE:
-            return "rfe";
-        case OCLT_COI:
-            return "coi";
-        case OCLT_COE:
-            return "coe";
-        case OCLT_FR:
+        case OC_RF:
+            return "rf";
+        case OC_WS:
+            return "ws";
+        case OC_FR:
             return "fr";
+        case OC_RACE:
+            return "race";
     }
     return "unknown";
 }

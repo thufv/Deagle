@@ -26,8 +26,8 @@ struct closure_edget
 	edge_kindt kind;
     literal_vector reason;
 
-    //closure_edget() : from(-1), to(-1), kind(OCLT_NA), reason(literal_vector()) {}
-	closure_edget(int _from = -1, int _to = -1, edge_kindt _kind = OCLT_NA) : from(_from), to(_to), kind(_kind), reason(literal_vector()) {}
+    //closure_edget() : from(-1), to(-1), kind(OC_NA), reason(literal_vector()) {}
+	closure_edget(int _from = -1, int _to = -1, edge_kindt _kind = OC_NA) : from(_from), to(_to), kind(_kind), reason(literal_vector()) {}
 	closure_edget(int _from, int _to, edge_kindt _kind, literal_vector& _reason) : from(_from), to(_to), kind(_kind), reason(_reason) {}
 	//bool operator<(const closure_edget& right) const;
 	bool operator==(const closure_edget& right) const;
@@ -47,6 +47,9 @@ struct closure_nodet
 	std::vector<closure_edget> in;
 	std::vector<int> out_bitset;
 
+	std::vector<int> out_vital;
+	std::vector<int> in_vital;
+
 	//for writes only
 	bool guard_lighted;
     Lit guard;
@@ -65,11 +68,18 @@ struct closure_nodet
 
 	closure_nodet(std::string _name, int _address, int id);
 
-	//dangerous edges are saved here, visited or unvisited
-	std::vector<int> dangerous_out;
-	std::vector<int> dangerous_in;
-
 	int location; //for sort EPO properly
+
+	friend std::ostream& operator<<(std::ostream& out, closure_nodet& node)
+	{
+		if(node.is_write)
+			out << node.name << "(line " << node.location << ", w)";
+		else if(node.is_read)
+			out << node.name << "(line " << node.location << ", r)";
+		else
+			out << node.name << "(line " << node.location << ")";
+		return out;
+	}
 };
 
 }

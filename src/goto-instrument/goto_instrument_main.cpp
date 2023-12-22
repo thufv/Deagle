@@ -1,27 +1,30 @@
 /*******************************************************************\
 
-Module: Main Module 
+Module: Main Module
 
 Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include "goto_instrument_parseoptions.h"
+/// \file
+/// Main Module
 
-/*******************************************************************\
+#ifdef _MSC_VER
+#  include <util/unicode.h>
+#endif
 
-Function: main
+#include "goto_instrument_parse_options.h"
 
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+#ifdef _MSC_VER
+int wmain(int argc, const wchar_t **argv_wide)
+{
+  auto vec=narrow_argv(argc, argv_wide);
+  auto narrow=to_c_str_array(std::begin(vec), std::end(vec));
+  auto argv=narrow.data();
+#else
 int main(int argc, const char **argv)
 {
-  goto_instrument_parseoptionst parseoptions(argc, argv);
-  return parseoptions.main();
+#endif
+  goto_instrument_parse_optionst parse_options(argc, argv);
+  return parse_options.main();
 }

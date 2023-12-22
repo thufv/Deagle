@@ -6,13 +6,14 @@ Author: CM Wintersteiger
 
 \*******************************************************************/
 
-#ifndef CPROVER_QBF_SKIZZO_CORE_H
-#define CPROVER_QBF_SKIZZO_CORE_H
+
+#ifndef CPROVER_SOLVERS_QBF_QBF_SKIZZO_CORE_H
+#define CPROVER_SOLVERS_QBF_QBF_SKIZZO_CORE_H
 
 #include "qbf_bdd_core.h"
 
-class qbf_skizzo_coret :
-  public qbf_bdd_certificatet // a qdimacs_coret with f_get from BDDs
+// a qdimacs_coret with f_get from BDDs
+class qbf_skizzo_coret:public qbf_bdd_certificatet
 {
 public:
   qbf_skizzo_coret();
@@ -30,4 +31,4 @@ protected:
   bool get_certificate(void);
 };
 
-#endif
+#endif // CPROVER_SOLVERS_QBF_QBF_SKIZZO_CORE_H

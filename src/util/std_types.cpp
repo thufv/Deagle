@@ -1,167 +1,119 @@
 /*******************************************************************\
 
-Module: 
+Module: Pre-defined types
 
 Author: Daniel Kroening, kroening@kroening.com
+        Maria Svorenova, maria.svorenova@diffblue.com
 
 \*******************************************************************/
 
-#include "string2int.h"
-#include "arith_tools.h"
+/// \file
+/// Pre-defined types
+
 #include "std_types.h"
-#include "std_expr.h"
+
+#include "c_types.h"
 #include "namespace.h"
+#include "std_expr.h"
 
-/*******************************************************************\
-
-Function: bitvector_typet::get_width
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned bitvector_typet::get_width() const
+void array_typet::check(const typet &type, const validation_modet vm)
 {
-  return get_int(ID_width);
+  PRECONDITION(type.id() == ID_array);
+  type_with_subtypet::check(type);
+  const array_typet &array_type = static_cast<const array_typet &>(type);
+  if(array_type.size().is_nil())
+  {
+    DATA_CHECK(
+      vm,
+      array_type.size() == nil_exprt{},
+      "nil array size must be exactly nil");
+  }
 }
 
-/*******************************************************************\
-
-Function: fixedbv_typet::get_integer_bits
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned fixedbv_typet::get_integer_bits() const
+typet array_typet::index_type() const
 {
-  const std::string &integer_bits=get_string("integer_bits");
-  assert(integer_bits!="");
-  return unsafe_string2unsigned(integer_bits);
+  // For backwards compatibility, allow the case that the array type is
+  // not annotated with an index type.
+  const auto &annotated_type =
+    static_cast<const typet &>(find(ID_C_index_type));
+  if(annotated_type.is_nil())
+    return c_index_type();
+  else
+    return annotated_type;
 }
 
-/*******************************************************************\
-
-Function: floatbv_typet::get_f
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned floatbv_typet::get_f() const
-{
-  const std::string &f=get_string(ID_f);
-  assert(f!="");
-  return unsafe_string2unsigned(f);
-}
-
-/*******************************************************************\
-
-Function: struct_union_typet::component_number
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned struct_union_typet::component_number(
+/// Return the sequence number of the component with given name.
+std::size_t struct_union_typet::component_number(
   const irep_idt &component_name) const
 {
-  const componentst &c=components();
+  std::size_t number=0;
 
-  unsigned number=0;
-
-  for(componentst::const_iterator
-      it=c.begin();
-      it!=c.end();
-      it++)
+  for(const auto &c : components())
   {
-    if(it->get_name()==component_name)
+    if(c.get_name() == component_name)
       return number;
 
     number++;
   }
 
-  assert(false);
-  return 0;
+  UNREACHABLE;
 }
 
-/*******************************************************************\
-
-Function: struct_union_typet::get_component
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Get the reference to a component with given name.
 const struct_union_typet::componentt &struct_union_typet::get_component(
   const irep_idt &component_name) const
 {
-  const componentst &c=components();
-
-  for(componentst::const_iterator
-      it=c.begin();
-      it!=c.end();
-      it++)
+  for(const auto &c : components())
   {
-    if(it->get_name()==component_name)
-      return *it;
+    if(c.get_name() == component_name)
+      return c;
   }
 
   return static_cast<const componentt &>(get_nil_irep());
 }
 
-/*******************************************************************\
-
-Function: struct_union_typet::component_type
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-typet struct_union_typet::component_type(
-  const irep_idt &component_name) const
+const typet &
+struct_union_typet::component_type(const irep_idt &component_name) const
 {
-  const exprt c=get_component(component_name);
-  assert(c.is_not_nil());
+  const auto &c = get_component(component_name);
+  CHECK_RETURN(c.is_not_nil());
   return c.type();
 }
 
-/*******************************************************************\
+struct_tag_typet &struct_typet::baset::type()
+{
+  return to_struct_tag_type(exprt::type());
+}
 
-Function: struct_typet::is_prefix_of
+const struct_tag_typet &struct_typet::baset::type() const
+{
+  return to_struct_tag_type(exprt::type());
+}
 
-  Inputs:
+struct_typet::baset::baset(struct_tag_typet base)
+  : exprt(ID_base, std::move(base))
+{
+}
 
- Outputs:
+void struct_typet::add_base(const struct_tag_typet &base)
+{
+  bases().push_back(baset(base));
+}
 
- Purpose:
+optionalt<struct_typet::baset> struct_typet::get_base(const irep_idt &id) const
+{
+  for(const auto &b : bases())
+  {
+    if(to_struct_tag_type(b.type()).get_identifier() == id)
+      return b;
+  }
+  return {};
+}
 
-\*******************************************************************/
-
+/// Returns true if the struct is a prefix of \a other, i.e., if this struct
+/// has n components then the component types and names of this struct must
+/// match the first n components of \a other struct.
+/// \param other: Struct type to compare with.
 bool struct_typet::is_prefix_of(const struct_typet &other) const
 {
   const componentst &ot_components=other.components();
@@ -169,18 +121,14 @@ bool struct_typet::is_prefix_of(const struct_typet &other) const
 
   if(ot_components.size()<
      tt_components.size())
-    return false; 
+    return false;
 
   componentst::const_iterator
     ot_it=ot_components.begin();
 
-  for(componentst::const_iterator tt_it=
-      tt_components.begin();
-      tt_it!=tt_components.end();
-      tt_it++)
+  for(const auto &tt_c : tt_components)
   {
-    if(ot_it->type()!=tt_it->type() ||
-       ot_it->get(ID_name)!=tt_it->get(ID_name))
+    if(ot_it->type() != tt_c.type() || ot_it->get_name() != tt_c.get_name())
     {
       return false; // they just don't match
     }
@@ -191,270 +139,139 @@ bool struct_typet::is_prefix_of(const struct_typet &other) const
   return true; // ok, *this is a prefix of ot
 }
 
-/*******************************************************************\
-
-Function: is_reference
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Returns true if the type is a reference.
 bool is_reference(const typet &type)
 {
   return type.id()==ID_pointer &&
          type.get_bool(ID_C_reference);
 }
 
-/*******************************************************************\
-
-Function: is_rvalue_reference
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
+/// Returns if the type is an R value reference.
 bool is_rvalue_reference(const typet &type)
 {
   return type.id()==ID_pointer &&
          type.get_bool(ID_C_rvalue_reference);
 }
 
-/*******************************************************************\
-
-Function: range_typet::set_from
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 void range_typet::set_from(const mp_integer &from)
 {
   set(ID_from, integer2string(from));
 }
-
-/*******************************************************************\
-
-Function: range_typet::set_to
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void range_typet::set_to(const mp_integer &to)
 {
   set(ID_to, integer2string(to));
 }
 
-/*******************************************************************\
-
-Function: range_typet::get_from
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 mp_integer range_typet::get_from() const
 {
   return string2integer(get_string(ID_from));
 }
-
-/*******************************************************************\
-
-Function: range_typet::get_to
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 mp_integer range_typet::get_to() const
 {
   return string2integer(get_string(ID_to));
 }
 
-/*******************************************************************\
-
-Function: signedbv_typet::smallest
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-mp_integer signedbv_typet::smallest() const
+/// Identify whether a given type is constant itself or contains constant
+/// components.
+/// Examples include:
+///  - const int a;
+///  - struct contains_constant_pointer {  int x; int * const p; };
+///  - const int b[3];
+/// \param type: The type we want to query constness of.
+/// \param ns: The namespace, needed for resolution of symbols.
+/// \return Whether passed in type is const or not.
+bool is_constant_or_has_constant_components(
+  const typet &type,
+  const namespacet &ns)
 {
-  return -power(2, get_width()-1);
+  // Helper function to avoid the code duplication in the branches
+  // below.
+  const auto has_constant_components = [&ns](const typet &subtype) -> bool {
+    if(subtype.id() == ID_struct || subtype.id() == ID_union)
+    {
+      const auto &struct_union_type = to_struct_union_type(subtype);
+      for(const auto &component : struct_union_type.components())
+      {
+        if(is_constant_or_has_constant_components(component.type(), ns))
+          return true;
+      }
+    }
+    return false;
+  };
+
+  // There are 4 possibilities the code below is handling.
+  // The possibilities are enumerated as comments, to show
+  // what each code is supposed to be handling. For more
+  // comprehensive test case for this, take a look at
+  // regression/cbmc/no_nondet_static/main.c
+
+  // const int a;
+  if(type.get_bool(ID_C_constant))
+    return true;
+
+  // This is a termination condition to break the recursion
+  // for recursive types such as the following:
+  // struct list { const int datum; struct list * next; };
+  // NOTE: the difference between this condition and the previous
+  // one is that this one always returns.
+  if(type.id() == ID_pointer)
+    return type.get_bool(ID_C_constant);
+
+  // When we have a case like the following, we don't immediately
+  // see the struct t. Instead, we only get to see symbol t1, which
+  // we have to use the namespace to resolve to its definition:
+  // struct t { const int a; };
+  // struct t t1;
+  if(type.id() == ID_struct_tag || type.id() == ID_union_tag)
+  {
+    const auto &resolved_type = ns.follow(type);
+    return has_constant_components(resolved_type);
+  }
+
+  // In a case like this, where we see an array (b[3] here), we know that
+  // the array contains subtypes. We get the first one, and
+  // then resolve it to its  definition through the usage of the namespace.
+  // struct contains_constant_pointer { int x; int * const p; };
+  // struct contains_constant_pointer b[3] = { {23, &y}, {23, &y}, {23, &y} };
+  if(type.has_subtype())
+  {
+    const auto &subtype = to_type_with_subtype(type).subtype();
+    return is_constant_or_has_constant_components(subtype, ns);
+  }
+
+  return false;
 }
 
-/*******************************************************************\
-
-Function: signedbv_typet::largest
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-mp_integer signedbv_typet::largest() const
+vector_typet::vector_typet(
+  typet _index_type,
+  typet _element_type,
+  constant_exprt _size)
+  : type_with_subtypet(ID_vector, std::move(_element_type))
 {
-  return power(2, get_width()-1)-1;
+  index_type_nonconst() = std::move(_index_type);
+  size() = std::move(_size);
 }
 
-/*******************************************************************\
-
-Function: signedbv_typet::smallest_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-constant_exprt signedbv_typet::smallest_expr() const
+typet vector_typet::index_type() const
 {
-  return to_constant_expr(from_integer(smallest(), *this));
-}
-
-/*******************************************************************\
-
-Function: signedbv_typet::largest_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-constant_exprt signedbv_typet::largest_expr() const
-{
-  return to_constant_expr(from_integer(largest(), *this));
-}
-
-/*******************************************************************\
-
-Function: unsignedbv_typet::smallest
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-mp_integer unsignedbv_typet::smallest() const
-{
-  return 0;
-}
-
-/*******************************************************************\
-
-Function: unsignedbv_typet::largest
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-mp_integer unsignedbv_typet::largest() const
-{
-  return power(2, get_width())-1;
-}
-
-/*******************************************************************\
-
-Function: unsignedbv_typet::smallest_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-constant_exprt unsignedbv_typet::smallest_expr() const
-{
-  return to_constant_expr(from_integer(smallest(), *this));
-}
-
-/*******************************************************************\
-
-Function: unsignedbv_typet::largest_expr
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-constant_exprt unsignedbv_typet::largest_expr() const
-{
-  return to_constant_expr(from_integer(largest(), *this));
-}
-
-/*******************************************************************\
-
-Function: struct_union_typet::componentt::get_bit_field_bits
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned struct_union_typet::componentt::get_bit_field_bits(
-  const namespacet &ns) const
-{
-  const typet &t=type();
-  if(t.id()==ID_signedbv ||
-     t.id()==ID_unsignedbv)
-    return to_bitvector_type(t).get_width();
-  else if(t.id()==ID_c_enum)
-    return t.subtype().get_int(ID_width);
-  else if(t.id()==ID_c_enum_tag)
-    return
-      ns.follow_tag(to_c_enum_tag_type(t)).subtype().get_int(ID_width);
+  // For backwards compatibility, allow the case that the array type is
+  // not annotated with an index type.
+  const auto &annotated_type =
+    static_cast<const typet &>(find(ID_C_index_type));
+  if(annotated_type.is_nil())
+    return c_index_type();
   else
-    return 0;
+    return annotated_type;
+}
+
+const constant_exprt &vector_typet::size() const
+{
+  return static_cast<const constant_exprt &>(find(ID_size));
+}
+
+constant_exprt &vector_typet::size()
+{
+  return static_cast<constant_exprt &>(add(ID_size));
 }

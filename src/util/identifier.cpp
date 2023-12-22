@@ -1,26 +1,14 @@
 /*******************************************************************\
 
-Module: 
+Module:
 
 Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cstring>
-
 #include "identifier.h"
 
-/*******************************************************************\
-
-Function: identifiert::as_string
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <cstring>
 
 std::string identifiert::as_string() const
 {
@@ -29,24 +17,13 @@ std::string identifiert::as_string() const
   for(componentst::const_iterator it=components.begin();
       it!=components.end(); it++)
   {
-    if(it!=components.begin()) result+=ID_SEPARATOR;
+    if(it!=components.begin())
+      result+=ID_SEPARATOR;
     result+=*it;
   }
 
   return result;
 }
-
-/*******************************************************************\
-
-Function: identifiert::parse
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void identifiert::parse(const std::string &s)
 {
@@ -66,6 +43,6 @@ void identifiert::parse(const std::string &s)
     }
 
     components.push_back(component);
-    component="";
-  }  
+    component.clear();
+  }
 }

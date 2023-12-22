@@ -6,29 +6,36 @@ Author: Daniel Kroening, kroening@cs.cmu.edu
 
 \*******************************************************************/
 
-#ifndef CPROVER_CPP_STATIC_ASSERT_H
-#define CPROVER_CPP_STATIC_ASSERT_H
+/// \file
+/// C++ Language Type Checking
 
-#include <util/expr.h>
+#ifndef CPROVER_CPP_CPP_STATIC_ASSERT_H
+#define CPROVER_CPP_CPP_STATIC_ASSERT_H
 
-class cpp_static_assertt:public exprt
+#include <util/std_expr.h>
+
+class cpp_static_assertt : public binary_exprt
 {
 public:
-  cpp_static_assertt():exprt(ID_cpp_static_assert)
+  cpp_static_assertt(exprt _cond, exprt _description)
+    : binary_exprt(
+        std::move(_cond),
+        ID_cpp_static_assert,
+        std::move(_description),
+        typet())
   {
-    operands().resize(2);
   }
-  
+
   exprt &cond()
   {
     return op0();
   }
 
-  const exprt &cond() const 
+  const exprt &cond() const
   {
     return op0();
   }
-  
+
   const exprt &description() const
   {
     return op1();
@@ -40,4 +47,4 @@ public:
   }
 };
 
-#endif
+#endif // CPROVER_CPP_CPP_STATIC_ASSERT_H

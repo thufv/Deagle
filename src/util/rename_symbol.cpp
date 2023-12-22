@@ -6,53 +6,18 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include "std_types.h"
-#include "std_expr.h"
 #include "rename_symbol.h"
 
-/*******************************************************************\
-
-Function: rename_symbolt::rename_symbolt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "expr_iterator.h"
+#include "std_expr.h"
 
 rename_symbolt::rename_symbolt()
 {
 }
 
-/*******************************************************************\
-
-Function: rename_symbolt::~rename_symbolt
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 rename_symbolt::~rename_symbolt()
 {
 }
-
-/*******************************************************************\
-
-Function: rename_symbolt::insert
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void rename_symbolt::insert(
   const symbol_exprt &old_expr,
@@ -61,87 +26,77 @@ void rename_symbolt::insert(
   insert_expr(old_expr.get_identifier(), new_expr.get_identifier());
 }
 
-/*******************************************************************\
-
-Function: rename_symbolt::rename
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool rename_symbolt::rename(exprt &dest) const
 {
   bool result=true;
 
-  // first look at type
-
-  if(have_to_rename(dest.type()))
-    if(!rename(dest.type()))
-      result=false;
-      
-  // now do expression itself
-
-  if(!have_to_rename(dest))
-    return result;
-
-  if(dest.id()==ID_symbol)
+  for(auto it = dest.depth_begin(), end = dest.depth_end(); it != end; ++it)
   {
-    expr_mapt::const_iterator it=
-      expr_map.find(to_symbol_expr(dest).get_identifier());
+    exprt * modifiable_expr = nullptr;
 
-    if(it!=expr_map.end())
+    // first look at type
+    if(have_to_rename(it->type()))
     {
-      to_symbol_expr(dest).set_identifier(it->second);
-      return false;
+      modifiable_expr = &it.mutate();
+      result &= rename(modifiable_expr->type());
+    }
+
+    // now do expression itself
+    if(it->id()==ID_symbol)
+    {
+      expr_mapt::const_iterator entry =
+        expr_map.find(to_symbol_expr(*it).get_identifier());
+
+      if(entry != expr_map.end())
+      {
+        if(!modifiable_expr)
+          modifiable_expr = &it.mutate();
+        to_symbol_expr(*modifiable_expr).set_identifier(entry->second);
+        result = false;
+      }
+    }
+
+    const typet &c_sizeof_type =
+      static_cast<const typet&>(it->find(ID_C_c_sizeof_type));
+    if(c_sizeof_type.is_not_nil() && have_to_rename(c_sizeof_type))
+    {
+      if(!modifiable_expr)
+        modifiable_expr = &it.mutate();
+      result &=
+        rename(static_cast<typet&>(modifiable_expr->add(ID_C_c_sizeof_type)));
+    }
+
+    const typet &va_arg_type =
+      static_cast<const typet&>(it->find(ID_C_va_arg_type));
+    if(va_arg_type.is_not_nil() && have_to_rename(va_arg_type))
+    {
+      if(!modifiable_expr)
+        modifiable_expr = &it.mutate();
+      result &=
+        rename(static_cast<typet&>(modifiable_expr->add(ID_C_va_arg_type)));
     }
   }
-
-  Forall_operands(it, dest)
-    if(!rename(*it))
-      result=false;
-
-  const irept &c_sizeof_type=dest.find(ID_C_c_sizeof_type);
-
-  if(c_sizeof_type.is_not_nil() &&
-     !rename(static_cast<typet&>(dest.add(ID_C_c_sizeof_type))))
-    result=false;
-
-  const irept &va_arg_type=dest.find(ID_C_va_arg_type);
-
-  if(va_arg_type.is_not_nil() &&
-     !rename(static_cast<typet&>(dest.add(ID_C_va_arg_type))))
-    result=false;
 
   return result;
 }
 
-/*******************************************************************\
-
-Function: rename_symbolt::have_to_rename
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool rename_symbolt::have_to_rename(const exprt &dest) const
 {
+  if(expr_map.empty() && type_map.empty())
+    return false;
+
   // first look at type
 
   if(have_to_rename(dest.type()))
     return true;
-      
+
   // now do expression itself
 
   if(dest.id()==ID_symbol)
-    return expr_map.find(dest.get(ID_identifier))!=expr_map.end();
+  {
+    const irep_idt &identifier = to_symbol_expr(dest).get_identifier();
+    return expr_map.find(identifier) != expr_map.end();
+  }
 
   forall_operands(it, dest)
     if(have_to_rename(*it))
@@ -162,18 +117,6 @@ bool rename_symbolt::have_to_rename(const exprt &dest) const
   return false;
 }
 
-/*******************************************************************\
-
-Function: rename_symbolt::rename
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool rename_symbolt::rename(typet &dest) const
 {
   if(!have_to_rename(dest))
@@ -182,58 +125,106 @@ bool rename_symbolt::rename(typet &dest) const
   bool result=true;
 
   if(dest.has_subtype())
-    if(!rename(dest.subtype()))
+    if(!rename(to_type_with_subtype(dest).subtype()))
       result=false;
 
-  Forall_subtypes(it, dest)
-    if(!rename(*it))
+  for(typet &subtype : to_type_with_subtypes(dest).subtypes())
+  {
+    if(!rename(subtype))
       result=false;
-    
+  }
+
   if(dest.id()==ID_struct ||
      dest.id()==ID_union)
   {
-    struct_union_typet &struct_union_type=to_struct_union_type(dest);    
-    struct_union_typet::componentst &components=
-      struct_union_type.components();
+    struct_union_typet &struct_union_type=to_struct_union_type(dest);
 
-    for(struct_union_typet::componentst::iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
-      if(!rename(*it))
+    for(auto &c : struct_union_type.components())
+      if(!rename(c))
         result=false;
-  } 
+  }
   else if(dest.id()==ID_code)
   {
     code_typet &code_type=to_code_type(dest);
-    rename(code_type.return_type());
-    code_typet::parameterst &parameters=code_type.parameters();
+    if(!rename(code_type.return_type()))
+      result = false;
 
-    for(code_typet::parameterst::iterator it = parameters.begin();
-        it!=parameters.end();
-        it++)
+    for(auto &p : code_type.parameters())
     {
-      if(!rename(it->type()))
+      if(!rename(p.type()))
         result=false;
 
-      expr_mapt::const_iterator e_it=
-        expr_map.find(it->get_identifier());
+      expr_mapt::const_iterator e_it = expr_map.find(p.get_identifier());
 
       if(e_it!=expr_map.end())
       {
-        it->set_identifier(e_it->second);
+        p.set_identifier(e_it->second);
         result=false;
       }
     }
+
+    const exprt &spec_assigns =
+      static_cast<const exprt &>(dest.find(ID_C_spec_assigns));
+    if(spec_assigns.is_not_nil() && have_to_rename(spec_assigns))
+    {
+      rename(static_cast<exprt &>(dest.add(ID_C_spec_assigns)));
+      result = false;
+    }
+
+    const exprt &spec_frees =
+      static_cast<const exprt &>(dest.find(ID_C_spec_frees));
+    if(spec_frees.is_not_nil() && have_to_rename(spec_frees))
+    {
+      rename(static_cast<exprt &>(dest.add(ID_C_spec_frees)));
+      result = false;
+    }
+
+    const exprt &spec_ensures =
+      static_cast<const exprt &>(dest.find(ID_C_spec_ensures));
+    if(spec_ensures.is_not_nil() && have_to_rename(spec_ensures))
+    {
+      rename(static_cast<exprt &>(dest.add(ID_C_spec_ensures)));
+      result = false;
+    }
+
+    const exprt &spec_ensures_contract =
+      static_cast<const exprt &>(dest.find(ID_C_spec_ensures_contract));
+    if(
+      spec_ensures_contract.is_not_nil() &&
+      have_to_rename(spec_ensures_contract))
+    {
+      rename(static_cast<exprt &>(dest.add(ID_C_spec_ensures_contract)));
+      result = false;
+    }
+
+    const exprt &spec_requires =
+      static_cast<const exprt &>(dest.find(ID_C_spec_requires));
+    if(spec_requires.is_not_nil() && have_to_rename(spec_requires))
+    {
+      rename(static_cast<exprt &>(dest.add(ID_C_spec_requires)));
+      result = false;
+    }
+
+    const exprt &spec_requires_contract =
+      static_cast<const exprt &>(dest.find(ID_C_spec_requires_contract));
+    if(
+      spec_requires_contract.is_not_nil() &&
+      have_to_rename(spec_requires_contract))
+    {
+      rename(static_cast<exprt &>(dest.add(ID_C_spec_requires_contract)));
+      result = false;
+    }
   }
-  else if(dest.id()==ID_symbol)
+  else if(dest.id()==ID_c_enum_tag ||
+          dest.id()==ID_struct_tag ||
+          dest.id()==ID_union_tag)
   {
     type_mapt::const_iterator it=
-      type_map.find(to_symbol_type(dest).get_identifier());
+      type_map.find(to_tag_type(dest).get_identifier());
 
     if(it!=type_map.end())
     {
-      to_symbol_type(dest).set_identifier(it->second);
+      to_tag_type(dest).set_identifier(it->second);
       result=false;
     }
   }
@@ -247,69 +238,85 @@ bool rename_symbolt::rename(typet &dest) const
   return result;
 }
 
-/*******************************************************************\
-
-Function: rename_symbolt::have_to_rename
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
 bool rename_symbolt::have_to_rename(const typet &dest) const
 {
+  if(expr_map.empty() && type_map.empty())
+    return false;
+
   if(dest.has_subtype())
-    if(have_to_rename(dest.subtype()))
+    if(have_to_rename(to_type_with_subtype(dest).subtype()))
       return true;
 
-  forall_subtypes(it, dest)
-    if(have_to_rename(*it))
+  for(const typet &subtype : to_type_with_subtypes(dest).subtypes())
+  {
+    if(have_to_rename(subtype))
       return true;
-    
+  }
+
   if(dest.id()==ID_struct ||
      dest.id()==ID_union)
   {
     const struct_union_typet &struct_union_type=
-      to_struct_union_type(dest);    
+      to_struct_union_type(dest);
 
-    const struct_union_typet::componentst &components=
-      struct_union_type.components();
-
-    for(struct_union_typet::componentst::const_iterator
-        it=components.begin();
-        it!=components.end();
-        it++)
-      if(have_to_rename(*it))
+    for(const auto &c : struct_union_type.components())
+      if(have_to_rename(c))
         return true;
-  } 
+  }
   else if(dest.id()==ID_code)
   {
     const code_typet &code_type=to_code_type(dest);
     if(have_to_rename(code_type.return_type()))
       return true;
-      
-    const code_typet::parameterst &parameters=code_type.parameters();
 
-    for(code_typet::parameterst::const_iterator
-        it=parameters.begin();
-        it!=parameters.end();
-        it++)
+    for(const auto &p : code_type.parameters())
     {
-      if(have_to_rename(it->type()))
+      if(have_to_rename(p.type()))
         return true;
 
-      if(expr_map.find(it->get_identifier())!=expr_map.end())
+      if(expr_map.find(p.get_identifier()) != expr_map.end())
         return true;
     }
+
+    const exprt &spec_assigns =
+      static_cast<const exprt &>(dest.find(ID_C_spec_assigns));
+    if(spec_assigns.is_not_nil() && have_to_rename(spec_assigns))
+      return true;
+
+    const exprt &spec_ensures =
+      static_cast<const exprt &>(dest.find(ID_C_spec_ensures));
+    if(spec_ensures.is_not_nil() && have_to_rename(spec_ensures))
+      return true;
+
+    const exprt &spec_ensures_contract =
+      static_cast<const exprt &>(dest.find(ID_C_spec_ensures_contract));
+    if(
+      spec_ensures_contract.is_not_nil() &&
+      have_to_rename(spec_ensures_contract))
+    {
+      return true;
+    }
+
+    const exprt &spec_requires =
+      static_cast<const exprt &>(dest.find(ID_C_spec_requires));
+    if(spec_requires.is_not_nil() && have_to_rename(spec_requires))
+      return true;
+
+    const exprt &spec_requires_contract =
+      static_cast<const exprt &>(dest.find(ID_C_spec_requires_contract));
+    if(
+      spec_requires_contract.is_not_nil() &&
+      have_to_rename(spec_requires_contract))
+    {
+      return true;
+    }
   }
-  else if(dest.id()==ID_symbol)
-    return type_map.find(dest.get(ID_identifier))!=type_map.end();
+  else if(dest.id()==ID_c_enum_tag ||
+          dest.id()==ID_struct_tag ||
+          dest.id()==ID_union_tag)
+    return type_map.find(to_tag_type(dest).get_identifier())!=type_map.end();
   else if(dest.id()==ID_array)
     return have_to_rename(to_array_type(dest).size());
 
   return false;
 }
-

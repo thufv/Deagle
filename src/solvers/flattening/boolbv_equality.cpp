@@ -6,37 +6,21 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <iostream>
-
-#include <util/i2string.h>
-#include <util/std_expr.h>
-#include <util/base_type.h>
-
-#include <langapi/language_util.h>
-
-#include "flatten_byte_operators.h"
 #include "boolbv.h"
 
-/*******************************************************************\
+#include <util/std_expr.h>
+#include <util/invariant.h>
 
-Function: boolbvt::convert_equality
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include <solvers/lowering/expr_lowering.h>
 
 literalt boolbvt::convert_equality(const equal_exprt &expr)
 {
-  if(!base_type_eq(expr.lhs().type(), expr.rhs().type(), ns))
-  {
-    std::cout << "######### lhs: " << expr.lhs().pretty() << std::endl;
-    std::cout << "######### rhs: " << expr.rhs().pretty() << std::endl;
-    throw "equality without matching types";
-  }
+  const bool equality_types_match = expr.lhs().type() == expr.rhs().type();
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    equality_types_match,
+    "types of expressions on each side of equality should match",
+    irep_pretty_diagnosticst{expr.lhs()},
+    irep_pretty_diagnosticst{expr.rhs()});
 
   // see if it is an unbounded array
   if(is_unbounded_array(expr.lhs().type()))
@@ -45,38 +29,59 @@ literalt boolbvt::convert_equality(const equal_exprt &expr)
 
     if(has_byte_operator(expr))
     {
-      exprt tmp=flatten_byte_operators(expr, ns);
-      return record_array_equality(to_equal_expr(tmp));
+      return record_array_equality(
+        to_equal_expr(lower_byte_operators(expr, ns)));
     }
-    
+
     return record_array_equality(expr);
   }
 
-  const bvt &bv0=convert_bv(expr.lhs());
-  const bvt &bv1=convert_bv(expr.rhs());
+  const bvt &lhs_bv = convert_bv(expr.lhs());
+  const bvt &rhs_bv = convert_bv(expr.rhs());
 
-  if(bv0.size()!=bv1.size())
-  {
-    std::cerr << "lhs: " << expr.lhs().pretty() << std::endl;
-    std::cerr << "lhs size: " << bv0.size() << std::endl;
-    std::cerr << "rhs: " << expr.rhs().pretty() << std::endl;
-    std::cerr << "rhs size: " << bv1.size() << std::endl;
-    throw "unexpected size mismatch on equality";
-  }
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    lhs_bv.size() == rhs_bv.size(),
+    "sizes of lhs and rhs bitvectors should match",
+    irep_pretty_diagnosticst{expr.lhs()},
+    "lhs size: " + std::to_string(lhs_bv.size()),
+    irep_pretty_diagnosticst{expr.rhs()},
+    "rhs size: " + std::to_string(rhs_bv.size()));
 
-  if(bv0.size()==0)
+  if(lhs_bv.empty())
   {
     // An empty bit-vector comparison. It's not clear
     // what this is meant to say.
     return prop.new_variable();
   }
 
-  if(expr.lhs().type().id()==ID_verilogbv)
-  {
-    // TODO
-  }
+  return bv_utils.equal(lhs_bv, rhs_bv);
+}
+
+literalt boolbvt::convert_verilog_case_equality(
+  const binary_relation_exprt &expr)
+{
+  // This is 4-valued comparison, i.e., z===z, x===x etc.
+  // The result is always Boolean.
+
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    expr.lhs().type() == expr.rhs().type(),
+    "lhs and rhs types should match in verilog_case_equality",
+    irep_pretty_diagnosticst{expr.lhs()},
+    irep_pretty_diagnosticst{expr.rhs()});
+
+  const bvt &lhs_bv = convert_bv(expr.lhs());
+  const bvt &rhs_bv = convert_bv(expr.rhs());
+
+  DATA_INVARIANT_WITH_DIAGNOSTICS(
+    lhs_bv.size() == rhs_bv.size(),
+    "bitvector arguments to verilog_case_equality should have the same size",
+    irep_pretty_diagnosticst{expr.lhs()},
+    "lhs size: " + std::to_string(lhs_bv.size()),
+    irep_pretty_diagnosticst{expr.rhs()},
+    "rhs size: " + std::to_string(rhs_bv.size()));
+
+  if(expr.id()==ID_verilog_case_inequality)
+    return !bv_utils.equal(lhs_bv, rhs_bv);
   else
-    return bv_utils.equal(bv0, bv1);
-  
-  return SUB::convert_rest(expr);
+    return bv_utils.equal(lhs_bv, rhs_bv);
 }

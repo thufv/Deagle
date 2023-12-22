@@ -6,48 +6,39 @@ Author: Alex Groce
 
 \*******************************************************************/
 
+#include "pbs_dimacs_cnf.h"
+
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+
+#ifdef DEBUG
 #include <iostream>
-
-#include <util/i2string.h>
-
-#include "pbs_dimacs_cnf.h"
-
-/*******************************************************************\
-
-Function: pbs_dimacs_cnft::write_dimacs_cnf_pb
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#endif
 
 void pbs_dimacs_cnft::write_dimacs_pb(std::ostream &out)
 {
   double d_sum = 0;
 
-  //std::cout << "enter: No Lit. = " << no_variables () << "\n";
+#ifdef DEBUG
+  std::cout << "enter: No Lit.=" << no_variables() << "\n";
+#endif
 
-  for(std::map<literalt,unsigned>::const_iterator it=pb_constraintmap.begin();
-      it != pb_constraintmap.end (); ++it)
-    d_sum += ((*it).second);
+  for(const auto &lit_entry : pb_constraintmap)
+    d_sum += lit_entry.second;
 
-  if (!optimize)
+  if(!optimize)
   {
     out << "# PBType: E" << "\n";
     out << "# PBGoal: " << goal << "\n";
   }
-  else if (!maximize)
+  else if(!maximize)
   {
     out << "# PBType: SE" << "\n";
     out << "# PBGoal: " << d_sum << "\n";
     out << "# PBObj : MIN" << "\n";
-  } else
+  }
+  else
   {
     out << "# PBType: GE" << "\n";
     out << "# PBGoal: " << 0 << "\n";
@@ -56,80 +47,79 @@ void pbs_dimacs_cnft::write_dimacs_pb(std::ostream &out)
 
   out << "# NumCoef: " << pb_constraintmap.size() << "\n";
 
-  for(std::map<literalt,unsigned>::const_iterator it=pb_constraintmap.begin();
-      it!=pb_constraintmap.end();++it)
-    {
-      int dimacs_lit = (*it).first.dimacs();
-      out << "v" << dimacs_lit << " c" << ((*it).second) << "\n";
-    }
+  for(const auto &lit_entry : pb_constraintmap)
+  {
+    const int dimacs_lit = lit_entry.first.dimacs();
+    out << "v" << dimacs_lit << " c" << lit_entry.second << "\n";
+  }
 
-  //std::cout << "exit: No Lit. = " << no_variables () << "\n";
+#ifdef DEBUG
+  std::cout << "exit: No Lit.=" << no_variables() << "\n";
+#endif
 }
-
-/*******************************************************************\
-
-Function: pbs_dimacs_cnft::pbs_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 bool pbs_dimacs_cnft::pbs_solve()
 {
-  //std::cout << "solve: No Lit. = " << no_variables () << "\n";
+#ifdef DEBUG
+  std::cout << "solve: No Lit.=" << no_variables() << "\n";
+#endif
 
   std::string command;
 
-  if(!pbs_path.empty()) {
+  if(!pbs_path.empty())
+  {
     command += pbs_path;
-    if (command.substr(command.length(),1) != "/")
+    if(command.substr(command.length(), 1) != "/")
       command += "/";
   }
 
   command += "pbs";
 
-  //std::cout << "PBS COMMAND IS: " << command << "\n";
-  /*
-    if (!(getenv("PBS_PATH") == NULL)) 
-    {
-    command = getenv("PBS_PATH");
-    }
-    else
-    {
+#ifdef DEBUG
+  std::cout << "PBS COMMAND IS: " << command << "\n";
+#endif
+#if 0
+  if (!(getenv("PBS_PATH")==NULL))
+  {
+    command=getenv("PBS_PATH");
+  }
+  else
+  {
     error ("Unable to read PBS_PATH environment variable.\n");
     return false;
-    }
-  */
+  }
+#endif
 
   command += " -f temp.cnf";
 
-  #if 1
-  if (optimize)
+#if 1
+  if(optimize)
+  {
+    if(binary_search)
     {
-      if (binary_search) {
-	command += " -S 1000 -D 1 -H -I -a";
-      }
-      else {
-	//std::cout << "NO BINARY SEARCH" << "\n";
-	command += " -S 1000 -D 1 -I -a";
-      }
+      command += " -S 1000 -D 1 -H -I -a";
     }
+    else
+    {
+#ifdef DEBUG
+      std::cout << "NO BINARY SEARCH"
+                << "\n";
+#endif
+      command += " -S 1000 -D 1 -I -a";
+    }
+  }
   else
-    {
-      command += " -S 1000 -D 1 -a";
-    }
-  #else
+  {
+    command += " -S 1000 -D 1 -a";
+  }
+#else
   command += " -z";
-  #endif
-    
+#endif
+
   command += " -a > temp.out";
 
-  int res=system(command.c_str());
-  assert(0 == res);
+  const int res = system(command.c_str());
+  CHECK_RETURN(0 == res);
 
   std::ifstream file("temp.out");
   std::string line;
@@ -137,167 +127,167 @@ bool pbs_dimacs_cnft::pbs_solve()
   bool satisfied = false;
 
   if(file.fail())
-    {
-      error("Unable to read SAT results!\n");
-      return false;
-    }
-   
+  {
+    log.error() << "Unable to read SAT results!" << messaget::eom;
+    return false;
+  }
+
   opt_sum = -1;
 
-  while(file && !file.eof ())
+  while(file && !file.eof())
+  {
+    std::getline(file, line);
+    if(
+      strstr(line.c_str(), "Variable Assignments Satisfying CNF Formula:") !=
+      nullptr)
     {
-      std::getline(file,line);
-      if(strstr(line.c_str(),
-		"Variable Assignments Satisfying CNF Formula:")!=NULL)
-	{
-	  //print ("Reading assignments...\n");
-	  //std::cout << "No literals: " << no_variables() << "\n";
-	  satisfied = true;
-	  assigned.clear ();
-	  for (size_t i = 0; (file && (i < no_variables())); ++i)
-	    {
-	      file >> v;
-	      if (v > 0)
-		{
-		  //std::cout << v << " ";
-		  assigned.insert(v);
-		}
-	    }
-	  //std::cout << "\n";
-	  //print ("Finished reading assignments.\n");
-	}
-      else if (strstr(line.c_str(),"SAT... SUM") != NULL)
-	{
-	  //print (line);
-	  sscanf(line.c_str(),"%*s %*s %*s %d", &opt_sum);
-	}
-      else if (strstr(line.c_str(),"SAT - All implied") != NULL)
-	{
-	  //print (line);
-	  sscanf(line.c_str(),"%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %d", &opt_sum);
-	}
-      else if (strstr(line.c_str(),"SAT... Solution") != NULL)
-	{
-	  //print(line);
-	  sscanf(line.c_str(),"%*s %*s %*s %d", &opt_sum);
-	}
-      else if (strstr(line.c_str(),"Optimal Soln") != NULL)
-	{
-	  //print(line);
-	  if (strstr(line.c_str(),"time out") != NULL)
-	    {
-	      print (6, "WARNING:  TIMED OUT.  SOLUTION MAY BE INCORRECT.\n");
-	      return satisfied;
-	    }
-	  sscanf(line.c_str(),"%*s %*s %*s %d", &opt_sum);
-	}
+#ifdef DEBUG
+      std::cout << "Reading assignments...\n";
+      std::cout << "No literals: " << no_variables() << "\n";
+#endif
+      satisfied = true;
+      assigned.clear();
+      for(size_t i = 0; (file && (i < no_variables())); ++i)
+      {
+        file >> v;
+        if(v > 0)
+        {
+#ifdef DEBUG
+          std::cout << v << " ";
+#endif
+          assigned.insert(v);
+        }
+      }
+#ifdef DEBUG
+      std::cout << "\n";
+      std::cout << "Finished reading assignments.\n";
+#endif
     }
-  
+    else if(strstr(line.c_str(), "SAT... SUM") != nullptr)
+    {
+#ifdef DEBUG
+      std::cout << line;
+#endif
+      sscanf(line.c_str(), "%*s %*s %*s %d", &opt_sum);
+    }
+    else if(strstr(line.c_str(), "SAT - All implied") != nullptr)
+    {
+#ifdef DEBUG
+      std::cout << line;
+#endif
+      sscanf(
+        line.c_str(),
+        "%*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %d",
+        &opt_sum);
+    }
+    else if(strstr(line.c_str(), "SAT... Solution") != nullptr)
+    {
+#ifdef DEBUG
+      std::cout << line;
+#endif
+      sscanf(line.c_str(), "%*s %*s %*s %d", &opt_sum);
+    }
+    else if(strstr(line.c_str(), "Optimal Soln") != nullptr)
+    {
+#ifdef DEBUG
+      std::cout << line;
+#endif
+      if(strstr(line.c_str(), "time out") != nullptr)
+      {
+        log.status() << "WARNING:  TIMED OUT.  SOLUTION MAY BE INCORRECT."
+                     << messaget::eom;
+        return satisfied;
+      }
+      sscanf(line.c_str(), "%*s %*s %*s %d", &opt_sum);
+    }
+  }
+
   return satisfied;
 }
 
-/*******************************************************************\
-
-Function: pbs_dimacs_cnft::prop_solve
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-propt::resultt pbs_dimacs_cnft::prop_solve()
+propt::resultt pbs_dimacs_cnft::do_prop_solve()
 {
   std::ofstream file("temp.cnf");
-   
+
   write_dimacs_cnf(file);
-  
+
   std::ofstream pbfile("temp.cnf.pb");
-  
+
   write_dimacs_pb(pbfile);
 
   file.close();
   pbfile.close();
 
-  std::string msg=
-    i2string(no_variables())+" variables, "+
-    i2string(clauses.size())+" clauses";
-  messaget::status(msg);
+  // We start counting at 1, thus there is one variable fewer.
+  log.statistics() << (no_variables() - 1) << " variables, " << clauses.size()
+                   << " clauses" << messaget::eom;
 
-  bool result=pbs_solve();
-  
-  if (!result)
-    {
-      msg="PBS checker: system is UNSATISFIABLE";
-    }
+  const bool result = pbs_solve();
+
+  if(!result)
+  {
+    log.status() << "PBS checker: system is UNSATISFIABLE" << messaget::eom;
+  }
   else
-    {
-      msg="PBS checker: system is SATISFIABLE"; 
-      if (optimize)
-	msg += " (distance " + i2string(opt_sum) + ")";
-    }
-  
-  messaget::status(msg);
+  {
+    log.status() << "PBS checker: system is SATISFIABLE";
+    if(optimize)
+      log.status() << " (distance " << opt_sum << ")";
+    log.status() << messaget::eom;
+  }
 
   if(result)
-    return P_SATISFIABLE;
+    return resultt::P_SATISFIABLE;
   else
-    return P_UNSATISFIABLE;
+    return resultt::P_UNSATISFIABLE;
 }
-
-/*******************************************************************\
-
-Function: pbs_dimacs_cnft::l_get
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 tvt pbs_dimacs_cnft::l_get(literalt a) const
 {
   int dimacs_lit = a.dimacs();
-  
-  //std::cout << a << " / " << dimacs_lit << " = ";
 
-  bool neg = (dimacs_lit < 0);
+#ifdef DEBUG
+  std::cout << a << " / " << dimacs_lit << "=";
+#endif
+
+  const bool neg = (dimacs_lit < 0);
   if(neg)
     dimacs_lit = -dimacs_lit;
 
   std::set<int>::const_iterator f = assigned.find(dimacs_lit);
 
   if(!neg)
+  {
+    if(f == assigned.end())
     {
-      if(f == assigned.end())
-	{
-	  //std::cout << "FALSE" << "\n";
-	  return tvt(false);
-	}
-      else
-	{
-	  //std::cout << "TRUE" << "\n";
-	  return tvt(true);
-	}
+#ifdef DEBUG
+      std::cout << "FALSE\n";
+#endif
+      return tvt(false);
     }
+    else
+    {
+#ifdef DEBUG
+      std::cout << "TRUE\n";
+#endif
+      return tvt(true);
+    }
+  }
   else
+  {
+    if(f != assigned.end())
     {
-      if(f != assigned.end())
-	{
-	  //std::cout << "FALSE" << "\n";
-	  return tvt(false);
-	}
-      else
-	{
-	  //std::cout << "TRUE" << "\n";
-	  return tvt(true);
-	}
+#ifdef DEBUG
+      std::cout << "FALSE\n";
+#endif
+      return tvt(false);
     }
-
-  //std::cout << "ERROR" << "\n";
-  return tvt(tvt::TV_UNKNOWN);
+    else
+    {
+#ifdef DEBUG
+      std::cout << "TRUE\n";
+#endif
+      return tvt(true);
+    }
+  }
 }

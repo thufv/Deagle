@@ -6,217 +6,67 @@ Author: Michael Tautschnig, michael.tautschnig@cs.ox.ac.uk
 
 \*******************************************************************/
 
-#include <cerrno>
-#include <cstdlib>
-#include <limits>
-#include <cassert>
-
 #include "string2int.h"
 
-/*******************************************************************\
+#include <cstdlib>
+#include <stdexcept>
 
-Function: safe_str2number
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-template <typename T>
-inline T str2number(const char *str, int base, bool safe)
-{
-  int errno_bak=errno;
-  errno=0;
-  char * endptr;
-// _strtoi64 is available in Visual Studio, but not yet in MINGW
-#ifdef _MSC_VER
-  const __int64 val=_strtoi64(str, &endptr, base);
-#else
-  const long long val=strtoll(str, &endptr, base);
-#endif
-
-  if(safe)
-  {
-    assert(0 == errno);
-    errno=errno_bak;
-    assert(endptr!=str);
-    assert(val <= std::numeric_limits<T>::max());
-    assert(val >= std::numeric_limits<T>::min());
-  }
-  
-  return (T)val;
-}
-
-/*******************************************************************\
-
-Function: safe_str2int
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-int safe_str2int(const char *str, int base)
-{
-  return str2number<int>(str, base, true);
-}
-
-/*******************************************************************\
-
-Function: safe_str2unsigned
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned safe_str2unsigned(const char *str, int base)
-{
-  return str2number<unsigned>(str, base, true);
-}
-
-/*******************************************************************\
-
-Function: safe_string2int
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-int safe_string2int(const std::string &str, int base)
-{
-  return str2number<int>(str.c_str(), base, true);
-}
-
-/*******************************************************************\
-
-Function: safe_string2unsigned
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
+#include "invariant.h"
 
 unsigned safe_string2unsigned(const std::string &str, int base)
 {
-  return str2number<unsigned>(str.c_str(), base, true);
+  auto converted = string2optional<unsigned>(str, base);
+  CHECK_RETURN(converted.has_value());
+  return *converted;
 }
 
-/*******************************************************************\
-
-Function: unsafe_str2int
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-int unsafe_str2int(const char *str, int base)
+std::size_t safe_string2size_t(const std::string &str, int base)
 {
-  return str2number<int>(str, base, false);
+  auto converted = string2optional<std::size_t>(str, base);
+  CHECK_RETURN(converted.has_value());
+  return *converted;
 }
-
-/*******************************************************************\
-
-Function: unsafe_str2unsigned
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned unsafe_str2unsigned(const char *str, int base)
-{
-  return str2number<unsigned>(str, base, false);
-}
-
-/*******************************************************************\
-
-Function: unsafe_string2int
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 int unsafe_string2int(const std::string &str, int base)
 {
-  return str2number<int>(str.c_str(), base, false);
+  return narrow_cast<int>(std::strtoll(str.c_str(), nullptr, base));
 }
-
-/*******************************************************************\
-
-Function: unsafe_string2unsigned
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 unsigned unsafe_string2unsigned(const std::string &str, int base)
 {
-  return str2number<unsigned>(str.c_str(), base, false);
+  return narrow_cast<unsigned>(std::strtoul(str.c_str(), nullptr, base));
 }
 
-/*******************************************************************\
-
-Function: unsafe_string2signedlonglong
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-signed long long int unsafe_string2signedlonglong(const std::string &str, int base)
+std::size_t unsafe_string2size_t(const std::string &str, int base)
 {
-  return str2number<signed long long int>(str.c_str(), base, false);
+  return narrow_cast<std::size_t>(std::strtoull(str.c_str(), nullptr, base));
 }
 
-/*******************************************************************\
-
-Function: unsafe_string2unsignedlonglong
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
-
-unsigned long long int unsafe_string2unsignedlonglong(const std::string &str, int base)
+signed long long int unsafe_string2signedlonglong(
+  const std::string &str,
+  int base)
 {
-  return str2number<unsigned long long int>(str.c_str(), base, false);
+  return std::strtoll(str.c_str(), nullptr, false);
 }
 
+unsigned long long int unsafe_string2unsignedlonglong(
+  const std::string &str,
+  int base)
+{
+  return *string2optional<unsigned long long>(str, base);
+}
+
+optionalt<int> string2optional_int(const std::string &str, int base)
+{
+  return string2optional<int>(str, base);
+}
+
+optionalt<unsigned> string2optional_unsigned(const std::string &str, int base)
+{
+  return string2optional<unsigned>(str, base);
+}
+
+optionalt<std::size_t> string2optional_size_t(const std::string &str, int base)
+{
+  return string2optional<std::size_t>(str, base);
+}

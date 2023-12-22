@@ -1,5 +1,16 @@
-#ifndef PATH_ACCELERATOR_H
-#define PATH_ACCELERATOR_H
+/*******************************************************************\
+
+Module: Loop Acceleration
+
+Author: Matt Lewis
+
+\*******************************************************************/
+
+/// \file
+/// Loop Acceleration
+
+#ifndef CPROVER_GOTO_INSTRUMENT_ACCELERATE_ACCELERATOR_H
+#define CPROVER_GOTO_INSTRUMENT_ACCELERATE_ACCELERATOR_H
 
 #include "path.h"
 
@@ -12,7 +23,8 @@
 #include <goto-programs/goto_program.h>
 #include <goto-programs/goto_functions.h>
 
-class path_acceleratort {
+class path_acceleratort
+{
  public:
   path_acceleratort(patht &_path,
                goto_programt &pure,
@@ -32,13 +44,14 @@ class path_acceleratort {
   path_acceleratort(const path_acceleratort &that) :
     path(that.path),
     changed_vars(that.changed_vars),
-    dirty_vars(that.dirty_vars) 
+    dirty_vars(that.dirty_vars)
   {
     pure_accelerator.copy_from(that.pure_accelerator);
     overflow_path.copy_from(that.overflow_path);
   }
 
-  void clear() {
+  void clear()
+  {
     path.clear();
     pure_accelerator.clear();
     overflow_path.clear();
@@ -53,4 +66,4 @@ class path_acceleratort {
   std::set<exprt> dirty_vars;
 };
 
-#endif // PATH_ACCELERATOR_H
+#endif // CPROVER_GOTO_INSTRUMENT_ACCELERATE_ACCELERATOR_H

@@ -6,40 +6,81 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
-#include <cassert>
-
-#include <util/expr_util.h>
-#include <util/rename.h>
-#include <util/base_type.h>
-#include <util/std_expr.h>
-#include <util/byte_operators.h>
-
-#include <ansi-c/c_types.h>
+/// \file
+/// Symbolic Execution
 
 #include "goto_symex.h"
 
-/*******************************************************************\
+#include <util/arith_tools.h>
+#include <util/byte_operators.h>
+#include <util/c_types.h>
+#include <util/pointer_offset_size.h>
+#include <util/std_code.h>
 
-Function: goto_symext::symex_other
+void goto_symext::havoc_rec(
+  statet &state,
+  const guardt &guard,
+  const exprt &dest)
+{
+  if(dest.id()==ID_symbol)
+  {
+    exprt lhs;
 
-  Inputs:
+    if(guard.is_true())
+      lhs=dest;
+    else
+      lhs=if_exprt(
+        guard.as_expr(), dest, exprt(ID_null_object, dest.type()));
 
- Outputs:
+    auto rhs =
+      side_effect_expr_nondett(dest.type(), state.source.pc->source_location());
 
- Purpose:
+    symex_assign(state, lhs, rhs);
+  }
+  else if(dest.id()==ID_byte_extract_little_endian ||
+          dest.id()==ID_byte_extract_big_endian)
+  {
+    havoc_rec(state, guard, to_byte_extract_expr(dest).op());
+  }
+  else if(dest.id()==ID_if)
+  {
+    const if_exprt &if_expr=to_if_expr(dest);
 
-\*******************************************************************/
+    guardt guard_t=state.guard;
+    guard_t.add(if_expr.cond());
+    havoc_rec(state, guard_t, if_expr.true_case());
+
+    guardt guard_f=state.guard;
+    guard_f.add(not_exprt(if_expr.cond()));
+    havoc_rec(state, guard_f, if_expr.false_case());
+  }
+  else if(dest.id()==ID_typecast)
+  {
+    havoc_rec(state, guard, to_typecast_expr(dest).op());
+  }
+  else if(dest.id()==ID_index)
+  {
+    havoc_rec(state, guard, to_index_expr(dest).array());
+  }
+  else if(dest.id()==ID_member)
+  {
+    havoc_rec(state, guard, to_member_expr(dest).struct_op());
+  }
+  else
+  {
+    // consider printing a warning
+  }
+}
 
 void goto_symext::symex_other(
-  const goto_functionst &goto_functions,
   statet &state)
 {
   const goto_programt::instructiont &instruction=*state.source.pc;
 
-  const codet &code=to_code(instruction.code);
+  const codet &code = instruction.get_other();
 
   const irep_idt &statement=code.get_statement();
-  
+
   if(statement==ID_expression)
   {
     // ignore
@@ -47,35 +88,27 @@ void goto_symext::symex_other(
   else if(statement==ID_cpp_delete ||
           statement=="cpp_delete[]")
   {
-    codet clean_code=code;
-    clean_expr(clean_code, state, false);
+    const codet clean_code = to_code(clean_expr(code, state, false));
     symex_cpp_delete(state, clean_code);
-  }
-  else if(statement==ID_free)
-  {
-    // ignore
   }
   else if(statement==ID_printf)
   {
-    codet clean_code=code;
-    clean_expr(clean_code, state, false);
-    symex_printf(state, nil_exprt(), clean_code);
+    const codet clean_code = to_code(clean_expr(code, state, false));
+    symex_printf(state, clean_code);
   }
-  else if(statement==ID_input)
+  else if(can_cast_expr<code_inputt>(code))
   {
-    codet clean_code(code);
-    clean_expr(clean_code, state, false);
+    const codet clean_code = to_code(clean_expr(code, state, false));
     symex_input(state, clean_code);
   }
-  else if(statement==ID_output)
+  else if(can_cast_expr<code_outputt>(code))
   {
-    codet clean_code(code);
-    clean_expr(clean_code, state, false);
+    const codet clean_code = to_code(clean_expr(code, state, false));
     symex_output(state, clean_code);
   }
   else if(statement==ID_decl)
   {
-    assert(false); // see symex_decl.cpp
+    UNREACHABLE; // see symex_decl.cpp
   }
   else if(statement==ID_nondet)
   {
@@ -85,77 +118,121 @@ void goto_symext::symex_other(
   {
     // we ignore this for now
   }
-  else if(statement==ID_array_copy)
+  else if(statement==ID_array_copy ||
+          statement==ID_array_replace)
   {
-    assert(code.operands().size()==2);
+    // array_copy and array_replace take two pointers (to arrays); we need to:
+    // 1. remove any dereference expressions (via clean_expr)
+    // 2. find the actual array objects/candidates for objects (via
+    // process_array_expr)
+    // 3. build an assignment where the type on lhs and rhs is:
+    // - array_copy: the type of the first array (even if the second is smaller)
+    // - array_replace: the type of the second array (even if it is smaller)
+    DATA_INVARIANT(
+      code.operands().size() == 2,
+      "expected array_copy/array_replace statement to have two operands");
 
-    codet clean_code(code);
-    
     // we need to add dereferencing for both operands
-    dereference_exprt d0, d1;
-    d0.op0()=code.op0();
-    d0.type()=code.op0().type().subtype();
-    d1.op0()=code.op1();
-    d1.type()=code.op1().type().subtype();
-    
-    clean_code.op0()=d0;
-    clean_code.op1()=d1;
-    
-    clean_expr(clean_code, state, false);
-    
-    process_array_expr(clean_code.op0());
-    process_array_expr(clean_code.op1());
-    
+    exprt dest_array = clean_expr(code.op0(), state, false);
+    exprt src_array = clean_expr(code.op1(), state, false);
 
-    if(!base_type_eq(clean_code.op0().type(),
-                     clean_code.op1().type(), ns))
+    // obtain the actual arrays
+    process_array_expr(state, dest_array);
+    process_array_expr(state, src_array);
+
+    // check for size (or type) mismatch and adjust
+    if(dest_array.type() != src_array.type())
     {
-      byte_extract_exprt be(byte_extract_id());
-      be.type()=clean_code.op0().type();
-      be.op()=clean_code.op1();
-      be.offset()=gen_zero(index_type());
-
-      clean_code.op1()=be;
+      if(statement==ID_array_copy)
+      {
+        src_array = make_byte_extract(
+          src_array, from_integer(0, c_index_type()), dest_array.type());
+        do_simplify(src_array);
+      }
+      else
+      {
+        // ID_array_replace
+        dest_array = make_byte_extract(
+          dest_array, from_integer(0, c_index_type()), src_array.type());
+        do_simplify(dest_array);
+      }
     }
-    
-    code_assignt assignment;
-    assignment.lhs()=clean_code.op0();
-    assignment.rhs()=clean_code.op1();
-    symex_assign(state, assignment);    
+
+    symex_assign(state, dest_array, src_array);
   }
   else if(statement==ID_array_set)
   {
-    assert(code.operands().size()==2);
-    
-    codet clean_code(code);
+    // array_set takes a pointer (to an array) and a value that each element
+    // should be set to; we need to:
+    // 1. remove any dereference expressions (via clean_expr)
+    // 2. find the actual array object/candidates for objects (via
+    // process_array_expr)
+    // 3. use the type of the resulting array to construct an array_of
+    // expression
+    DATA_INVARIANT(
+      code.operands().size() == 2,
+      "expected array_set statement to have two operands");
 
     // we need to add dereferencing for the first operand
-    dereference_exprt d0;
-    d0.op0()=code.op0();
-    d0.type()=code.op0().type().subtype();
-    
-    clean_code.op0()=d0;
+    exprt array_expr = clean_expr(code.op0(), state, false);
 
-    clean_expr(clean_code, state, false);
-    
-    process_array_expr(clean_code.op0());
-    
-    const typet &op0_type=ns.follow(clean_code.op0().type());
-    
-    if(op0_type.id()!=ID_array)
-      throw "array_set expects array operand";
+    // obtain the actual array(s)
+    process_array_expr(state, array_expr);
 
-    const array_typet &array_type=
-      to_array_type(op0_type);
-    
-    if(!base_type_eq(array_type.subtype(),
-                     clean_code.op1().type(), ns))
-      clean_code.op1().make_typecast(array_type.subtype());
-    
-    code_assignt assignment;
-    assignment.lhs()=clean_code.op0();
-    assignment.rhs()=array_of_exprt(clean_code.op1(), array_type);
-    symex_assign(state, assignment);    
+    // prepare to build the array_of
+    exprt value = clean_expr(code.op1(), state, false);
+
+    // we might have a memset-style update of a non-array type - convert to a
+    // byte array
+    if(array_expr.type().id() != ID_array)
+    {
+      auto array_size = size_of_expr(array_expr.type(), ns);
+      CHECK_RETURN(array_size.has_value());
+      do_simplify(array_size.value());
+      array_expr = make_byte_extract(
+        array_expr,
+        from_integer(0, c_index_type()),
+        array_typet(char_type(), array_size.value()));
+    }
+
+    const array_typet &array_type = to_array_type(array_expr.type());
+
+    if(array_type.element_type() != value.type())
+      value = typecast_exprt(value, array_type.element_type());
+
+    symex_assign(state, array_expr, array_of_exprt(value, array_type));
+  }
+  else if(statement==ID_array_equal)
+  {
+    // array_equal takes two pointers (to arrays) and the symbol that the result
+    // should get assigned to; we need to:
+    // 1. remove any dereference expressions (via clean_expr)
+    // 2. find the actual array objects/candidates for objects (via
+    // process_array_expr)
+    // 3. build an assignment where the lhs is the previous third argument, and
+    // the right-hand side is an equality over the arrays, if their types match;
+    // if the types don't match the result trivially is false
+    DATA_INVARIANT(
+      code.operands().size() == 3,
+      "expected array_equal statement to have three operands");
+
+    // we need to add dereferencing for the first two
+    exprt array1 = clean_expr(code.op0(), state, false);
+    exprt array2 = clean_expr(code.op1(), state, false);
+
+    // obtain the actual arrays
+    process_array_expr(state, array1);
+    process_array_expr(state, array2);
+
+    exprt rhs;
+
+    // Types don't match? Make it 'false'.
+    if(array1.type() != array2.type())
+      rhs = false_exprt();
+    else
+      rhs = equal_exprt(array1, array2);
+
+    symex_assign(state, code.op2(), rhs);
   }
   else if(statement==ID_user_specified_predicate ||
           statement==ID_user_specified_parameter_predicates ||
@@ -167,6 +244,17 @@ void goto_symext::symex_other(
   {
     target.memory_barrier(state.guard.as_expr(), state.source);
   }
+  else if(statement==ID_havoc_object)
+  {
+    DATA_INVARIANT(
+      code.operands().size() == 1,
+      "expected havoc_object statement to have one operand");
+
+    exprt object = clean_expr(code.op0(), state, false);
+
+    process_array_expr(state, object);
+    havoc_rec(state, guardt(true_exprt(), guard_manager), object);
+  }
   else
-    throw "unexpected statement: "+id2string(statement);
+    UNREACHABLE;
 }

@@ -6,24 +6,13 @@ Author: Daniel Kroening, kroening@kroening.com
 
 \*******************************************************************/
 
+#include "find_macros.h"
+
 #include <stack>
 
-#include "find_macros.h"
-#include "expr.h"
 #include "namespace.h"
+#include "std_expr.h"
 #include "symbol.h"
-
-/*******************************************************************\
-
-Function: find_macros
-
-  Inputs:
-
- Outputs:
-
- Purpose:
-
-\*******************************************************************/
 
 void find_macros(
   const exprt &src,
@@ -32,21 +21,20 @@ void find_macros(
 {
   std::stack<const exprt *> stack;
 
-  // use stack, these may be nested deeply  
+  // use stack, these may be nested deeply
   stack.push(&src);
-  
+
   while(!stack.empty())
   {
     const exprt &e=*stack.top();
     stack.pop();
-    
-    if(e.id()==ID_symbol ||
-       e.id()==ID_next_symbol)
+
+    if(e.id() == ID_symbol)
     {
-      const irep_idt &identifier=e.get(ID_identifier);
-    
-      const symbolt &symbol=ns.lookup(identifier);
-      
+      const irep_idt &identifier = to_symbol_expr(e).get_identifier();
+
+      const symbolt &symbol = ns.lookup(identifier);
+
       if(symbol.is_macro)
       {
         // inserted?
