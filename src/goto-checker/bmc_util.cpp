@@ -362,11 +362,6 @@ void postprocess_equation(
   const auto postprocess_equation_start = std::chrono::steady_clock::now();
   // add a partial ordering, if required
 
-  // __SZH_ADD_BEGIN__
-  if(options.get_bool_option("datarace"))
-    symex.svcomp_datarace_exit();
-  // __SZH_ADD_END__
-
   if(equation.has_threads())
   {
     std::unique_ptr<memory_model_baset> memory_model =

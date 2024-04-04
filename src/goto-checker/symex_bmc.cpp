@@ -41,25 +41,9 @@ symex_bmct::symex_bmct(
     unwindset(unwindset),
     // __SZH_ADD_BEGIN__
     has_sleep(false),
-    has_writer_fn(false),
-    has_insert(false),
-    has_take(false),
     has_malloc(false),
     has_calloc(false),
     has_key(false),
-    has_external_alloc(false),
-    has_barrier_init(false),
-    has_my_drv_probe(false),
-    has_create_fresh_int_array(false),
-    has_plus(false),
-    has_Init_WorkStealQueue(false),
-    has_atomic_acquire(false),
-    has_atomic_dec(false),
-    has_atomic_trash(false),
-    has_myPartOfCalc(false),
-    has_threads_total(false),
-    has_nvram(false),
-    has_pc8736x(false),
     // __SZH_ADD_END__
     symex_coverage(ns)
 {
@@ -286,15 +270,6 @@ void symex_bmct::svcomp_get_interesting_codes()
 
       if(function_name.find("sleep") != std::string::npos)
         has_sleep = true;
-      
-      if(function_name.find("writer_fn") != std::string::npos)
-        has_writer_fn = true;
-
-      if(function_name == "insert")
-        has_insert = true;
-
-      if(function_name.find("take") != std::string::npos)
-        has_take = true;
 
       if(function_name.find("malloc") != std::string::npos)
         has_malloc = true;
@@ -304,45 +279,6 @@ void symex_bmct::svcomp_get_interesting_codes()
 
       if(function_name.find("pthread_key_create") != std::string::npos || function_name.find("pthread_setspecific") != std::string::npos || function_name.find("pthread_getspecific") != std::string::npos)
         has_key = true;
-
-      if(function_name.find("external_alloc") != std::string::npos)
-        has_external_alloc = true;
-      
-      if(function_name.find("barrier_init") != std::string::npos)
-        has_barrier_init = true;
-
-      if(function_name.find("my_drv_probe") != std::string::npos)
-        has_my_drv_probe = true;
-
-      if(function_name.find("create_fresh_int_array") != std::string::npos)
-        has_create_fresh_int_array = true;
-
-      if(function_name.find("plus") != std::string::npos)
-        has_plus = true;
-
-      if(function_name.find("Init_WorkStealQueue") != std::string::npos)
-        has_Init_WorkStealQueue = true;
-      
-      if(function_name.find("__VERIFIER_atomic_acquire") != std::string::npos)
-        has_atomic_acquire = true;
-
-      if(function_name.find("__VERIFIER_atomic_dec") != std::string::npos)
-        has_atomic_dec = true;
-
-      if(function_name.find("__VERIFIER_atomic_CAS") != std::string::npos)
-        has_atomic_trash = true;
-      
-      if(function_name.find("__VERIFIER_atomic_index_malloc") != std::string::npos)
-        has_atomic_trash = true;
-      
-      if(function_name.find("myPartOfCalc") != std::string::npos)
-        has_myPartOfCalc = true;
-
-      if(function_name.find("nvram") != std::string::npos)
-        has_nvram = true;
-      
-      if(function_name.find("pc8736x") != std::string::npos)
-        has_pc8736x = true;
 
       if(code.get_statement() == ID_block)
       {
@@ -369,25 +305,7 @@ void symex_bmct::svcomp_get_interesting_codes()
         function_calls.push_back(to_code_function_call(code));
       else if(code.get_statement() == ID_ifthenelse)
         ifthenelses.push_back(to_code_ifthenelse(code));
-      else if(code.get_statement() == ID_decl)
-      {
-        if(code.op0().id() == ID_symbol)
-        {
-          std::string decl_str = to_symbol_expr(code.op0()).get_identifier().c_str();
-          if(decl_str.find("threads_total") != std::string::npos)
-            has_threads_total = true;
-        }
-      }
     }
-  }
-
-  for(auto& assign_code : assigns)
-  {
-    if(assign_code.lhs().id() != ID_symbol)
-      continue;
-    std::string lhs_str = to_symbol_expr(assign_code.lhs()).get_identifier().c_str();
-    if(lhs_str.find("threads_total") != std::string::npos)
-      has_threads_total = true;
   }
 }
 
@@ -721,11 +639,11 @@ int symex_bmct::svcomp_unwind_strategy()
   bool has_mutex_array = svcomp_has_mutex_array();
 
   //experimental, for 09-regions_20/23/26_*.i
-  if(candidate_limits.find(10) != candidate_limits.end() && candidate_limits.find(30) != candidate_limits.end())
-  {
-    std::cout << "too many nested unwind!\n";
-    std::exit(1);
-  }
+  // if(candidate_limits.find(10) != candidate_limits.end() && candidate_limits.find(30) != candidate_limits.end())
+  // {
+  //   std::cout << "too many nested unwind!\n";
+  //   std::exit(1);
+  // }
 
   int max_limit = 2;
   if(has_array && loop_unwind_limit > 0 && loop_unwind_limit < 30)
@@ -755,16 +673,7 @@ int symex_bmct::svcomp_unwind_strategy()
   svcomp_special(max_limit, loop_unwind_limit);
 
   if(enable_reach)
-  {
-    target.has_threads_total = has_threads_total;
     svcomp_exit(max_limit, loop_unwind_limit, has_mutex_array);
-  }
-  
-  if(enable_overflow)
-    svcomp_overflow_exit();
-
-  if(enable_alloc)
-    svcomp_memsafety_exit();
 
   return max_limit;
 }
@@ -784,49 +693,31 @@ void symex_bmct::svcomp_update_assume_upperbound(std::string& id, int value)
 void symex_bmct::svcomp_special(int& max_limit, int for_unwind_limit)
 {
   // For 40_barrier_vf_false-unreach-call.i
-  for(auto& code_ifthenelse : ifthenelses)
-  {
-    const exprt& cond = code_ifthenelse.cond();
-    if (cond.id() == ID_equal && cond.op0().id() == ID_symbol && cond.op1().id() == ID_typecast && cond.op1().op0().id() == ID_constant)
-    {
-      std::string str = to_symbol_expr(cond.op0()).get_identifier().c_str();
-      if(str.find("count") != std::string::npos)
-      {
-        int limit = string2integer(cond.op1().op0().get_string(ID_value), 16).to_long();
-        max_limit = limit + 1;
-      }
-    }
-  }
-
-  // For pthread-driver-races
-  if(has_external_alloc)
-    max_limit = 100;
-
-  // For weaver/popl20-* cases
-  if(has_create_fresh_int_array && has_plus)
-    max_limit = 3;
+  // for(auto& code_ifthenelse : ifthenelses)
+  // {
+  //   const exprt& cond = code_ifthenelse.cond();
+  //   if (cond.id() == ID_equal && cond.op0().id() == ID_symbol && cond.op1().id() == ID_typecast && cond.op1().op0().id() == ID_constant)
+  //   {
+  //     std::string str = to_symbol_expr(cond.op0()).get_identifier().c_str();
+  //     if(str.find("count") != std::string::npos)
+  //     {
+  //       int limit = string2integer(cond.op1().op0().get_string(ID_value), 16).to_long();
+  //       max_limit = limit + 1;
+  //     }
+  //   }
+  // }
 
   // For pthread/indexer.i
-  if(max_limit == 2 && for_unwind_limit == 128)
-  {
-    std::cout << "Unsupported function!\n";
-    std::exit(1);
-  }
-
-  // For newly added pthread-race-challenges/*
-  if(has_threads_total)
-    max_limit = 5;
+  // if(max_limit == 2 && for_unwind_limit == 128)
+  // {
+  //   std::cout << "Unsupported function!\n";
+  //   std::exit(1);
+  // }
 }
 
 void symex_bmct::svcomp_exit(int max_limit, int for_unwind_limit, bool has_mutex_array)
 {
-  if(has_sleep || has_key || has_barrier_init || has_my_drv_probe || has_Init_WorkStealQueue) // || has_malloc) // szh: exiting cases with malloc is too destructive
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
-
-  if(has_calloc && has_threads_total) //for pthread-race-challenges/thread-local-value-dynamic
+  if(has_sleep || has_key)
   {
     std::cout << "Unsupported library function!\n";
     std::exit(1);
@@ -838,77 +729,6 @@ void symex_bmct::svcomp_exit(int max_limit, int for_unwind_limit, bool has_mutex
     if(left.id() != ID_symbol)
       continue;
     std::string left_str = to_symbol_expr(left).get_identifier().c_str();
-
-    //for popl20-*
-    if(left_str.find("q1_front") != std::string::npos)
-    {
-      std::cout << "Unsupported library function!\n";
-      std::exit(1);
-    }
-
-    //for singleton_with-uninit-problem
-    if(left_str == "v" && left.type().id() == ID_pointer)
-    {
-      std::cout << "Unsupported library function!\n";
-      std::exit(1);
-    }
-  }
-}
-
-void symex_bmct::svcomp_overflow_exit()
-{
-  if(has_myPartOfCalc)
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
-
-  if(has_nvram || has_pc8736x)
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
-}
-
-void symex_bmct::svcomp_memsafety_exit()
-{
-  if(has_nvram || has_pc8736x)
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
-}
-
-void symex_bmct::svcomp_datarace_exit()
-{
-  // if(has_sleep || has_key || has_barrier_init || has_Init_WorkStealQueue) // szh: exiting cases with malloc is too destructive
-  // {
-  //   std::cout << "Unsupported library function!\n";
-  //   std::exit(1);
-  // }
-
-  if(has_barrier_init)
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
-
-  if(has_atomic_trash)
-  {
-    std::cout << "Unsupported __VERIFIER_atomic_* function!\n";
-    std::exit(1);
-  }
-
-  if(has_writer_fn)
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
-
-  if(has_insert && !has_take)
-  {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
   }
 }
 

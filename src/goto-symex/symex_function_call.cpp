@@ -248,10 +248,7 @@ void goto_symext::symex_function_call_post_clean(
     if(symex_config.unwinding_assertions)
       vcc(false_exprt(), "recursion unwinding assertion", state);
 
-    // __SZH_ADD_BEGIN__
-    bool real_partial_loops = symex_config.partial_loops || target.has_threads_total;
-    // __SZH_ADD_END__
-    if(!real_partial_loops)
+    if(!symex_config.partial_loops)
     {
       // Rule out this path:
       symex_assume_l2(state, false_exprt());

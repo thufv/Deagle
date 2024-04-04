@@ -947,10 +947,7 @@ void goto_symext::loop_bound_exceeded(
       state);
   }
 
-  // __SZH_ADD_BEGIN__ : for pthread-race-challenges/thread-local.value.c
-  bool real_partial_loops = symex_config.partial_loops || target.has_threads_total;
-  // __SZH_ADD_END__
-  if(!real_partial_loops)
+  if(!symex_config.partial_loops)
   {
     // generate unwinding assumption, unless we permit partial loops
     symex_assume_l2(state, negated_cond);

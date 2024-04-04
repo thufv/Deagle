@@ -333,7 +333,6 @@ public:
 
   std::vector<std::pair<event_it, event_it>> numbered_dataraces;
   std::map<event_it, exprt> read_dirties;
-  bool has_threads_total = false;
   // __SZH_ADD_END__
 
 protected:
