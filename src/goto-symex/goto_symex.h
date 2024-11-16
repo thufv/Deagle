@@ -175,13 +175,15 @@ public:
   bool enable_overflow = false;
   bool enable_alloc = false;
 
-  goto_symex_statet* entry_point_state;
-
   void symex_datarace(std::string filename);
 
   void symex_alloc_check();
 
   void remove_dummy_accesses();
+
+  bool try_finding_value_set = false;
+  value_sett overall_value_set;
+  std::set<symbol_exprt> dynamic_objects;
   // __SZH_ADD_END__
 
   /// \brief Defines condition for interrupting symbolic execution for a
@@ -276,9 +278,11 @@ protected:
   /// the scope of this manager.
   guard_managert &guard_manager;
 
+public:
   /// The equation that this execution is building up
   symex_target_equationt &target;
 
+protected:
   /// A monotonically increasing index for each encountered ATOMIC_BEGIN
   /// instruction
   unsigned atomic_section_counter;
@@ -415,7 +419,8 @@ protected:
   virtual void stateless_vcc(
     const exprt &,
     const std::string &msg,
-    const std::string &assert_id);
+    const std::string &assert_id,
+    const symex_targett::sourcet &source);
   // __SZH_ADD_END__
 
   /// Symbolically execute an ASSUME instruction or simulate such an execution
@@ -813,17 +818,19 @@ protected:
   virtual void symex_output(statet &state, const codet &code);
 
   /// A monotonically increasing index for each created dynamic object
+public:
   static unsigned dynamic_counter;
+private:
 
   void rewrite_quantifiers(exprt &, statet &);
 
+public:
   /// \brief Symbolic execution paths to be resumed later
   /// \remarks
   /// Partially-executed symbolic execution \ref path_storaget::patht "paths"
   /// whose execution can be resumed later
   path_storaget &path_storage;
 
-public:
   /// \brief Number of VCCs generated during the run of this goto_symext object
   ///
   /// This member is always initialized to `0` upon construction of this object.

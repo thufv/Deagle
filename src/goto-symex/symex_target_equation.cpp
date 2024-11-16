@@ -16,6 +16,7 @@ Author: Daniel Kroening, kroening@kroening.com
 
 #include <util/std_expr.h>
 #include <util/find_symbols.h>
+#include <util/byte_operators.h>
 
 #include "solver_hardness.h"
 #include "ssa_step.h"
@@ -818,6 +819,8 @@ void build_expr_conds_indices_members(std::vector<expr_condt>& expr_conds, const
     std::string expected_component_name = index_member.member.c_str();
     for(auto& operand : structure.operands())
     {
+      if(operand.id() != ID_symbol)
+        continue; // temporary, any better solution?
       std::string operand_name = to_symbol_expr(operand).get_identifier().c_str();
       std::string component_name = get_component_name(operand_name);
 
@@ -1063,7 +1066,7 @@ void symex_target_equationt::build_available_cond_map(std::map<std::string, expr
   //   std::cout << pair.first << "'s condition is " << format(pair.second) << "\n";
 }
 
-void symex_target_equationt::build_array_update_set(std::set<std::pair<std::string, std::string>>& array_update_set)
+void symex_target_equationt::build_array_update_set(std::set<std::pair<std::string, std::string>>& apo_set)
 {
   for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
   {
@@ -1072,16 +1075,55 @@ void symex_target_equationt::build_array_update_set(std::set<std::pair<std::stri
 
     auto& left = e_it->ssa_lhs;
     auto& right = e_it->ssa_rhs;
-    if(right.id() != ID_with)
+
+    if(right.id() == ID_with)
+    {
+      auto& old = to_with_expr(right).old();
+      if(old.id() != ID_symbol) // todo: more complex cases?
+        continue;
+
+      std::string left_str = left.get_identifier().c_str();
+      std::string right_str = to_symbol_expr(old).get_identifier().c_str();
+      apo_set.insert(std::make_pair(right_str, left_str));
+    }
+
+    if(right.id() == ID_byte_update_little_endian)
+    {
+      auto& old = to_byte_update_expr(right).op();
+      if(old.id() != ID_symbol) // todo: more complex cases?
+        continue;
+
+      std::string left_str = left.get_identifier().c_str();
+      std::string right_str = to_symbol_expr(old).get_identifier().c_str();
+      apo_set.insert(std::make_pair(right_str, left_str));
+    }
+  }
+}
+
+void symex_target_equationt::build_same_pointer_set(std::set<std::pair<std::string, std::string>>& apo_set)
+{
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
       continue;
 
-    auto& old = to_with_expr(right).old();
-    if(old.id() != ID_symbol) // todo: more complex cases?
+    auto& right = e_it->ssa_rhs;
+    if(right.id() != ID_if)
       continue;
 
-    std::string left_str = left.get_identifier().c_str();
-    std::string right_str = to_symbol_expr(old).get_identifier().c_str();
-    array_update_set.insert(std::make_pair(right_str, left_str));
+    for(if_exprt expr = to_if_expr(right); expr.false_case().id() == ID_if; expr = to_if_expr(expr.false_case()))
+    {
+      auto next_expr = to_if_expr(expr.false_case());
+      auto expr_symbols = find_symbols(expr.cond());
+      auto next_expr_symbols = find_symbols(next_expr.cond());
+      for(auto& expr_symbol : expr_symbols)
+        for(auto& next_expr_symbol : next_expr_symbols)
+        {
+          std::string str = id2string(expr_symbol.get_identifier());
+          std::string next_str = id2string(next_expr_symbol.get_identifier());
+          apo_set.insert(std::make_pair(str, next_str));
+        }
+    }
   }
 }
 
@@ -1099,6 +1141,28 @@ void symex_target_equationt::build_index_map(std::map<std::string, exprt>& index
       continue;
     auto& old = to_with_expr(right).old();
     auto& index = to_with_expr(right).where();
+
+    std::string left_str = left.get_identifier().c_str();
+    index_map[left_str] = index;
+
+    if(old.id() != ID_symbol) // todo: more complex cases?
+      continue;
+    std::string right_str = to_symbol_expr(old).get_identifier().c_str();
+    index_map[right_str] = index;
+  }
+
+  // arr#2 = byte_update_little_endian(arr#1, i, value)
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
+      continue;
+
+    auto& left = e_it->ssa_lhs;
+    auto& right = e_it->ssa_rhs;
+    if(right.id() != ID_byte_update_little_endian)
+      continue;
+    auto& old = to_byte_update_expr(right).op();
+    auto& index = to_byte_update_expr(right).offset();
 
     std::string left_str = left.get_identifier().c_str();
     index_map[left_str] = index;
@@ -1130,20 +1194,48 @@ void symex_target_equationt::build_index_map(std::map<std::string, exprt>& index
   }
 }
 
-void symex_target_equationt::build_datarace(bool filter)
-{
-  typedef std::vector<event_it> event_listt;
-  typedef std::map<unsigned, event_listt> per_thread_mapt;
-  per_thread_mapt per_thread_map;
+#include <util/symbol.h>
 
-  // build_per_thread_map
+bool is_atomic_type(const namespacet& ns, irep_idt symbol_name) {
+  const symbolt *symbol_ptr;
+  if(ns.lookup(symbol_name, symbol_ptr)) // true if not found
+    return false;
+
+  std::string symbol_typedef = symbol_ptr->type.get("#typedef").c_str();
+  return symbol_typedef.find("atomic_") != std::string::npos;
+}
+
+void symex_target_equationt::build_datarace(const namespacet& ns, bool filter)
+{
+  typedef std::vector<std::pair<event_it, bool>> event_listt; // first: event itself, second: whether atomic
+  typedef std::map<std::string, std::map<unsigned, event_listt>> per_loc_per_thread_mapt;
+  per_loc_per_thread_mapt per_loc_per_thread_map;
+
+  // build per_loc_per_thread_map
+  bool atomic = false;
   for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
   {
-    // concurreny-related?
-    if(!e_it->is_shared_read() && !e_it->is_shared_write() && !e_it->is_atomic_begin() && !e_it->is_atomic_end())
+    if(e_it->is_atomic_begin())
+    {
+      atomic = true;
       continue;
+    }
+    if(e_it->is_atomic_end())
+    {
+      atomic = false;
+      continue;
+    }
 
-    per_thread_map[e_it->source.thread_nr].push_back(e_it);
+    if(e_it->is_shared_read() || e_it->is_shared_write())
+    {
+      auto e_str = id2string(e_it->ssa_lhs.get_identifier());
+      auto e_str_prefix = get_addr(e_str);
+
+      if(e_str_prefix.find("__CPROVER") != std::string::npos) //ignore __CPROVER trash
+        continue;
+
+      per_loc_per_thread_map[e_str_prefix][e_it->source.thread_nr].push_back(std::make_pair(e_it, atomic));
+    }
   }
 
   int races_before_filter = 0;
@@ -1154,99 +1246,62 @@ void symex_target_equationt::build_datarace(bool filter)
   std::set<race_identifier_t> categories_before_filter;
   std::set<race_identifier_t> categories_after_filter;
 
-  for(per_thread_mapt::const_iterator s_it = per_thread_map.begin(); s_it != per_thread_map.end(); s_it++)
-    for(per_thread_mapt::const_iterator t_it = s_it; ; )
-    {
-      t_it++;
-      if(t_it == per_thread_map.end())
-        break;
-
-      const event_listt& first_events = s_it->second;
-      const event_listt& second_events = t_it->second;
-
-      //szh: for those who use __VERIFIER_atomic_begin/end instead of mutex to synchronize
-      bool first_event_atomic = false;
-      bool second_event_atomic = false;
-
-      for(auto& first_event : first_events)
+  for(auto& per_thread_map_pair : per_loc_per_thread_map)
+  {
+    auto& per_thread_map = per_thread_map_pair.second;
+    for(auto s_it = per_thread_map.begin(); s_it != per_thread_map.end(); s_it++)
+      for(auto t_it = s_it; ; )
       {
-        if(first_event->is_atomic_begin())
-        {
-          first_event_atomic = true;
-          continue;
-        }
-        if(first_event->is_atomic_end())
-        {
-          first_event_atomic = false;
-          continue;
-        }
+        t_it++;
+        if(t_it == per_thread_map.end())
+          break;
+        
+        const event_listt& first_events = s_it->second;
+        const event_listt& second_events = t_it->second;
 
-        for(auto& second_event : second_events)
-        {
-          if(second_event->is_atomic_begin())
+        for(auto& first_event_pair : first_events)
+          for(auto& second_event_pair : second_events)
           {
-            second_event_atomic = true;
-            continue;
-          }
-          if(second_event->is_atomic_end())
-          {
-            second_event_atomic = false;
-            continue;
-          }
+            auto first_event = first_event_pair.first;
+            auto first_event_atomic = first_event_pair.second;
+            auto second_event = second_event_pair.first;
+            auto second_event_atomic = second_event_pair.second;
 
-          if(first_event_atomic && second_event_atomic) // it seems that a guarded and an unguarded event may race
-            continue;
-
-          std::string first_event_from = first_event->source.function_id.c_str();
-          std::string second_event_from = second_event->source.function_id.c_str();
-          if(first_event_from.find("__VERIFIER_atomic_CAS") != std::string::npos || second_event_from.find("__VERIFIER_atomic_CAS") != std::string::npos)
-            continue;
-
-          if( (first_event->is_shared_write() && second_event->is_shared_write()) ||
-              (first_event->is_shared_write() && second_event->is_shared_read()) ||
-              (first_event->is_shared_read() && second_event->is_shared_write()))
-          {
-            std::string first_event_line = first_event->source.pc->source_location().get_line().c_str();
-            std::string second_event_line = second_event->source.pc->source_location().get_line().c_str();
-
-            auto e1_str = id2string(first_event->ssa_lhs.get_identifier());
-            auto e2_str = id2string(second_event->ssa_lhs.get_identifier());
-
-            auto e1_str_prefix = get_addr(e1_str);
-            auto e2_str_prefix = get_addr(e2_str);
-
-            if(e1_str_prefix != e2_str_prefix)
+            if(first_event_atomic && second_event_atomic) // it seems that a guarded and an unguarded event may race
               continue;
 
-            if(e1_str.find("__CPROVER") != std::string::npos) //ignore __CPROVER trash
+            if(first_event->is_shared_read() && second_event->is_shared_read())
               continue;
 
-            races_before_filter++;
-
-            // std::cout << "racing before goblint filter: " << e1_str << " " << e2_str << "\n";
-            // std::cout << "linenumber: " << first_event_line << " " << second_event_line << "\n";
+            // check whether the variable is like atomic_int
+            if(is_atomic_type(ns, first_event->ssa_lhs.get_l1_object_identifier()))
+              continue;
 
             std::string var_name = id2string(first_event->ssa_lhs.get_identifier());
             var_name = var_name.substr(0, var_name.find_first_of('#'));
-            //var_name = ""; // try not to distinguish var
+            std::string first_event_line = first_event->source.pc->source_location().get_line().c_str();
+            std::string second_event_line = second_event->source.pc->source_location().get_line().c_str();
 
             race_identifier_t race_id(var_name, first_event_line, second_event_line, true, true);
             categories_before_filter.insert(race_id);
+
+            races_before_filter++;
+            // std::cout << "racing before goblint filter: " << e1_str << " " << e2_str << "\n";
+            // std::cout << "linenumber: " << first_event_line << " " << second_event_line << "\n";
 
             if(filter)
               if( datarace_lines.find(first_event_line) == datarace_lines.end() || 
                   datarace_lines.find(second_event_line) == datarace_lines.end())
                 continue;
 
-            // std::cout << "racing after goblint filter: " << e1_str << " " << e2_str << "\n";
-            races_after_filter++;
-
             races.push_back(std::make_pair(first_event, second_event));
             categories_after_filter.insert(race_id);
+
+            races_after_filter++;
+            // std::cout << "racing after goblint filter: " << e1_str << " " << e2_str << "\n";
           }
-        }
       }
-    }
+  }
   
   if(filter)
   {

@@ -79,6 +79,7 @@ std::size_t path_fifot::size() const
 
 void path_fifot::clear()
 {
+  path_storaget::clear();
   paths.clear();
 }
 

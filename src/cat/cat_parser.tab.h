@@ -391,16 +391,13 @@ namespace yy {
     /// An auxiliary type to compute the largest semantic type.
     union union_type
     {
-      // constraint
-      char dummy1[sizeof (cat_axiomt)];
-
       // rel
-      char dummy2[sizeof (cat_relationt)];
+      char dummy1[sizeof (cat_relationt)];
 
       // ID
       // QPATH
       // qualified_ID
-      char dummy3[sizeof (std::string)];
+      char dummy2[sizeof (std::string)];
     };
 
     /// The size of the largest semantic type.
@@ -449,42 +446,44 @@ namespace yy {
       enum yytokentype
       {
         TOK_YYEOF = 0,
-        TOK_ACYCLIC = 258,
-        TOK_IRREFLEXIVE = 259,
-        TOK_DECLARE = 260,
-        TOK_DECLARE_LOC = 261,
-        TOK_EMPTY = 262,
-        TOK_ERROR = 263,
-        TOK_ID_REL = 264,
-        TOK_AS = 265,
-        TOK_INCLUDE = 266,
-        TOK_LET = 267,
-        TOK_ROT = 268,
-        TOK_INT = 269,
-        TOK_EXT = 270,
-        TOK_SAVE = 271,
-        TOK_TOTAL = 272,
-        TOK_VIEW = 273,
-        TOK_WARNING = 274,
-        TOK_EQ = 275,
-        TOK_DCOLON = 276,
-        TOK_COMMA = 277,
-        TOK_ZERO = 278,
-        TOK_MONE = 279,
-        TOK_SEMI = 280,
-        TOK_AND = 281,
-        TOK_ALT = 282,
-        TOK_BSLASH = 283,
-        TOK_PLUS = 284,
-        TOK_TIMES = 285,
-        TOK_QMARK = 286,
-        TOK_LPAREN = 287,
-        TOK_RPAREN = 288,
-        TOK_LBRACK = 289,
-        TOK_RBRACK = 290,
-        TOK_SUPER = 291,
-        TOK_ID = 292,
-        TOK_QPATH = 293
+        TOK_FREE = 258,
+        TOK_ACYCLIC = 259,
+        TOK_IRREFLEXIVE = 260,
+        TOK_DECLARE = 261,
+        TOK_DECLARE_LOC = 262,
+        TOK_EMPTY = 263,
+        TOK_NOT_EMPTY = 264,
+        TOK_FLAG = 265,
+        TOK_ERROR = 266,
+        TOK_ID_REL = 267,
+        TOK_AS = 268,
+        TOK_INCLUDE = 269,
+        TOK_LET = 270,
+        TOK_REC = 271,
+        TOK_SAVE = 272,
+        TOK_TOTAL = 273,
+        TOK_VIEW = 274,
+        TOK_WARNING = 275,
+        TOK_EQ = 276,
+        TOK_DCOLON = 277,
+        TOK_COMMA = 278,
+        TOK_ZERO = 279,
+        TOK_MONE = 280,
+        TOK_SEMI = 281,
+        TOK_AND = 282,
+        TOK_ALT = 283,
+        TOK_BSLASH = 284,
+        TOK_PLUS = 285,
+        TOK_PROD = 286,
+        TOK_QMARK = 287,
+        TOK_LPAREN = 288,
+        TOK_RPAREN = 289,
+        TOK_LBRACK = 290,
+        TOK_RBRACK = 291,
+        TOK_SUPER = 292,
+        TOK_FENCEREL = 293,
+        TOK_ID = 294,
+        TOK_QPATH = 295
       };
     };
 
@@ -539,19 +538,6 @@ namespace yy {
       {}
 #endif
 #if 201103L <= YY_CPLUSPLUS
-      basic_symbol (typename Base::kind_type t, cat_axiomt&& v, location_type&& l)
-        : Base (t)
-        , value (std::move (v))
-        , location (std::move (l))
-      {}
-#else
-      basic_symbol (typename Base::kind_type t, const cat_axiomt& v, const location_type& l)
-        : Base (t)
-        , value (v)
-        , location (l)
-      {}
-#endif
-#if 201103L <= YY_CPLUSPLUS
       basic_symbol (typename Base::kind_type t, cat_relationt&& v, location_type&& l)
         : Base (t)
         , value (std::move (v))
@@ -600,17 +586,13 @@ namespace yy {
         // Type destructor.
 switch (yytype)
     {
-      case 42: // constraint
-        value.template destroy< cat_axiomt > ();
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.template destroy< cat_relationt > ();
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.template destroy< std::string > ();
         break;
 
@@ -690,13 +672,13 @@ switch (yytype)
       symbol_type (int tok, location_type l)
         : super_type(token_type (tok), std::move (l))
       {
-        YY_ASSERT (tok == token::TOK_YYEOF || tok == token::TOK_ACYCLIC || tok == token::TOK_IRREFLEXIVE || tok == token::TOK_DECLARE || tok == token::TOK_DECLARE_LOC || tok == token::TOK_EMPTY || tok == token::TOK_ERROR || tok == token::TOK_ID_REL || tok == token::TOK_AS || tok == token::TOK_INCLUDE || tok == token::TOK_LET || tok == token::TOK_ROT || tok == token::TOK_INT || tok == token::TOK_EXT || tok == token::TOK_SAVE || tok == token::TOK_TOTAL || tok == token::TOK_VIEW || tok == token::TOK_WARNING || tok == token::TOK_EQ || tok == token::TOK_DCOLON || tok == token::TOK_COMMA || tok == token::TOK_ZERO || tok == token::TOK_MONE || tok == token::TOK_SEMI || tok == token::TOK_AND || tok == token::TOK_ALT || tok == token::TOK_BSLASH || tok == token::TOK_PLUS || tok == token::TOK_TIMES || tok == token::TOK_QMARK || tok == token::TOK_LPAREN || tok == token::TOK_RPAREN || tok == token::TOK_LBRACK || tok == token::TOK_RBRACK || tok == token::TOK_SUPER);
+        YY_ASSERT (tok == token::TOK_YYEOF || tok == token::TOK_FREE || tok == token::TOK_ACYCLIC || tok == token::TOK_IRREFLEXIVE || tok == token::TOK_DECLARE || tok == token::TOK_DECLARE_LOC || tok == token::TOK_EMPTY || tok == token::TOK_NOT_EMPTY || tok == token::TOK_FLAG || tok == token::TOK_ERROR || tok == token::TOK_ID_REL || tok == token::TOK_AS || tok == token::TOK_INCLUDE || tok == token::TOK_LET || tok == token::TOK_REC || tok == token::TOK_SAVE || tok == token::TOK_TOTAL || tok == token::TOK_VIEW || tok == token::TOK_WARNING || tok == token::TOK_EQ || tok == token::TOK_DCOLON || tok == token::TOK_COMMA || tok == token::TOK_ZERO || tok == token::TOK_MONE || tok == token::TOK_SEMI || tok == token::TOK_AND || tok == token::TOK_ALT || tok == token::TOK_BSLASH || tok == token::TOK_PLUS || tok == token::TOK_PROD || tok == token::TOK_QMARK || tok == token::TOK_LPAREN || tok == token::TOK_RPAREN || tok == token::TOK_LBRACK || tok == token::TOK_RBRACK || tok == token::TOK_SUPER || tok == token::TOK_FENCEREL);
       }
 #else
       symbol_type (int tok, const location_type& l)
         : super_type(token_type (tok), l)
       {
-        YY_ASSERT (tok == token::TOK_YYEOF || tok == token::TOK_ACYCLIC || tok == token::TOK_IRREFLEXIVE || tok == token::TOK_DECLARE || tok == token::TOK_DECLARE_LOC || tok == token::TOK_EMPTY || tok == token::TOK_ERROR || tok == token::TOK_ID_REL || tok == token::TOK_AS || tok == token::TOK_INCLUDE || tok == token::TOK_LET || tok == token::TOK_ROT || tok == token::TOK_INT || tok == token::TOK_EXT || tok == token::TOK_SAVE || tok == token::TOK_TOTAL || tok == token::TOK_VIEW || tok == token::TOK_WARNING || tok == token::TOK_EQ || tok == token::TOK_DCOLON || tok == token::TOK_COMMA || tok == token::TOK_ZERO || tok == token::TOK_MONE || tok == token::TOK_SEMI || tok == token::TOK_AND || tok == token::TOK_ALT || tok == token::TOK_BSLASH || tok == token::TOK_PLUS || tok == token::TOK_TIMES || tok == token::TOK_QMARK || tok == token::TOK_LPAREN || tok == token::TOK_RPAREN || tok == token::TOK_LBRACK || tok == token::TOK_RBRACK || tok == token::TOK_SUPER);
+        YY_ASSERT (tok == token::TOK_YYEOF || tok == token::TOK_FREE || tok == token::TOK_ACYCLIC || tok == token::TOK_IRREFLEXIVE || tok == token::TOK_DECLARE || tok == token::TOK_DECLARE_LOC || tok == token::TOK_EMPTY || tok == token::TOK_NOT_EMPTY || tok == token::TOK_FLAG || tok == token::TOK_ERROR || tok == token::TOK_ID_REL || tok == token::TOK_AS || tok == token::TOK_INCLUDE || tok == token::TOK_LET || tok == token::TOK_REC || tok == token::TOK_SAVE || tok == token::TOK_TOTAL || tok == token::TOK_VIEW || tok == token::TOK_WARNING || tok == token::TOK_EQ || tok == token::TOK_DCOLON || tok == token::TOK_COMMA || tok == token::TOK_ZERO || tok == token::TOK_MONE || tok == token::TOK_SEMI || tok == token::TOK_AND || tok == token::TOK_ALT || tok == token::TOK_BSLASH || tok == token::TOK_PLUS || tok == token::TOK_PROD || tok == token::TOK_QMARK || tok == token::TOK_LPAREN || tok == token::TOK_RPAREN || tok == token::TOK_LBRACK || tok == token::TOK_RBRACK || tok == token::TOK_SUPER || tok == token::TOK_FENCEREL);
       }
 #endif
 #if 201103L <= YY_CPLUSPLUS
@@ -762,6 +744,21 @@ switch (yytype)
       make_YYEOF (const location_type& l)
       {
         return symbol_type (token::TOK_YYEOF, l);
+      }
+#endif
+#if 201103L <= YY_CPLUSPLUS
+      static
+      symbol_type
+      make_FREE (location_type l)
+      {
+        return symbol_type (token::TOK_FREE, std::move (l));
+      }
+#else
+      static
+      symbol_type
+      make_FREE (const location_type& l)
+      {
+        return symbol_type (token::TOK_FREE, l);
       }
 #endif
 #if 201103L <= YY_CPLUSPLUS
@@ -842,6 +839,36 @@ switch (yytype)
 #if 201103L <= YY_CPLUSPLUS
       static
       symbol_type
+      make_NOT_EMPTY (location_type l)
+      {
+        return symbol_type (token::TOK_NOT_EMPTY, std::move (l));
+      }
+#else
+      static
+      symbol_type
+      make_NOT_EMPTY (const location_type& l)
+      {
+        return symbol_type (token::TOK_NOT_EMPTY, l);
+      }
+#endif
+#if 201103L <= YY_CPLUSPLUS
+      static
+      symbol_type
+      make_FLAG (location_type l)
+      {
+        return symbol_type (token::TOK_FLAG, std::move (l));
+      }
+#else
+      static
+      symbol_type
+      make_FLAG (const location_type& l)
+      {
+        return symbol_type (token::TOK_FLAG, l);
+      }
+#endif
+#if 201103L <= YY_CPLUSPLUS
+      static
+      symbol_type
       make_ERROR (location_type l)
       {
         return symbol_type (token::TOK_ERROR, std::move (l));
@@ -917,46 +944,16 @@ switch (yytype)
 #if 201103L <= YY_CPLUSPLUS
       static
       symbol_type
-      make_ROT (location_type l)
+      make_REC (location_type l)
       {
-        return symbol_type (token::TOK_ROT, std::move (l));
+        return symbol_type (token::TOK_REC, std::move (l));
       }
 #else
       static
       symbol_type
-      make_ROT (const location_type& l)
+      make_REC (const location_type& l)
       {
-        return symbol_type (token::TOK_ROT, l);
-      }
-#endif
-#if 201103L <= YY_CPLUSPLUS
-      static
-      symbol_type
-      make_INT (location_type l)
-      {
-        return symbol_type (token::TOK_INT, std::move (l));
-      }
-#else
-      static
-      symbol_type
-      make_INT (const location_type& l)
-      {
-        return symbol_type (token::TOK_INT, l);
-      }
-#endif
-#if 201103L <= YY_CPLUSPLUS
-      static
-      symbol_type
-      make_EXT (location_type l)
-      {
-        return symbol_type (token::TOK_EXT, std::move (l));
-      }
-#else
-      static
-      symbol_type
-      make_EXT (const location_type& l)
-      {
-        return symbol_type (token::TOK_EXT, l);
+        return symbol_type (token::TOK_REC, l);
       }
 #endif
 #if 201103L <= YY_CPLUSPLUS
@@ -1172,16 +1169,16 @@ switch (yytype)
 #if 201103L <= YY_CPLUSPLUS
       static
       symbol_type
-      make_TIMES (location_type l)
+      make_PROD (location_type l)
       {
-        return symbol_type (token::TOK_TIMES, std::move (l));
+        return symbol_type (token::TOK_PROD, std::move (l));
       }
 #else
       static
       symbol_type
-      make_TIMES (const location_type& l)
+      make_PROD (const location_type& l)
       {
-        return symbol_type (token::TOK_TIMES, l);
+        return symbol_type (token::TOK_PROD, l);
       }
 #endif
 #if 201103L <= YY_CPLUSPLUS
@@ -1277,6 +1274,21 @@ switch (yytype)
 #if 201103L <= YY_CPLUSPLUS
       static
       symbol_type
+      make_FENCEREL (location_type l)
+      {
+        return symbol_type (token::TOK_FENCEREL, std::move (l));
+      }
+#else
+      static
+      symbol_type
+      make_FENCEREL (const location_type& l)
+      {
+        return symbol_type (token::TOK_FENCEREL, l);
+      }
+#endif
+#if 201103L <= YY_CPLUSPLUS
+      static
+      symbol_type
       make_ID (std::string v, location_type l)
       {
         return symbol_type (token::TOK_ID, std::move (v), std::move (l));
@@ -1344,7 +1356,7 @@ switch (yytype)
     // Tables.
     // YYPACT[STATE-NUM] -- Index in YYTABLE of the portion describing
     // STATE-NUM.
-    static const signed char yypact_[];
+    static const short yypact_[];
 
     // YYDEFACT[STATE-NUM] -- Default reduction number in state STATE-NUM.
     // Performed when YYTABLE does not specify something else to do.  Zero
@@ -1607,10 +1619,10 @@ switch (yytype)
     enum
     {
       yyeof_ = 0,
-      yylast_ = 148,     ///< Last index in yytable_.
+      yylast_ = 171,     ///< Last index in yytable_.
       yynnts_ = 6,  ///< Number of nonterminal symbols.
       yyfinal_ = 2, ///< Termination state number.
-      yyntokens_ = 39  ///< Number of tokens.
+      yyntokens_ = 41  ///< Number of tokens.
     };
 
 
@@ -1657,9 +1669,9 @@ switch (yytype)
        5,     6,     7,     8,     9,    10,    11,    12,    13,    14,
       15,    16,    17,    18,    19,    20,    21,    22,    23,    24,
       25,    26,    27,    28,    29,    30,    31,    32,    33,    34,
-      35,    36,    37,    38
+      35,    36,    37,    38,    39,    40
     };
-    const int user_token_number_max_ = 293;
+    const int user_token_number_max_ = 295;
 
     if (t <= 0)
       return yyeof_;
@@ -1679,17 +1691,13 @@ switch (yytype)
   {
     switch (this->type_get ())
     {
-      case 42: // constraint
-        value.move< cat_axiomt > (std::move (that.value));
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.move< cat_relationt > (std::move (that.value));
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.move< std::string > (std::move (that.value));
         break;
 
@@ -1708,17 +1716,13 @@ switch (yytype)
   {
     switch (this->type_get ())
     {
-      case 42: // constraint
-        value.copy< cat_axiomt > (YY_MOVE (that.value));
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.copy< cat_relationt > (YY_MOVE (that.value));
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.copy< std::string > (YY_MOVE (that.value));
         break;
 
@@ -1744,17 +1748,13 @@ switch (yytype)
     super_type::move (s);
     switch (this->type_get ())
     {
-      case 42: // constraint
-        value.move< cat_axiomt > (YY_MOVE (s.value));
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.move< cat_relationt > (YY_MOVE (s.value));
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.move< std::string > (YY_MOVE (s.value));
         break;
 

@@ -29,6 +29,11 @@ Author: Daniel Kroening, kroening@kroening.com
     for(exprt::operandst::iterator it=(expr).operands().begin(); \
         it!=(expr).operands().end(); ++it)
 
+#define Forall_operands_r(it, expr) \
+  if((expr).has_operands()) /* NOLINT(readability/braces) */ \
+    for(exprt::operandst::reverse_iterator it=(expr).operands().rbegin(); \
+        it!=(expr).operands().rend(); ++it)
+
 #define forall_expr(it, expr) \
   for(exprt::operandst::const_iterator it=(expr).begin(); \
       it!=(expr).end(); ++it)

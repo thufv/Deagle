@@ -43,7 +43,6 @@ void show_loop_ids(
                     << "\n";
 
           std::cout << "  " << instruction.source_location() << "\n";
-          std::cout << "\n";
         }
       }
       break;

@@ -121,6 +121,8 @@ public:
     void push_scope();
     void pop_scope(int new_level);
 
+    bool co_complete_check();
+
     void show_edges();
     void show_rf();
     void show_model();

@@ -202,13 +202,17 @@ template<> inline bool can_cast_expr<code_blockt>(const exprt &base)
 
 inline const code_blockt &to_code_block(const codet &code)
 {
-  PRECONDITION(code.get_statement() == ID_block);
+  // __WP_ADD_BEGIN__
+  PRECONDITION(code.get_statement() == ID_block || code.get_statement() == ID_decl_block);
+  // __WP_ADD_END__
   return static_cast<const code_blockt &>(code);
 }
 
 inline code_blockt &to_code_block(codet &code)
 {
-  PRECONDITION(code.get_statement() == ID_block);
+  // __WP_ADD_BEGIN__
+  PRECONDITION(code.get_statement() == ID_block || code.get_statement() == ID_decl_block);
+  // __WP_ADD_END__
   return static_cast<code_blockt &>(code);
 }
 

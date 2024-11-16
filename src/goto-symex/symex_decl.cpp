@@ -52,7 +52,9 @@ void goto_symext::symex_decl(statet &state, const symbol_exprt &expr)
     hidden ? symex_targett::assignment_typet::HIDDEN
            : symex_targett::assignment_typet::STATE);
 
-  if(path_storage.dirty(ssa.get_object_name()) && state.atomic_section_id == 0)
+  bool is_dirty = path_storage.dirty(ssa.get_object_name());
+
+  if(is_dirty && state.atomic_section_id == 0)
     target.shared_write(
       state.guard.as_expr(),
       ssa,

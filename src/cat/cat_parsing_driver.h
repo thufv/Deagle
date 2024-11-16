@@ -50,13 +50,46 @@ public:
 
 	yy::location &getLocation() { return location; }
 
-	void registerID(std::string id, cat_relationt re) {
-		module->registerID(id, std::move(re));
+	cat_relationt make_relation(rel_opt op_type, std::vector<std::string> operands) {
+		return module->make_relation(op_type, std::move(operands));
 	}
 
+	cat_relationt make_star(std::string operand) {
+		return module->make_star(operand);
+	}
+
+	cat_relationt make_qmark(std::string operand) {
+		return module->make_qmark(operand);
+	}
+
+	cat_relationt make_fencerel(std::string operand) {
+		return module->make_fencerel(operand);
+	}
+
+	cat_relationt make_base(std::string name) {
+		return module->make_base(name);
+	}
+
+	cat_relationt make_free() {
+		return module->make_free();
+	}
+
+	void make_dummy_relation(std::string name) {
+		module->make_base(name);
+		module->addBase(name, 2); // hopefully
+	}
+
+	void rename_relation(cat_relationt relation, std::string new_name, bool is_rec) {
+		module->rename_relation(relation, new_name, is_rec);
+	}
+
+	bool mm_flag = false;
+
 	// Handle consistency constraint in the input file
-	void addConstraint(cat_axiomt c, const std::string &s, const yy::location &loc) {
-		module->addConstraint(c);
+	void addConstraint(rel_axiomt axiom_type, cat_relationt re) {
+		if(axiom_type == rel_axiomt::NOT_EMPTY && !mm_flag)
+			return;
+		module->addConstraint(axiom_type, re);
 	}
 
 	// URE getRegisteredID(std::string id, const yy::location &loc) {

@@ -97,6 +97,8 @@ void goto_check_c(
   options.set_option("retain-trivial", cmdline.isset("retain-trivial")); /* NOLINT(whitespace/line_length) */ \
   if(cmdline.isset("error-label")) \
     options.set_option("error-label", cmdline.get_values("error-label")); \
+  if(cmdline.isset("mm-flag")) \
+    options.set_option("assertions", false); \
   (void)0
 // clang-format on
 

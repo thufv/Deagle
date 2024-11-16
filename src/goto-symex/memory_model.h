@@ -23,7 +23,15 @@ public:
   virtual void operator()(symex_target_equationt &, message_handlert &) = 0;
 
   // __SZH_ADD_BEGIN__
+
+  // Inspired from CAAT: this tells whether a memory model is locally consistent.
+  // For example, TSO is locally consistent.
+  // Even if W-R can be reordered into R-W in the view of another thread,
+  // in the view of the thread itself, W-R is not reordered (thanks to store buffer)
+  bool assume_local_consistency = true;
+
   bool use_deagle;
+  std::map<std::string, exprt> id_to_guard;
   void build_guard_map_write(symex_target_equationt &equation);
   void build_guard_map_all(symex_target_equationt &equation);
   bool is_apo(event_it e1, event_it e2);
@@ -32,8 +40,8 @@ public:
   void add_oc_edge(symex_target_equationt &equation, event_it e1, event_it e2, std::string kind, exprt guard_expr);
   void add_oc_edge(symex_target_equationt &equation, std::string e1_str, std::string e2_str, std::string kind, exprt guard_expr);
 
-  void add_oc_label(symex_target_equationt &equation, event_it e, std::string label);
-  std::string fill_name(event_it& event);
+  void add_oc_label(symex_target_equationt &equation, event_it e, std::string label, exprt guard_expr);
+  std::string fill_name(const event_it& event);
 
   bool enable_datarace;
   void data_race(symex_target_equationt &equation);
@@ -78,7 +86,7 @@ protected:
   typedef std::map<unsigned, event_listt> per_thread_mapt;
   typedef std::map<std::string, event_listt> per_loc_mapt;
 
-  void build_per_thread_map(const symex_target_equationt &equation, per_thread_mapt &dest) const;
+  void build_per_thread_map(const symex_target_equationt &equation, per_thread_mapt &dest, bool skip_init = false) const;
   void build_per_loc_map(const symex_target_equationt &equation, per_loc_mapt &dest) const;
 };
 

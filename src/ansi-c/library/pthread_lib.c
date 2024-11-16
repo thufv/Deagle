@@ -175,7 +175,7 @@ int pthread_mutex_trylock(pthread_mutex_t *mutex)
   if(*((__CPROVER_mutex_t *)mutex)==1)
   {
     // failed
-    return_value=1;
+    return_value=16;
   }
   else
   {

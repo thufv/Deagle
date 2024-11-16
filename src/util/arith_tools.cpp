@@ -169,6 +169,12 @@ constant_exprt from_integer(
     ieee_float.from_integer(int_value);
     return ieee_float.to_expr();
   }
+  // __SZH_ADD_BEGIN__
+  else if(type_id==ID_empty)
+  {
+    return constant_exprt("0", type);
+  }
+  // __SZH_ADD_END__
   else
     PRECONDITION(false);
 }

@@ -61,6 +61,10 @@ protected:
     goto_functionst::goto_functiont &,
     const typet &return_type,
     const source_locationt &);
+
+  // __SZH_ADD_BEGIN__
+  void simplify_pthread_create_join(codet& code);
+  // __SZH_ADD_END__
 };
 
 #endif // CPROVER_GOTO_PROGRAMS_GOTO_CONVERT_FUNCTIONS_H

@@ -57,11 +57,11 @@ void memory_model_baset::read_from(symex_target_equationt &equation)
       for(const auto &write_event : address.second.writes)
       {
         // rf cannot contradict program order
-        if(!po(read_event, write_event))
-        {
-          rf_choice_symbols.push_back(register_read_from_choice_symbol(
-            read_event, write_event, equation));
-        }
+        if(assume_local_consistency && po(read_event, write_event))
+          continue;
+
+        rf_choice_symbols.push_back(register_read_from_choice_symbol(
+          read_event, write_event, equation));
       }
 
       // uninitialised global symbol like symex_dynamic::dynamic_object*
@@ -147,14 +147,20 @@ void memory_model_baset::build_guard_map_write(symex_target_equationt &equation)
 {
   for(eventst::const_iterator e_it=equation.SSA_steps.begin(); e_it!=equation.SSA_steps.end(); e_it++)
     if(e_it->is_shared_write())
+    {
       equation.oc_guard_map.insert(e_it);
+      id_to_guard[id(e_it).c_str()] = e_it->guard;
+    }
 }
 
 void memory_model_baset::build_guard_map_all(symex_target_equationt &equation)
 {
   for(eventst::const_iterator e_it=equation.SSA_steps.begin(); e_it!=equation.SSA_steps.end(); e_it++)
     if(e_it->is_shared_write() || e_it->is_shared_read() || e_it->is_memory_barrier())
+    {
       equation.oc_guard_map.insert(e_it);
+      id_to_guard[id(e_it).c_str()] = e_it->guard;
+    }
 }
 
 bool memory_model_baset::is_apo(event_it e1, event_it e2)
@@ -171,7 +177,7 @@ bool memory_model_baset::is_apo(std::set<std::pair<std::string, std::string>>& a
   return is_apo(e1, e2);
 }
 
-std::string memory_model_baset::fill_name(event_it& event)
+std::string memory_model_baset::fill_name(const event_it& event)
 {
     if(event->is_spawn())
         return "t"+std::to_string(event->source.thread_nr+1)+"$"+ std::to_string(numbering[event])+"$spwnclk";
@@ -196,19 +202,19 @@ void memory_model_baset::add_oc_edge(symex_target_equationt &equation, event_it 
 
 void memory_model_baset::add_oc_edge(symex_target_equationt &equation, std::string e1_str, std::string e2_str, std::string kind, exprt guard_expr)
 {
+  if(guard_expr == false_exprt())
+    return;
   equation.oc_edges.push_back(oc_edget(e1_str, e2_str, kind, guard_expr));
   // std::cout << "add relation: " << e1_str << " " << e2_str << " has " << kind << "\n";
 }
 
-void memory_model_baset::add_oc_label(symex_target_equationt &equation, event_it e, std::string label)
+void memory_model_baset::add_oc_label(symex_target_equationt &equation, event_it e, std::string label, exprt guard_expr)
 {
-  std::string e_str = id2string(id(e));
-  if(e_str == "")
-    e_str = fill_name(e);
-  
-  equation.oc_labels.push_back(oc_labelt(e_str, label));
+  if(guard_expr == false_exprt())
+    return;
+  equation.oc_labels.push_back(oc_labelt(get_name(e), label, guard_expr));
 
-  // std::cout << "add label: " << e_str << " is a " << label << "\n";
+  // std::cout << "add " << label << " label: " << get_name(e) << ", expr: " << format(guard_expr) << "\n";
 }
 
 void memory_model_baset::data_race(symex_target_equationt &equation)
@@ -387,10 +393,6 @@ void memory_model_baset::data_race(symex_target_equationt &equation)
     //     equal_exprt disorder_some(read_disorders[read], races);
     //     add_constraint(equation, disorder_some, "disorder_some", read->source);
     // }
-
-    // std::cout << "see the equation after race!\n";
-    // equation.output(std::cout);
-    // std::cout << "finish seeing!\n";
 }
 
 #include <algorithm>
@@ -448,7 +450,8 @@ exprt memory_model_baset::array_find_index(symex_target_equationt &equation, eve
 
 void memory_model_baset::build_per_thread_map(
   const symex_target_equationt &equation,
-  per_thread_mapt &dest) const
+  per_thread_mapt &dest,
+  bool skip_init) const
 {
   // this orders the events within a thread
 
@@ -462,6 +465,9 @@ void memory_model_baset::build_per_thread_map(
        !e_it->is_shared_write() &&
        !e_it->is_spawn() &&
        !e_it->is_memory_barrier()) continue;
+
+    if(skip_init && e_it->is_init())
+      continue;
 
     dest[e_it->source.thread_nr].push_back(e_it);
   }

@@ -1,16 +1,9 @@
-let fr = rf^-1 ; co
-let rfe = ext(rf)
-let coe = ext(co)
-let fre = ext(fr)
-let rfi = int(rf)
-let poloc = po & loc
-
 let sync = [M]; po; [Fsync]; po; [M]
 let lwsync = ([R]; po; [Flwsync]; po; [M]) | ([M]; po; [Flwsync]; po; [W])
 let ctrlisync = [R]; ctrl; [Fisync]; po
 
 let com = rf | fr | co
-irreflexive (poloc | com)+ as uniproc
+acyclic poloc | com as uniproc
 
 let dp = addr | data
 let rdw = poloc & (fre;rfe)
@@ -30,12 +23,12 @@ let ppo = (R*W & ic) | (R*R & ii)
 let fence = (R*M & lwsync) | (W*W & lwsync) | sync
 
 let hb = ppo | fence | rfe
-irreflexive hb+
+acyclic hb
 
 let propbase = (fence | (rfe;fence));hb*
 let prop = (W*W & propbase)| (com*;propbase*;sync;hb*)
 
-irreflexive (co | prop)+
+acyclic co | prop
 irreflexive fre;prop;hb*
 
 empty rmw & (fre; coe) as atomic

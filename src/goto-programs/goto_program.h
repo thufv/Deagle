@@ -1012,6 +1012,24 @@ public:
       {});
   }
 
+  // __SZH_ADD_BEGIN__
+  static instructiont make_incomplete_goto(
+    const exprt &_cond,
+    const codet &original_code,
+    const source_locationt &l = source_locationt::nil())
+  {
+    PRECONDITION(_cond.type().id() == ID_bool);
+    auto instruction = instructiont(
+      static_cast<const goto_instruction_codet &>(get_nil_irep()),
+      l,
+      INCOMPLETE_GOTO,
+      _cond,
+      {});
+    instruction.code_nonconst() = original_code;
+    return instruction;
+  }
+  // __SZH_ADD_END__
+
   static instructiont
   make_incomplete_goto(const source_locationt &l = source_locationt::nil())
   {
@@ -1051,6 +1069,24 @@ public:
       g,
       {_target});
   }
+
+  // __SZH_ADD_BEGIN__
+  static instructiont make_goto(
+    targett _target,
+    const exprt &g,
+    const codet &original_code,
+    const source_locationt &l = source_locationt::nil())
+  {
+    auto instruction = instructiont(
+      static_cast<const goto_instruction_codet &>(get_nil_irep()),
+      l,
+      GOTO,
+      g,
+      {_target});
+    instruction.code_nonconst() = original_code;
+    return instruction;
+  }
+  // __SZH_ADD_END__
 
   /// Create an assignment instruction
   static instructiont make_assignment(

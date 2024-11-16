@@ -1,0 +1,4 @@
+*.d
+*.o
+*.new
+deagle_exe

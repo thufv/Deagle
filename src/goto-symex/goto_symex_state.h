@@ -179,6 +179,11 @@ public:
   std::unordered_map<ssa_exprt, a_s_w_entryt, irep_hash>
     written_in_atomic_section;
 
+  // __SZH_ADD_BEGIN__
+  std::vector<std::pair<ssa_exprt, symex_targett::sourcet>> read_in_atomic_section_sources;
+  std::vector<std::pair<ssa_exprt, symex_targett::sourcet>> written_in_atomic_section_sources;
+  // __SZH_ADD_END__
+
   struct threadt
   {
     goto_programt::const_targett pc;

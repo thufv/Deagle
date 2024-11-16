@@ -24,11 +24,14 @@ operator()(symex_target_equationt &equation, message_handlert &message_handler)
   build_clock_type();
 
   read_from(equation);
-  write_serialization_external(equation);
+
+  if(!use_deagle)
+    write_serialization_external(equation);
+  
   program_order(equation);
-#ifndef CPROVER_MEMORY_MODEL_SUP_CLOCK
-  from_read(equation);
-#endif
+
+  if(!use_deagle)
+    from_read(equation);
 }
 
 exprt memory_model_tsot::before(event_it e1, event_it e2)
@@ -60,6 +63,13 @@ void memory_model_tsot::program_order(
   build_per_thread_map(equation, per_thread_map);
 
   thread_spawn(equation, per_thread_map);
+
+  if(use_deagle)
+    build_guard_map_write(equation);
+
+  std::set<std::pair<std::string, std::string>> apo_set;
+  equation.build_array_update_set(apo_set);
+  equation.build_same_pointer_set(apo_set);
 
   // iterate over threads
 
@@ -94,11 +104,10 @@ void memory_model_tsot::program_order(
         if(((*e_it)->is_spawn() && !(*e_it2)->is_memory_barrier()) ||
            (*e_it2)->is_spawn())
         {
-          add_constraint(
-            equation,
-            before(*e_it, *e_it2),
-            "po",
-            (*e_it)->source);
+          if(use_deagle)
+            add_oc_edge(equation, *e_it, *e_it2, is_apo(apo_set, *e_it, *e_it2) ? "apo" : "po", true_exprt());
+          else
+            add_constraint(equation, before(*e_it, *e_it2), "po", (*e_it)->source);
 
           if((*e_it2)->is_spawn())
             break;
@@ -154,11 +163,10 @@ void memory_model_tsot::program_order(
             ordering=partial_order_concurrencyt::before(
               *e_it, *e_it2, AX_PROPAGATION);
 
-          add_constraint(
-            equation,
-            implies_exprt(cond, ordering),
-            "po",
-            (*e_it)->source);
+          if(use_deagle)
+            add_oc_edge(equation, *e_it, *e_it2, is_apo(apo_set, *e_it, *e_it2) ? "apo" : "po", cond);
+          else
+            add_constraint(equation, implies_exprt(cond, ordering), "po",(*e_it)->source);
         }
       }
     }

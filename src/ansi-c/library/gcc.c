@@ -168,6 +168,780 @@ void __atomic_load_n(void* loc, void* ret, int memorder)
 __CPROVER_HIDE:;
   __CPROVER_atomic_load_n(loc, ret, memorder);
 }
+
+/* FUNCTION: __atomic_compare_exchange */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+_Bool __atomic_compare_exchange(int* left, int* right, int val, int is_weak, int memorder1, int memorder2)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+
+  int __atomic_compare_exchange_right_load;
+  __atomic_compare_exchange_right_load = *right;
+  int __atomic_compare_exchange_left_load;
+  if(memorder1 == __ATOMIC_SEQ_CST)
+    __atomic_load(left, &__atomic_compare_exchange_left_load, __ATOMIC_SEQ_CST);
+  else if(memorder1 == __ATOMIC_ACQ_REL || memorder1 == __ATOMIC_ACQUIRE)
+    __atomic_load(left, &__atomic_compare_exchange_left_load, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(left, &__atomic_compare_exchange_left_load, __ATOMIC_RELAXED);
+
+  _Bool equal = (__atomic_compare_exchange_right_load == __atomic_compare_exchange_left_load);
+  if(equal)
+  {
+    if(memorder1 == __ATOMIC_SEQ_CST)
+      __atomic_store(right, &val, __ATOMIC_SEQ_CST);
+    else if(memorder1 == __ATOMIC_ACQ_REL || memorder1 == __ATOMIC_RELEASE)
+      __atomic_store(right, &val, __ATOMIC_RELEASE);
+    else
+      __atomic_store(right, &val, __ATOMIC_RELAXED);
+    
+  }
+  else
+  {
+    *right = __atomic_compare_exchange_left_load;
+  }
+  __CPROVER_atomic_end();
+
+  return equal;
+}
+
+/* FUNCTION: __atomic_exchange */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+void __atomic_exchange(int* loc, int* val, int* ret, int memorder)
+{
+  __CPROVER_atomic_begin();
+
+  int __atomic_exchange_old_val;
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_load(loc, &__atomic_exchange_old_val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_ACQUIRE)
+    __atomic_load(loc, &__atomic_exchange_old_val, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(loc, &__atomic_exchange_old_val, __ATOMIC_RELAXED);
+
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_store(loc, val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_RELEASE)
+    __atomic_store(loc, val, __ATOMIC_RELEASE);
+  else
+    __atomic_store(loc, val, __ATOMIC_RELAXED);
+
+  *ret = __atomic_exchange_old_val;
+
+  __CPROVER_atomic_end();
+}
+
+/* FUNCTION: __atomic_fetch_add */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+int __atomic_fetch_add(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+
+  // load
+  int __atomic_fetch_load_ret;
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_ACQUIRE)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_RELAXED);
+
+  // calc new value
+  int __atomic_fetch_store_val;
+  __atomic_fetch_store_val = __atomic_fetch_load_ret + val;
+
+  // and then store
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_RELEASE)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELEASE);
+  else
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELAXED);
+
+  __CPROVER_atomic_end();
+
+  return __atomic_fetch_load_ret;
+}
+
+/* FUNCTION: __atomic_fetch_sub */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+int __atomic_fetch_sub(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+
+  // load
+  int __atomic_fetch_load_ret;
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_ACQUIRE)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_RELAXED);
+
+  // calc new value
+  int __atomic_fetch_store_val;
+  __atomic_fetch_store_val = __atomic_fetch_load_ret - val;
+
+  // and then store
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_RELEASE)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELEASE);
+  else
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELAXED);
+
+  __CPROVER_atomic_end();
+
+  return __atomic_fetch_load_ret;
+}
+
+/* FUNCTION: __atomic_fetch_and */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+int __atomic_fetch_and(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+
+  // load
+  int __atomic_fetch_load_ret;
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_ACQUIRE)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_RELAXED);
+
+  // calc new value
+  int __atomic_fetch_store_val;
+  __atomic_fetch_store_val = __atomic_fetch_load_ret & val;
+
+  // and then store
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_RELEASE)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELEASE);
+  else
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELAXED);
+
+  __CPROVER_atomic_end();
+
+  return __atomic_fetch_load_ret;
+}
+
+/* FUNCTION: __atomic_fetch_or */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+int __atomic_fetch_or(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+
+  // load
+  int __atomic_fetch_load_ret;
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_ACQUIRE)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_RELAXED);
+
+  // calc new value
+  int __atomic_fetch_store_val;
+  __atomic_fetch_store_val = __atomic_fetch_load_ret | val;
+
+  // and then store
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_RELEASE)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELEASE);
+  else
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELAXED);
+
+  __CPROVER_atomic_end();
+
+  return __atomic_fetch_load_ret;
+}
+
+/* FUNCTION: __atomic_fetch_xor */
+
+#ifndef __ATOMIC_RELAXED
+#  define __ATOMIC_RELAXED 0
+#endif
+
+#ifndef __ATOMIC_CONSUME
+#  define __ATOMIC_CONSUME 1
+#endif
+
+#ifndef __ATOMIC_ACQUIRE
+#  define __ATOMIC_ACQUIRE 2
+#endif
+
+#ifndef __ATOMIC_RELEASE
+#  define __ATOMIC_RELEASE 3
+#endif
+
+#ifndef __ATOMIC_ACQ_REL
+#  define __ATOMIC_ACQ_REL 4
+#endif
+
+#ifndef __ATOMIC_SEQ_CST
+#  define __ATOMIC_SEQ_CST 5
+#endif
+
+int __atomic_fetch_xor(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+
+  // load
+  int __atomic_fetch_load_ret;
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_ACQUIRE)
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_ACQUIRE);
+  else
+    __atomic_load(loc, &__atomic_fetch_load_ret, __ATOMIC_RELAXED);
+
+  // calc new value
+  int __atomic_fetch_store_val;
+  __atomic_fetch_store_val = __atomic_fetch_load_ret ^ val;
+
+  // and then store
+  if(memorder == __ATOMIC_SEQ_CST)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_SEQ_CST);
+  else if(memorder == __ATOMIC_ACQ_REL || memorder == __ATOMIC_RELEASE)
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELEASE);
+  else
+    __atomic_store(loc, &__atomic_fetch_store_val, __ATOMIC_RELAXED);
+
+  __CPROVER_atomic_end();
+
+  return __atomic_fetch_load_ret;
+}
+
+/* FUNCTION: __LKMM_LOAD */
+
+int __LKMM_LOAD(int* loc, int memorder)
+{
+__CPROVER_HIDE:;
+  return __CPROVER_LKMM_LOAD(loc, memorder);
+}
+
+/* FUNCTION: __LKMM_STORE */
+
+void __LKMM_STORE(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  __CPROVER_LKMM_STORE(loc, val, memorder);
+}
+
+/* FUNCTION: __LKMM_FENCE */
+
+void __LKMM_FENCE(int memorder)
+{
+__CPROVER_HIDE:;
+    __CPROVER_fence(
+      "WWfence",
+      "RRfence",
+      "RWfence",
+      "WRfence",
+      "WWcumul",
+      "RRcumul",
+      "RWcumul",
+      "WRcumul");
+}
+
+/* FUNCTION: __LKMM_XCHG */
+
+#ifndef __LKMM_RELAXED
+#define __LKMM_RELAXED 0
+#endif
+
+#ifndef __LKMM_ONCE
+#define __LKMM_ONCE 1
+#endif
+
+#ifndef __LKMM_ACQUIRE
+#define __LKMM_ACQUIRE 2
+#endif
+
+#ifndef __LKMM_RELEASE
+#define __LKMM_RELEASE 3
+#endif
+
+#ifndef __LKMM_MB
+#define __LKMM_MB 4
+#endif
+
+int __LKMM_XCHG(int* loc, int val, int memorder)
+{
+__CPROVER_HIDE:;
+  if(memorder == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+
+  __CPROVER_atomic_begin();
+  int xchg_tmp;
+  if(memorder == __LKMM_ACQUIRE)
+    xchg_tmp = __LKMM_LOAD(loc, __LKMM_ACQUIRE);
+  else
+    xchg_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+
+  if(memorder == __LKMM_RELEASE)
+    __LKMM_STORE(loc, val, __LKMM_RELEASE);
+  else
+    __LKMM_STORE(loc, val, __LKMM_ONCE);
+  __CPROVER_atomic_end();
+
+  if(memorder == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+  
+  return xchg_tmp;
+}
+
+/* FUNCTION: __LKMM_CMPXCHG */
+
+#ifndef __LKMM_RELAXED
+#define __LKMM_RELAXED 0
+#endif
+
+#ifndef __LKMM_ONCE
+#define __LKMM_ONCE 1
+#endif
+
+#ifndef __LKMM_ACQUIRE
+#define __LKMM_ACQUIRE 2
+#endif
+
+#ifndef __LKMM_RELEASE
+#define __LKMM_RELEASE 3
+#endif
+
+#ifndef __LKMM_MB
+#define __LKMM_MB 4
+#endif
+
+int __LKMM_CMPXCHG(int* loc, int old, int new, int memorder1, int memorder2)
+{
+__CPROVER_HIDE:;
+  if(memorder1 == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+
+  __CPROVER_atomic_begin();
+  int xchg_tmp;
+  if(memorder1 == __LKMM_ACQUIRE)
+    xchg_tmp = __LKMM_LOAD(loc, __LKMM_ACQUIRE);
+  else
+    xchg_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+
+  if(xchg_tmp == old)
+  {
+    if(memorder2 == __LKMM_RELEASE)
+      __LKMM_STORE(loc, new, __LKMM_RELEASE);
+    else
+      __LKMM_STORE(loc, new, __LKMM_ONCE);
+  }
+  __CPROVER_atomic_end();
+
+  if(memorder1 == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+  
+  return xchg_tmp;
+}
+
+/* FUNCTION: __LKMM_ATOMIC_OP */
+
+#ifndef __LKMM_ADD
+#define __LKMM_ADD 0
+#endif
+
+#ifndef __LKMM_SUB
+#define __LKMM_SUB 1
+#endif
+
+#ifndef __LKMM_AND
+#define __LKMM_AND 2
+#endif
+
+#ifndef __LKMM_OR
+#define __LKMM_OR 3
+#endif
+
+#ifndef __LKMM_ONCE
+#define __LKMM_ONCE 1
+#endif
+
+void __LKMM_ATOMIC_OP(int* loc, int val, int op)
+{
+__CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+  if(op == __LKMM_ADD)
+  {
+    int fetch_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+    __LKMM_STORE(loc, fetch_tmp + val, __LKMM_ONCE);
+  }
+  if(op == __LKMM_SUB)
+  {
+    int fetch_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+    __LKMM_STORE(loc, fetch_tmp - val, __LKMM_ONCE);
+  }
+  if(op == __LKMM_AND)
+  {
+    int fetch_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+    __LKMM_STORE(loc, fetch_tmp & val, __LKMM_ONCE);
+  }
+  if(op == __LKMM_OR)
+  {
+    int fetch_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+    __LKMM_STORE(loc, fetch_tmp | val, __LKMM_ONCE);
+  }
+  __CPROVER_atomic_end();
+}
+
+/* FUNCTION: __LKMM_ATOMIC_FETCH_OP */
+
+#ifndef __LKMM_ADD
+#define __LKMM_ADD 0
+#endif
+
+#ifndef __LKMM_SUB
+#define __LKMM_SUB 1
+#endif
+
+#ifndef __LKMM_AND
+#define __LKMM_AND 2
+#endif
+
+#ifndef __LKMM_OR
+#define __LKMM_OR 3
+#endif
+
+#ifndef __LKMM_ONCE
+#define __LKMM_ONCE 1
+#endif
+
+#ifndef __LKMM_ACQUIRE
+#define __LKMM_ACQUIRE 2
+#endif
+
+#ifndef __LKMM_RELEASE
+#define __LKMM_RELEASE 3
+#endif
+
+#ifndef __LKMM_MB
+#define __LKMM_MB 4
+#endif
+
+int __LKMM_ATOMIC_FETCH_OP(int* loc, int val, int memorder, int op)
+{
+__CPROVER_HIDE:;
+  if(memorder == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+
+  __CPROVER_atomic_begin();
+  int fetch_tmp;
+  if(memorder == __LKMM_ACQUIRE)
+    fetch_tmp = __LKMM_LOAD(loc, __LKMM_ACQUIRE);
+  else
+    fetch_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+
+  if(op == __LKMM_ADD)
+  {
+    if(memorder == __LKMM_RELEASE)
+      __LKMM_STORE(loc, fetch_tmp + val, __LKMM_RELEASE);
+    else
+      __LKMM_STORE(loc, fetch_tmp + val, __LKMM_ONCE);
+  }
+  if(op == __LKMM_SUB)
+  {
+    if(memorder == __LKMM_RELEASE)
+      __LKMM_STORE(loc, fetch_tmp - val, __LKMM_RELEASE);
+    else
+      __LKMM_STORE(loc, fetch_tmp - val, __LKMM_ONCE);
+  }
+  if(op == __LKMM_AND)
+  {
+    if(memorder == __LKMM_RELEASE)
+      __LKMM_STORE(loc, fetch_tmp & val, __LKMM_RELEASE);
+    else
+      __LKMM_STORE(loc, fetch_tmp & val, __LKMM_ONCE);
+  }
+  if(op == __LKMM_OR)
+  {
+    if(memorder == __LKMM_RELEASE)
+      __LKMM_STORE(loc, fetch_tmp | val, __LKMM_RELEASE);
+    else
+      __LKMM_STORE(loc, fetch_tmp | val, __LKMM_ONCE);
+  }
+  __CPROVER_atomic_end();
+
+  if(memorder == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+
+  return fetch_tmp;
+}
+
+/* FUNCTION: __LKMM_ATOMIC_OP_RETURN */
+
+#ifndef __LKMM_ADD
+#define __LKMM_ADD 0
+#endif
+
+#ifndef __LKMM_SUB
+#define __LKMM_SUB 1
+#endif
+
+#ifndef __LKMM_AND
+#define __LKMM_AND 2
+#endif
+
+#ifndef __LKMM_OR
+#define __LKMM_OR 3
+#endif
+
+#ifndef __LKMM_ONCE
+#define __LKMM_ONCE 1
+#endif
+
+#ifndef __LKMM_ACQUIRE
+#define __LKMM_ACQUIRE 2
+#endif
+
+#ifndef __LKMM_RELEASE
+#define __LKMM_RELEASE 3
+#endif
+
+#ifndef __LKMM_MB
+#define __LKMM_MB 4
+#endif
+
+int __LKMM_ATOMIC_OP_RETURN(int* loc, int val, int memorder, int op)
+{
+__CPROVER_HIDE:;
+  if(memorder == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+
+  __CPROVER_atomic_begin();
+  int fetch_tmp;
+  if(memorder == __LKMM_ACQUIRE)
+    fetch_tmp = __LKMM_LOAD(loc, __LKMM_ACQUIRE);
+  else
+    fetch_tmp = __LKMM_LOAD(loc, __LKMM_ONCE);
+
+  if(op == __LKMM_ADD)
+    fetch_tmp += val;
+  if(op == __LKMM_SUB)
+    fetch_tmp -= val;
+  if(op == __LKMM_AND)
+    fetch_tmp &= val;
+  if(op == __LKMM_OR)
+    fetch_tmp |= val;
+
+  if(memorder == __LKMM_RELEASE)
+    __LKMM_STORE(loc, fetch_tmp, __LKMM_RELEASE);
+  else
+    __LKMM_STORE(loc, fetch_tmp, __LKMM_ONCE);
+  __CPROVER_atomic_end();
+
+  if(memorder == __LKMM_MB)
+    __LKMM_FENCE(__LKMM_MB);
+
+  return fetch_tmp;
+}
+
+/* FUNCTION: __LKMM_SPIN_LOCK */
+
+#ifndef __LKMM_ONCE
+#define __LKMM_ONCE 1
+#endif
+
+#ifndef __LKMM_ACQUIRE
+#define __LKMM_ACQUIRE 2
+#endif
+
+#ifndef __LKMM_STRUCT_SPINLOCK
+#define __LKMM_STRUCT_SPINLOCK
+typedef struct spinlock {
+    int unused;
+} spinlock_t;
+#endif
+
+int __LKMM_SPIN_LOCK(spinlock_t *lock)
+{
+  __CPROVER_HIDE:;
+  __CPROVER_atomic_begin();
+  int lock_status = __LKMM_LOAD((unsigned *)lock, __LKMM_ACQUIRE);
+  __CPROVER_assume(!lock_status);
+  __LKMM_STORE((unsigned *)lock, 1, __LKMM_ONCE);
+  __CPROVER_atomic_end();
+  return 0;
+}
+
+/* FUNCTION: __LKMM_SPIN_UNLOCK */
+
+#ifndef __LKMM_STRUCT_SPINLOCK
+#define __LKMM_STRUCT_SPINLOCK
+typedef struct spinlock {
+    int unused;
+} spinlock_t;
+#endif
+
+#ifndef __LKMM_RELEASE
+#define __LKMM_RELEASE 3
+#endif
+
+int __LKMM_SPIN_UNLOCK(spinlock_t *lock)
+{
+  __CPROVER_HIDE:;
+  __LKMM_STORE((unsigned *)lock, 0, __LKMM_RELEASE);
+  return 0;
+}
+
 // __SZH_ADD_END__
 
 /* FUNCTION: __atomic_always_lock_free */

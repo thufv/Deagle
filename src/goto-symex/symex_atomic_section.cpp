@@ -26,6 +26,8 @@ void goto_symext::symex_atomic_begin(statet &state)
   state.atomic_section_id=++atomic_section_counter;
   state.read_in_atomic_section.clear();
   state.written_in_atomic_section.clear();
+  state.read_in_atomic_section_sources.clear();
+  state.written_in_atomic_section_sources.clear();
 
   target.atomic_begin(
       state.guard.as_expr(),
@@ -50,6 +52,11 @@ void goto_symext::symex_atomic_end(statet &state)
     ssa_exprt r = pair.first;
     r.set_level_2(pair.second.first);
 
+    symex_targett::sourcet source = state.source;
+    for(const auto& source_pair : state.read_in_atomic_section_sources)
+      if(source_pair.first == pair.first)
+        source = source_pair.second;
+
     // guard is the disjunction over reads
     PRECONDITION(!pair.second.second.empty());
     guardt read_guard(pair.second.second.front());
@@ -64,13 +71,18 @@ void goto_symext::symex_atomic_end(statet &state)
       read_guard_expr,
       r,
       atomic_section_id,
-      state.source);
+      source);
   }
 
   for(const auto &pair : state.written_in_atomic_section)
   {
     ssa_exprt w = pair.first;
     w.set_level_2(state.get_level2().latest_index(w.get_identifier()));
+
+    symex_targett::sourcet source = state.source;
+    for(const auto& source_pair : state.written_in_atomic_section_sources)
+      if(source_pair.first == pair.first)
+        source = source_pair.second;
 
     // guard is the disjunction over writes
     PRECONDITION(!pair.second.empty());
@@ -86,7 +98,7 @@ void goto_symext::symex_atomic_end(statet &state)
       write_guard_expr,
       w,
       atomic_section_id,
-      state.source);
+      source);
   }
 
   target.atomic_end(

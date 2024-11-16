@@ -13,6 +13,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #define CPROVER_POINTER_ANALYSIS_VALUE_SET_DEREFERENCE_H
 
 #include <util/std_expr.h>
+#include "value_set.h"
 
 class dereference_callbackt;
 class messaget;
@@ -53,6 +54,13 @@ public:
   /// \param pointer: A pointer-typed expression, to be dereferenced.
   /// \param display_points_to_sets: Display size and contents of points to sets
   exprt dereference(const exprt &pointer, bool display_points_to_sets = false);
+
+  // __SZH_ADD_BEGIN__
+  value_sett* overall_value_set = NULL;
+  std::set<symbol_exprt> dynamic_objects;
+
+  void replace_unknown(std::vector<exprt>& points_to_set);
+  // __SZH_ADD_END__
 
   /// Return value for `build_reference_to`; see that method for documentation.
   class valuet

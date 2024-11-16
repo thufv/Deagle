@@ -49,19 +49,20 @@
 
 
 %token
+  FREE "free"
   ACYCLIC   "acyclic"
   IRREFLEXIVE   "irreflexive"
   DECLARE   "declare"
   DECLARE_LOC "declare-loc"
   EMPTY	    "empty"
+  NOT_EMPTY	    "~empty"
+  FLAG      "flag" 
   ERROR	    "error"
   ID_REL    "id"
   AS        "as"   
   INCLUDE   "include"
   LET	    "let"
-  ROT       "rot"
-  INT		"int"
-  EXT		"ext"
+  REC       "rec"
   SAVE      "save"
   TOTAL     "total"
   VIEW      "view"
@@ -76,13 +77,14 @@
   ALT       "|"
   BSLASH    "\\"
   PLUS      "+"
-  TIMES      "*"
+  PROD      "*"
   QMARK     "?"
   LPAREN    "("
   RPAREN    ")"
   LBRACK    "["
   RBRACK    "]"
   SUPER     "^"
+  FENCEREL  "fencerel"
 ;
 
 %token YYEOF 0
@@ -91,7 +93,6 @@
 %token <std::string> QPATH;
 %nterm <std::string> qualified_ID;
 %nterm <cat_relationt> rel;
-%nterm <cat_axiomt> constraint;
 /* %nterm <std::string> reduce_opt; */
 
 %precedence "="
@@ -99,7 +100,7 @@
 %left  "\\" "&"
 %left  ";"
 %precedence "+" "*" "?" "^"
-%precedence "rot"
+%precedence "fencerel"
 /* 
 %printer { yyo << *($$); } <std::unique_ptr<cat_relationt>>;
 %printer { yyo << *($$); } <std::unique_ptr<cat_axiomt>>;
@@ -113,48 +114,43 @@ main:	  %empty		{ }
         ;
 
 decl:     "include" QPATH                  { }
-	| "let" ID "=" rel                 { drv.registerID($2, std::move($4)); }
-	/* | "declare" ID                     { drv.registerID($2, CharRE::create(
-								    TransLabel(Relation::createUser()))); }
-	| "declare-loc" ID                 { auto r = Relation::createUser();
-	                      		     auto rloc = Relation::createUser();
-					     rloc.markAsPerLocOf(r);
-					     drv.registerID($2, CharRE::create(TransLabel(r)));
-					     drv.registerID($2 + "-loc", CharRE::create(TransLabel(rloc))); }
-	| "save" reduce_opt ID "=" rel     { drv.registerSaveID($3, $2, std::move($5), @$); }
-	| "view" ID "=" rel		   { drv.registerViewID($2, std::move($4)); } */
-	| constraint			   { drv.addConstraint(std::move($1), "", @$); }
+  | QPATH {}
+	| "let" ID "=" rel                 { drv.rename_relation(std::move($4), $2, false); }
+	| "let" "rec" ID "=" rel                 { drv.rename_relation(std::move($5), $3, true); }
+  | "let" ID "=" "0"                 { drv.make_dummy_relation(std::move($2)); }
+	| constraint
 	;
 
 qualified_ID: ID        { $$ = $1; }
 	| ID "::" ID    { $$ = $1 + "::" + $3; }
 	;
 
-constraint:	"empty" rel		{ $$ = cat_axiomt(rel_axiomt::EMPTY, std::move($2)); }
-	| "acyclic" rel		{ $$ = cat_axiomt(rel_axiomt::ACYCLIC, std::move($2)); }
-	| "irreflexive" rel	{ $$ = cat_axiomt(rel_axiomt::IRREFLEXIVE, std::move($2)); }
-  | "empty" rel	"as" ID	{ $$ = cat_axiomt(rel_axiomt::EMPTY, std::move($2)); }
-	| "acyclic" rel	"as" ID	{ $$ = cat_axiomt(rel_axiomt::ACYCLIC, std::move($2)); }
-	| "irreflexive" rel "as" ID	{ $$ = cat_axiomt(rel_axiomt::IRREFLEXIVE, std::move($2)); }
+constraint:	"empty" rel		{ drv.addConstraint(rel_axiomt::EMPTY, std::move($2)); }
+	| "acyclic" rel		{ drv.addConstraint(rel_axiomt::ACYCLIC, std::move($2)); }
+	| "irreflexive" rel	{ drv.addConstraint(rel_axiomt::IRREFLEXIVE, std::move($2)); }
+  | "empty" rel	"as" ID	{ drv.addConstraint(rel_axiomt::EMPTY, std::move($2)); }
+	| "acyclic" rel	"as" ID	{ drv.addConstraint(rel_axiomt::ACYCLIC, std::move($2)); }
+	| "irreflexive" rel "as" ID	{ drv.addConstraint(rel_axiomt::IRREFLEXIVE, std::move($2)); }
+  | "flag" "~empty" rel	{ drv.addConstraint(rel_axiomt::NOT_EMPTY, std::move($3)); }
+  | "flag" "~empty" rel "as" ID	{ drv.addConstraint(rel_axiomt::NOT_EMPTY, std::move($3)); }
 	;
 
-rel:	"id"			{ $$ = cat_relationt("id"); }
-	| qualified_ID		{ $$ = cat_relationt($1); }
-	| "(" rel ")"		{ $$ = std::move($2); }
-	| "[" rel "]"		{ $$ = cat_relationt(rel_opt::BRACKET, std::move($2)); }
-	| "[" "]"		{ $$ = cat_relationt("id"); }
-	| rel "|" rel		{ $$ = cat_relationt(rel_opt::ALT, std::move($1), std::move($3)); }
-	| rel ";" rel		{ $$ = cat_relationt(rel_opt::SEQ, std::move($1), std::move($3)); }
-	| rel "&" rel		{ $$ = cat_relationt(rel_opt::AND, std::move($1), std::move($3)); }
-	| rel "\\" rel	{ $$ = cat_relationt(rel_opt::MINUS, std::move($1), std::move($3)); }
-	| rel "*" rel		{ $$ = cat_relationt(rel_opt::TIMES, std::move($1), std::move($3)); }
-	| rel "+"		{ $$ = cat_relationt(rel_opt::PLUS, std::move($1)); }
-  | rel "*"   { $$ = cat_relationt(rel_opt::STAR, std::move($1)); }
-	| rel "?"		{ $$ = cat_relationt(rel_opt::QMARK, std::move($1)); }
-	| "rot" rel		{ $$ = cat_relationt(rel_opt::ROT, std::move($2)); }
-	| "int" rel		{ $$ = cat_relationt(rel_opt::INT, std::move($2)); }
-	| "ext" rel		{ $$ = cat_relationt(rel_opt::EXT, std::move($2)); }
-	| rel "^" "-1" 		{ $$ = cat_relationt(rel_opt::FLIP, std::move($1)); }
+rel:	"id"			    { $$ = drv.make_base("id"); }
+	| qualified_ID		{ $$ = cat_relationt($1, rel_opt::TERMINAL, std::vector<std::string>{}); }
+	| "(" rel ")"		  { $$ = std::move($2); }
+	| "[" rel "]"		  { $$ = drv.make_relation(rel_opt::BRACKET, std::vector<std::string>{$2.name}); }
+	| "[" "]"		      { $$ = drv.make_base("id"); }
+	| rel "|" rel		  { $$ = drv.make_relation(rel_opt::ALT, std::vector<std::string>{$1.name, $3.name}); }
+	| rel ";" rel		  { $$ = drv.make_relation(rel_opt::SEQ, std::vector<std::string>{$1.name, $3.name}); }
+	| rel "&" rel		  { $$ = drv.make_relation(rel_opt::AND, std::vector<std::string>{$1.name, $3.name}); }
+	| rel "\\" rel	  { $$ = drv.make_relation(rel_opt::SUB, std::vector<std::string>{$1.name, $3.name}); }
+	| rel "*" rel		  { $$ = drv.make_relation(rel_opt::PROD, std::vector<std::string>{$1.name, $3.name}); }
+	| rel "+"		      { $$ = drv.make_relation(rel_opt::PLUS, std::vector<std::string>{$1.name}); }
+  | rel "*"         { $$ = drv.make_star($1.name); }
+	| rel "?"		      { $$ = drv.make_qmark($1.name); }
+	| rel "^" "-1" 		{ $$ = drv.make_relation(rel_opt::FLIP, std::vector<std::string>{$1.name}); }
+  | "fencerel" rel  { $$ = drv.make_fencerel($2.name); }
+  | "free"        { $$ = drv.make_free(); }
 	;
 
 %%

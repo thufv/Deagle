@@ -1,8 +1,3 @@
-let fr = rf^-1 ; co
-let rfe = ext(rf)
-let coe = ext(co)
-let fre = ext(fr)
-
 let eco = (rf | co | fr)+
 let rs = [W]; (po & loc)?; [W & (RLX | REL | ACQ | ACQ_REL | SC)]; (rf; rmw)*
 let sw = [(REL | ACQ_REL | SC)]; ([F]; po)?; rs; rf; [R & (RLX | REL | ACQ | ACQ_REL | SC)]; (po; [F])?; [(ACQ | ACQ_REL | SC)]
@@ -18,5 +13,12 @@ let psc = pscb | pscf
 irreflexive hb; eco? as coherence1
 irreflexive (rmw; eco) as coherencermw
 empty (rmw & (fr; co)) as atomicity
-irreflexive psc+ as SC
-irreflexive (po | rf)+ as no-thin-air
+acyclic psc as SC
+acyclic (po | rf) as no-thin-air
+
+(* data_races *)
+// We treat initial events as non-atomic thus we need to explicit remove them
+let conflict = ext & ((((W * _) | (_ * W)) & loc) \ ((IW * _) | (_ * IW)))
+let race = conflict \ (A * A) \ hb \ (hb^-1) 
+
+flag ~empty race as racy 

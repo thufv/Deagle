@@ -3223,8 +3223,8 @@ exprt c_typecheck_baset::do_special_functions(
     return std::move(ctz);
   }
   else if(
-    identifier == "__builtin_ffs" || identifier == "__builtin_ffsl" ||
-    identifier == "__builtin_ffsll")
+    identifier == "__builtin_ffs" || identifier == "__builtin_ffsl" || identifier == "__builtin_ffsll" ||
+    identifier == "ffs" || identifier == "ffsl" || identifier == "ffsll")
   {
     if(expr.arguments().size() != 1)
     {

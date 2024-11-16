@@ -87,25 +87,28 @@ irreflexive			return yy::parser::make_IRREFLEXIVE	(loc);
 declare			return yy::parser::make_DECLARE	(loc);
 declare-loc		return yy::parser::make_DECLARE_LOC (loc);
 empty			return yy::parser::make_EMPTY	(loc);
+~empty			return yy::parser::make_NOT_EMPTY	(loc);
 error			return yy::parser::make_ERROR	(loc);
 id			return yy::parser::make_ID_REL	(loc);
 include			return yy::parser::make_INCLUDE	(loc);
 let			return yy::parser::make_LET	(loc);
-rot			return yy::parser::make_ROT     (loc);
-int			return yy::parser::make_INT     (loc);
-ext			return yy::parser::make_EXT     (loc);
+rec			return yy::parser::make_REC	(loc);
 save			return yy::parser::make_SAVE	(loc);
 total			return yy::parser::make_TOTAL	(loc);
 view			return yy::parser::make_VIEW	(loc);
 warning			return yy::parser::make_WARNING	(loc);
+fencerel			return yy::parser::make_FENCEREL	(loc);
+flag			return yy::parser::make_FLAG		(loc);
+
 
 ["][^\n]*["]		return yy::parser::make_QPATH  (yytext, loc);
 {ALPHA}{EALPHA}*	return yy::parser::make_ID     (yytext, loc);
+"~"{ALPHA}{EALPHA}*	return yy::parser::make_ID     (yytext, loc);
 
 "::"		return yy::parser::make_DCOLON (loc);
 ","			return yy::parser::make_COMMA  (loc);
 "+"			return yy::parser::make_PLUS   (loc);
-"*"			return yy::parser::make_TIMES   (loc);
+"*"			return yy::parser::make_PROD   (loc);
 "?"			return yy::parser::make_QMARK  (loc);
 ";"			return yy::parser::make_SEMI   (loc);
 "&"			return yy::parser::make_AND    (loc);
@@ -122,7 +125,6 @@ warning			return yy::parser::make_WARNING	(loc);
 {BLANK}+		loc.step ();
 \n+			loc.lines (yyleng); loc.step ();
 "//"[^\n]*	
-"(*"([^\*]|(\*)*[^\*/])*(\*)*"*)"	
 
 .			{ throw yy::parser::syntax_error
 			    (loc, "invalid character: " + std::string(yytext)); }

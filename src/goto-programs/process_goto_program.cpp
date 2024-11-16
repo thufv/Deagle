@@ -75,6 +75,11 @@ bool process_goto_program(
   goto_check_c(options, goto_model, log.get_message_handler());
   transform_assertions_assumptions(options, goto_model);
 
+// __SZH_ADD_BEGIN__
+  if(options.get_bool_option("mm-flag"))
+    add_dummy_assertion(goto_model);
+// __SZH_ADD_END__
+
   // checks don't know about adjusted float expressions
   adjust_float_expressions(goto_model);
 

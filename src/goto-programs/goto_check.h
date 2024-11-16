@@ -30,4 +30,8 @@ void transform_assertions_assumptions(
   const optionst &options,
   goto_programt &goto_program);
 
+// __SZH_ADD_BEGIN__
+void add_dummy_assertion(goto_modelt &goto_model);
+// __SZH_ADD_END__
+
 #endif // CPROVER_GOTO_PROGRAMS_GOTO_CHECK_H

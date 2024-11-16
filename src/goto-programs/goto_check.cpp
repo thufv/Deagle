@@ -96,3 +96,24 @@ void transform_assertions_assumptions(
     enable_built_in_assertions,
     enable_assumptions);
 }
+
+// __SZH_ADD_BEGIN__
+void add_dummy_assertion(goto_modelt &goto_model)
+{
+  auto& main_body = goto_model.goto_functions.function_map[irep_idt("main")].body;
+  auto& instructions = main_body.instructions;
+
+  auto assert_false = goto_programt::make_assertion(false_exprt());
+
+  for(auto it = instructions.begin(); it != instructions.end(); it++)
+  {
+    if(it->is_set_return_value()) // add an "assert(false);" before return 0
+    {
+      instructions.insert(it, assert_false);
+      return;
+    }
+  }
+
+  *main_body.add_instruction() = assert_false;
+}
+// __SZH_ADD_END__

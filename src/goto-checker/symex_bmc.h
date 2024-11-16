@@ -92,29 +92,28 @@ public:
   std::vector<code_fort> fors;
   std::vector<code_whilet> whiles;
   std::vector<code_assignt> assigns;
+  // __WP_ADD_BEGIN__
+  std::vector<code_declt> decls;
+  // __WP_ADD_END__
   std::vector<code_function_callt> function_calls;
   std::vector<code_ifthenelset> ifthenelses;
-  void svcomp_get_interesting_codes();
+  void get_interesting_codes();
 
   std::map<std::string, int> assume_upperbounds;
   std::map<symbol_exprt, int> const_values;
-  void svcomp_update_assume_upperbound(std::string& id, int value);
-  void svcomp_get_assume_upperbounds();
-  void svcomp_get_const_values();
+  void update_assume_upperbound(std::string& id, int value);
+  void get_assume_upperbounds();
+  void get_const_values();
 
-  int svcomp_for_unwind_limit_single(code_fort& code);
-  int svcomp_while_unwind_limit_single(code_whilet& code);
-  int svcomp_for_while_unwind_limit(std::set<int>& candidate_limits);
-  bool svcomp_has_array();
-  bool svcomp_has_mutex_array();
-  bool has_sleep;
-  bool has_malloc;
-  bool has_calloc;
-  bool has_key;
-  int svcomp_unwind_strategy();
+  std::map<source_locationt, int> single_unwind_limit;
+  int for_unwind_limit_single(code_fort& code);
+  // __WP_ADD_BEGIN__
+  int while_unwind_limit_single(code_whilet& code);
+  void unwind_suggest();
+  void show_unwind_suggest(const goto_functionst &goto_functions);
+  // __WP_ADD_END__
 
-  void svcomp_special(int& max_limit, int for_unwind_limit);
-  void svcomp_exit(int max_limit, int for_unwind_limit, bool has_mutex_array);
+  void svcomp_unsupported_library();
   // __SZH_ADD_END__
 protected:
   /// Callbacks that may provide an unwind/do-not-unwind decision for a loop

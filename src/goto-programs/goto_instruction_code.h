@@ -228,8 +228,10 @@ public:
     const goto_instruction_codet &code,
     const validation_modet vm = validation_modet::INVARIANT)
   {
+    // __WP_ADD_BEGIN__
     DATA_CHECK(
-      vm, code.operands().size() == 1, "declaration must have one operand");
+      vm, code.operands().size() == 1 || code.operands().size() == 2, "declaration must have one or two operand");
+    // __WP_ADD_END__
     DATA_CHECK(
       vm,
       code.op0().id() == ID_symbol,

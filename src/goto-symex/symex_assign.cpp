@@ -236,6 +236,40 @@ void symex_assignt::assign_symbol(
     assign_non_struct_symbol(lhs, full_lhs, rhs, guard);
 }
 
+// __SZH_ADD_BEGIN__
+#include <iostream>
+#include <util/format_expr.h>
+
+static void remove_double_typecast(exprt& expr) // in place
+{
+    bool outside_is_cast = (expr.id() == ID_typecast);
+    if(!outside_is_cast)
+        return;
+
+    bool inside_is_cast_to_empty = (expr.op0().id() == ID_typecast) && (expr.op0().type().id() == ID_empty);
+    bool inside_is_extract_to_empty = (expr.op0().id() == ID_byte_extract_little_endian) && (expr.op0().type().id() == ID_empty);
+    if(!inside_is_cast_to_empty && !inside_is_extract_to_empty)
+        return;
+
+    auto source_expr = expr.op0().op0();
+    auto source_type = source_expr.type();
+    auto target_type = expr.type();
+
+    std::cout << "During symex: Converting from " << format(expr);
+
+    if(source_type == target_type) // source_type and target_type are identical, easy!
+        expr = source_expr;
+    else if(inside_is_cast_to_empty)
+        expr = typecast_exprt(source_expr, target_type);
+    else if(inside_is_extract_to_empty)
+    {
+        auto offset_expr = expr.op0().op1();
+        expr = byte_extract_exprt(ID_byte_extract_little_endian, source_expr, offset_expr, target_type);
+    }
+    std::cout << " to " << format(expr) << "\n";
+}
+// __SZH_ADD_END__
+
 void symex_assignt::assign_typecast(
   const typecast_exprt &lhs,
   const expr_skeletont &full_lhs,
@@ -244,6 +278,11 @@ void symex_assignt::assign_typecast(
 {
   // these may come from dereferencing on the lhs
   exprt rhs_typecasted = typecast_exprt::conditional_cast(rhs, lhs.op().type());
+
+  // __SZH_ADD_BEGIN__
+  remove_double_typecast(rhs_typecasted);
+  // __SZH_ADD_END__
+
   expr_skeletont new_skeleton =
     full_lhs.compose(expr_skeletont::remove_op0(lhs));
   assign_rec(lhs.op(), new_skeleton, rhs_typecasted, guard);

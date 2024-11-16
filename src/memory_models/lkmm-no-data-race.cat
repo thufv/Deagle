@@ -46,19 +46,14 @@ let rcu-gp = [Sync-rcu]
 let srcu-gp = [Sync-srcu]
 let rcu-rscsi = rcu-rscs^-1
 // NOTE: We don't support SRCU
-let srcu-rscsi = 0
 
 let rcu-link = po? ; hb* ; pb* ; prop ; po
 
 let rec rcu-order = rcu-gp | srcu-gp |
 	(rcu-gp ; rcu-link ; rcu-rscsi) |
-	((srcu-gp ; rcu-link ; srcu-rscsi) & loc) |
 	(rcu-rscsi ; rcu-link ; rcu-gp) |
-	((srcu-rscsi ; rcu-link ; srcu-gp) & loc) |
 	(rcu-gp ; rcu-link ; rcu-order ; rcu-link ; rcu-rscsi) |
-	((srcu-gp ; rcu-link ; rcu-order ; rcu-link ; srcu-rscsi) & loc) |
 	(rcu-rscsi ; rcu-link ; rcu-order ; rcu-link ; rcu-gp) |
-	((srcu-rscsi ; rcu-link ; rcu-order ; rcu-link ; srcu-gp) & loc) |
 	(rcu-order ; rcu-link ; rcu-order)
 let rcu-fence = po ; rcu-order ; po?
 

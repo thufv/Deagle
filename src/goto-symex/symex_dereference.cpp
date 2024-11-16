@@ -326,6 +326,12 @@ void goto_symext::dereference_rec(
       expr_is_not_null,
       log);
 
+    if(!try_finding_value_set)
+    {
+      dereference.overall_value_set = &overall_value_set;
+      dereference.dynamic_objects = dynamic_objects;
+    }
+
     // std::cout << "**** " << format(tmp1) << '\n';
     exprt tmp2 =
       dereference.dereference(tmp1, symex_config.show_points_to_sets);

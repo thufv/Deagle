@@ -1,14 +1,68 @@
-# About
+# Deagle V4.0.1
 
-Deagle is an SMT-based concurrent program verification tool. It is built on top of CBMC (front-end) and MiniSAT (back-end). The basic idea of Deagle is to integrate into the SAT solver an ordering consistency theory that handles ordering relations over shared variable accesses in the program. The front-end encodes the input program into an extended Boolean formula that contains ordering constraints. The back-end is reinforced with a solver for the ordering consistency theory. Additionally, Deagle transplants some features from Yogar-CBMC for availability, including preprocessing and counterexample generation.
+## Introduction
+Deagle is an SMT-based concurrent program verification tool. It is built on top of CBMC-5 (front-end) and MiniSAT-2.2.1 (back-end). The basic idea of Deagle is to integrate into the SAT solver an ordering consistency theory that handles ordering relations over shared variable accesses in the program. The front-end encodes the input program into an extended Boolean formula that contains ordering constraints. The back-end is reinforced with a solver for the ordering consistency theory. 
 
-Please refer to https://github.com/thufv/Deagle for our source code.
+## Deagle's Capability
+For programs under simple memory models SC, TSO, and PSO, Deagle verifies user assertions, detecting data races, memory failures (such as null pointer dereferences), and overflows.
 
-# Compile
+## Installation
+### Dependencies
+- g++
+- flex
+- bison (Version 3.5.2 is recommended)
+- gcc-multilib
 
-Run command "cd src & make"
-This generates executable deagle in directory src/cbmc.
+### Building from source
+Simply run
+```
+cd src && make
+```
+This generates executable target src/cbmc/deagle_exe.
 
-# Usage
+Note: Higher versions of Bison may generate *.tab.h/*.tab.cpp that triggers warnings. On such occasions, please try removing -Werror from CXXFLAGS in src/config.inc.
 
-./deagle --32 --no-unwinding-assertions --closure [*.i]
+## Usage
+```
+deagle_exe <input file> <memory model options> <specifications> <unwind options>
+```
+
+``<memory model options>`` includes:
+- **--mm sc** : verify under SC (default)
+- **--mm tso** : verify under TSO
+- **--mm pso** : verify under PSO
+
+``<specifications>`` includes:
+- **--no-assertions** : disable user assertion verification (default enabled). This option is directly inherited from CBMC.
+- **--datarace** : enable data race detection (default disabled). This option is freshly developed in Deagle.
+- **--pointer-check** : enable null pointer dereference detection (default disabled). This option is directly inherited from CBMC.
+- **--alloc-check** : enable malloc/calloc/... validity detection (default disabled). This option is newly developed in Deagle.
+- **--memory-leak-check** : enable memory leak detection (default disabled). This option is inherited from CBMC but further developed in Deagle.
+- **--signed-overflow-check** and **--unsigned-overflow-check** : enable signed/unsigned overflow detection (default both disabled). These options are directly inherited from CBMC.
+- **--allow-pointer-unsoundness**: enable the experimental concurrency pointer analysis which might be unsound for some cases (default disabled).
+
+``<unwind options>`` can be either of the following:
+- **--unwind n** : unwind all loops for n times.
+- **--unwindset loop_id0:n0,loop_id1:n1,...** : set an unwind limit for each loop, respectively. Please run "``deagle_exe <input file> --show-loops``" to view the loop_id for each loop.
+
+If unwind options are not provided, Deagle tries to iteratively unwind each loop until fully unwinded. For instance, in
+```
+int n = 10;
+while(n--) {body;}
+```
+Deagle unwinds it 10 times and stops.
+
+However, in
+```
+while(1) {body;}
+```
+Deagle unwinds this loop over and over again and never terminates.
+
+## Usage in SV-COMP
+
+In SV-COMP, we cannot manually set an unwind option for each benchmark. Therefore, we determine an unwinding strategy, which hopefully provides reliable results for most tasks in SV-COMP benchmarks. The unwinding strategy is described as follows:
+- Step 1: Briefly run the task without unwind options, trying to find whether Deagle can automatically fully unwind all loops.
+- Step 2: If Step 1 fails, run the task with "--unwind-suggest" option, which tries to provide the maximal unwind limit for each loop. Based on this result, we separate loops into "finite loops" and "infinite loops".
+- Step 3: Use --unwindset to set an unwind limit for each loop. For finite loops, we use the maximal unwind limit provided in Step 2. For infinite loops, we guess the unwind limit as 3, if no violation is found, we suppose the result to be TRUE.
+
+Please run script svcomp_stuff/deagle for SV-COMP usage.

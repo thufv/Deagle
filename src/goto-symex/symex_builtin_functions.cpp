@@ -169,6 +169,10 @@ void goto_symext::symex_allocate(
 
   state.symbol_table.add(value_symbol);
 
+  // __SZH_ADD_BEGIN__
+  dynamic_objects.insert(value_symbol.symbol_expr());
+  // __SZH_ADD_END__
+
   // to allow constant propagation
   exprt zero_init = state.rename(to_binary_expr(code).op1(), ns).get();
   simplify(zero_init, ns);

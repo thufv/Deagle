@@ -185,10 +185,13 @@ void goto_convert_functionst::convert_function(
 
   const codet &code = to_code(symbol.value);
 
+  auto new_code = code;
+  simplify_pthread_create_join(new_code);
+
   source_locationt end_location;
 
-  if(code.get_statement() == ID_block)
-    end_location = to_code_block(code).end_location();
+  if(new_code.get_statement() == ID_block)
+    end_location = to_code_block(new_code).end_location();
   else
     end_location.make_nil();
 
@@ -202,7 +205,7 @@ void goto_convert_functionst::convert_function(
                              code_type.return_type().id() != ID_constructor &&
                              code_type.return_type().id() != ID_destructor;
 
-  goto_convert_rec(code, f.body, mode);
+  goto_convert_rec(new_code, f.body, mode);
 
   // add non-det return value, if needed
   if(targets.has_return_value)
@@ -276,3 +279,74 @@ void goto_convert(
   goto_convert_functions.convert_function(
     identifier, functions.function_map[identifier]);
 }
+
+// __SZH_ADD_BEGIN__
+// For simple situations where pthread_create is immediately followed with pthread_join,
+// we treat them as a single function call.
+#include <iostream>
+void goto_convert_functionst::simplify_pthread_create_join(codet& code)
+{
+  if(code.get_statement() != ID_block)
+    return;
+
+  auto& statements = to_code_block(code).statements();
+  for(auto it = statements.begin(); it != statements.end();)
+  {
+    if(it->get_statement() == ID_block)
+      simplify_pthread_create_join(*it);
+
+    auto next_it = it;
+    next_it++;
+    if(next_it == statements.end())
+      break;
+
+    if(it->get_statement() != ID_expression || next_it->get_statement() != ID_expression)
+    {
+      it++;
+      continue;
+    }
+
+    auto& expression = to_code_expression(*it).expression();
+    auto& next_expression = to_code_expression(*next_it).expression();
+    if(expression.id() != ID_side_effect || to_side_effect_expr(expression).get_statement() != ID_function_call)
+    {
+      it++;
+      continue;
+    }
+    if(next_expression.id() != ID_side_effect || to_side_effect_expr(next_expression).get_statement() != ID_function_call)
+    {
+      it++;
+      continue;
+    }
+
+    auto& function = to_side_effect_expr_function_call(expression).function();
+    auto& next_function = to_side_effect_expr_function_call(next_expression).function();
+    std::string name = function.get(ID_identifier).c_str();
+    std::string next_name = next_function.get(ID_identifier).c_str();
+    if(name != "pthread_create" || next_name != "pthread_join")
+    {
+      it++;
+      continue;
+    }
+
+    auto& args = to_side_effect_expr_function_call(expression).arguments();
+    auto& next_args = to_side_effect_expr_function_call(next_expression).arguments();
+    if(args[0].id() != ID_address_of || args[0].op0() != next_args[0])
+    {
+      it++;
+      continue;
+    }
+    exprt final_function = args[2].op0();
+    exprt::operandst final_args{args[3]};
+    typet final_side_effect_type = to_side_effect_expr_function_call(expression).type();
+    source_locationt final_loc = expression.source_location();
+    side_effect_expr_function_callt final_side_effect(
+      final_function, final_args, final_side_effect_type, final_loc);
+    code_expressiont final_expression(final_side_effect);
+    it = statements.erase(it);
+    it = statements.erase(it);
+    it = statements.insert(it, final_expression);
+    std::cout << "pthread_create/join is replaced with a single call of " << final_function.get(ID_identifier) << "\n";
+  }
+}
+// __SZH_ADD_END__

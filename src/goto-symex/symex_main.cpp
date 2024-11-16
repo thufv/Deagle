@@ -33,11 +33,8 @@ Author: Daniel Kroening, kroening@kroening.com
 symex_configt::symex_configt(const optionst &options)
   : max_depth(options.get_unsigned_int_option("depth")),
     doing_path_exploration(options.is_set("paths")),
-    //allow_pointer_unsoundness(
-    //  options.get_bool_option("allow-pointer-unsoundness")),
-    // __SZH_ADD_BEGIN__
-    allow_pointer_unsoundness(true),
-    // __SZH_ADD_END__
+    allow_pointer_unsoundness(
+     options.get_bool_option("allow-pointer-unsoundness")),
     constant_propagation(options.get_bool_option("propagation")),
     self_loops_to_assumptions(
       options.get_bool_option("self-loops-to-assumptions")),
@@ -202,9 +199,9 @@ void goto_symext::vcc(
 }
 
 // __SZH_ADD_BEGIN__ : because datarace VCCs have no states
-void goto_symext::stateless_vcc(const exprt &condition, const std::string &msg, const std::string &assert_id)
+void goto_symext::stateless_vcc(const exprt &condition, const std::string &msg, const std::string &assert_id, const symex_targett::sourcet &source)
 {
-  target.assertion(true_exprt(), condition, msg, entry_point_state->source);
+  target.assertion(true_exprt(), condition, msg, source);
   target.SSA_steps.back().custom_assert_id = assert_id;
 }
 // __SZH_ADD_END__
@@ -338,6 +335,10 @@ void goto_symext::symex_with_state(
   const get_goto_functiont &get_goto_function,
   symbol_tablet &new_symbol_table)
 {
+  // __SZH_ADD_BEGIN__
+  state.symbol_table = new_symbol_table;
+  // __SZH_ADD_END__
+
   // resets the namespace to only wrap a single symbol table, and does so upon
   // destruction of an object of this type; instantiating the type is thus all
   // that's needed to achieve a reset upon exiting this method
@@ -484,7 +485,6 @@ void goto_symext::symex_from_entry_point_of(
   symbol_tablet &new_symbol_table)
 {
   auto state = initialize_entry_point_state(get_goto_function);
-  entry_point_state = state.get();
 
   symex_with_state(*state, get_goto_function, new_symbol_table);
 }
@@ -606,6 +606,11 @@ void goto_symext::symex_step(
   const get_goto_functiont &get_goto_function,
   statet &state)
 {
+  // __SZH_ADD_BEGIN__
+  if(try_finding_value_set)
+    overall_value_set.make_union(state.value_set);
+  // __SZH_ADD_END__
+
   // Print debug statements if they've been enabled.
   print_symex_step(state);
   execute_next_instruction(get_goto_function, state);
@@ -1074,18 +1079,18 @@ void goto_symext::symex_datarace(std::string filename)
   {
     std::cout << "Handling datarace with goblint\n";
     invoke_goblint(filename, target);
-    target.build_datarace(true);
+    target.build_datarace(ns, true);
   }
   else if(datarace_filter == "locksmith")
   {
     std::cout << "Handling datarace with locksmith\n";
     invoke_locksmith(filename, target);
-    target.build_datarace(true);
+    target.build_datarace(ns, true);
   }
   else
   {
     std::cout << "Handling datarace with no aid\n";
-    target.build_datarace(false);
+    target.build_datarace(ns, false);
   }
   
   // There are two methods to represent arrays:
@@ -1110,6 +1115,7 @@ void goto_symext::symex_datarace(std::string filename)
   {
     auto& races = races_it.second;
     auto& race_identifier = races_it.first;
+    const symex_targett::sourcet* race_source = NULL;
 
     exprt::operandst same_races;
 
@@ -1170,7 +1176,11 @@ void goto_symext::symex_datarace(std::string filename)
       target.constraint(implies_exprt(race_var, conjunction(conds)), "", race.first->source);
 
       target.numbered_dataraces.push_back(race);
+      race_source = &(race.first->source);
     }
+
+    if(same_races.empty())
+      continue;
 
     auto all_race_triplets = conjunction(same_races);
 
@@ -1181,7 +1191,7 @@ void goto_symext::symex_datarace(std::string filename)
     std::string assert_id = "nodatarace.assertion." + std::to_string(race_assert_id);
     race_assert_id++;
 
-    stateless_vcc(all_race_triplets, msg, assert_id);
+    stateless_vcc(all_race_triplets, msg, assert_id, *race_source);
   }
 
 }
@@ -1213,7 +1223,7 @@ void goto_symext::symex_alloc_check()
       std::string assert_id = "alloc.assertion." + std::to_string(alloc_assert_id);
       alloc_assert_id++;
 
-      stateless_vcc(implies_exprt(e_it->guard, assertion), msg, assert_id);
+      stateless_vcc(implies_exprt(e_it->guard, assertion), msg, assert_id, e_it->source);
     }
   }
 
@@ -1239,7 +1249,7 @@ void goto_symext::symex_alloc_check()
       std::string assert_id = "alloc.assertion." + std::to_string(alloc_assert_id);
       alloc_assert_id++;
 
-      stateless_vcc(implies_exprt(e_it->guard, assertion), msg, assert_id);
+      stateless_vcc(implies_exprt(e_it->guard, assertion), msg, assert_id, e_it->source);
     }
   }
 }

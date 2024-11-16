@@ -269,8 +269,26 @@ goto_symex_statet::rename(exprt expr, const namespacet &ns)
     rename<level>(expr.type(), irep_idt(), ns);
 
     // do this recursively
-    Forall_operands(it, expr)
-      *it = rename<level>(std::move(*it), ns).get();
+    // szh: for assignments such as arr#2 = with(arr#1, ...) or arr#2 = update_byte_little_endian(arr#1, ...),
+    // we make arr#1 closely prior to arr#2 to guarantee atomicity.
+    if(expr.id() == ID_with || expr.id() == ID_byte_update_little_endian)
+    {
+      Forall_operands_r(it, expr)
+        *it = rename<level>(std::move(*it), ns).get();
+    }
+    // szh : for points-to ifthenelse: ptr = address_of(a) ? a : ptr = address_of(b) ? b : ...
+    // we visit in the "if else then" order so that ptrs are together
+    else if(expr.id() == ID_if)
+    {
+      expr.op0() = rename<level>(std::move(expr.op0()), ns).get();
+      expr.op2() = rename<level>(std::move(expr.op2()), ns).get();
+      expr.op1() = rename<level>(std::move(expr.op1()), ns).get();
+    }
+    else
+    {
+      Forall_operands(it, expr)
+        *it = rename<level>(std::move(*it), ns).get();
+    }
 
     const exprt &c_expr = as_const(expr);
     INVARIANT(
@@ -376,9 +394,11 @@ bool goto_symex_statet::l2_thread_read_encoding(
   // is it a shared object?
   PRECONDITION(dirty != nullptr);
   const irep_idt &obj_identifier=expr.get_object_name();
+
+  bool is_dirty = (*dirty)(obj_identifier);
   if(
     obj_identifier == guard_identifier() ||
-    (!ns.lookup(obj_identifier).is_shared() && !(*dirty)(obj_identifier)))
+    (!ns.lookup(obj_identifier).is_shared() && !is_dirty))
   {
     return false;
   }
@@ -478,6 +498,7 @@ bool goto_symex_statet::l2_thread_read_encoding(
     expr = std::move(ssa_l2);
 
     a_s_read.second.push_back(guard);
+    read_in_atomic_section_sources.emplace_back(ssa_l1, source);
     if(!no_write.op().is_false())
       a_s_read.second.back().add(no_write);
 
@@ -512,9 +533,12 @@ goto_symex_statet::write_is_shared_resultt goto_symex_statet::write_is_shared(
 
   PRECONDITION(dirty != nullptr);
   const irep_idt &obj_identifier = expr.get_object_name();
+
+  bool is_dirty = (*dirty)(obj_identifier);
+
   if(
     obj_identifier == guard_identifier() ||
-    (!ns.lookup(obj_identifier).is_shared() && !(*dirty)(obj_identifier)))
+    (!ns.lookup(obj_identifier).is_shared() && !is_dirty))
   {
     return write_is_shared_resultt::NOT_SHARED;
   }
@@ -542,6 +566,7 @@ bool goto_symex_statet::l2_thread_write_encoding(
   case write_is_shared_resultt::IN_ATOMIC_SECTION:
   {
     written_in_atomic_section[remove_level_2(expr)].push_back(guard);
+    written_in_atomic_section_sources.emplace_back(remove_level_2(expr), source);
     return false;
   }
   case write_is_shared_resultt::SHARED:

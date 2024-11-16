@@ -36,10 +36,10 @@ struct oc_edget
     std::string e1_str;
     std::string e2_str;
     std::string kind;
-    exprt guard_expr;
+    exprt expr;
 
-    oc_edget(std::string _e1_str, std::string _e2_str, std::string _kind, exprt _guard_expr):
-            e1_str(_e1_str), e2_str(_e2_str), kind(_kind), guard_expr(_guard_expr) {}
+    oc_edget(std::string _e1_str, std::string _e2_str, std::string _kind, exprt _expr):
+            e1_str(_e1_str), e2_str(_e2_str), kind(_kind), expr(_expr) {}
 
     bool operator<(const oc_edget& right) const
     {
@@ -55,9 +55,10 @@ struct oc_labelt
 {
     std::string e_str;
     std::string label;
+    exprt expr;
 
-    oc_labelt(std::string _e_str, std::string _label):
-            e_str(_e_str), label(_label){}
+    oc_labelt(std::string _e_str, std::string _label, exprt _expr):
+            e_str(_e_str), label(_label), expr(_expr){}
 
     bool operator<(const oc_labelt& right) const
     {
@@ -327,7 +328,6 @@ public:
   std::set<event_it> oc_guard_map;
   std::vector<oc_edget> oc_edges;
   std::vector<oc_labelt> oc_labels;
-  std::map<std::string, unsigned> oc_thread_map;
 
   std::map<std::string, int> oc_result_order;
 
@@ -354,8 +354,9 @@ public:
   std::set<std::string> datarace_lines;
   void build_available_cond_map(std::map<std::string, exprt>& available_cond_map);
   void build_index_map(std::map<std::string, exprt>& index_map);
-  void build_array_update_set(std::set<std::pair<std::string, std::string>>& array_update_set);
-  void build_datarace(bool filter);
+  void build_array_update_set(std::set<std::pair<std::string, std::string>>& apo_set);
+  void build_same_pointer_set(std::set<std::pair<std::string, std::string>>& apo_set);
+  void build_datarace(const namespacet& ns, bool filter);
   bool choose_datarace();
 
   void remove_dummy_accesses();

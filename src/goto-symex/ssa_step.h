@@ -135,6 +135,11 @@ public:
   {
     return type == goto_trace_stept::typet::ASSERT && custom_assert_id != "";
   }
+
+  bool is_init() const
+  {
+    return id2string(source.function_id) == "__CPROVER_initialize";
+  }
   // __SZH_ADD_END__
 
   /// Returns the property ID if this is a step resulting from an ASSERT, or

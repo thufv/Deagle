@@ -8,7 +8,7 @@ INCLUDES= -I ..
 include ../config.inc
 include ../common
 
-CLEANFILES = cat$(LIBEXT)
+CLEANFILES = cat$(LIBEXT) *.tab.h *.tab.cpp
 
 all: cat$(LIBEXT)
 

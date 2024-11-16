@@ -39,12 +39,6 @@ symex_bmct::symex_bmct(
     havoc_bodyless_functions(
       options.get_bool_option("havoc-undefined-functions")),
     unwindset(unwindset),
-    // __SZH_ADD_BEGIN__
-    has_sleep(false),
-    has_malloc(false),
-    has_calloc(false),
-    has_key(false),
-    // __SZH_ADD_END__
     symex_coverage(ns)
 {
 }
@@ -235,7 +229,7 @@ void symex_bmct::no_body(const irep_idt &identifier)
 
 // __SZH_ADD_BEGIN__
 
-void symex_bmct::svcomp_get_interesting_codes()
+void symex_bmct::get_interesting_codes()
 {
   std::list<irep_idt> symbol_list;
   for(const auto &symbol_pair : outer_symbol_table.symbols)
@@ -261,24 +255,13 @@ void symex_bmct::svcomp_get_interesting_codes()
     
     std::vector<codet> codes;
     codes.push_back(to_code(symbol.value));
+
+    // std::cout << "The whole code of " << id << " is " << symbol.value.pretty() << "\n";
+
     while(!codes.empty())
     {
       auto code = codes.back();
       codes.pop_back();
-
-      std::string function_name = code.source_location().get_function().c_str();
-
-      if(function_name.find("sleep") != std::string::npos)
-        has_sleep = true;
-
-      if(function_name.find("malloc") != std::string::npos)
-        has_malloc = true;
-
-      if(function_name.find("calloc") != std::string::npos)
-        has_calloc = true;
-
-      if(function_name.find("pthread_key_create") != std::string::npos || function_name.find("pthread_setspecific") != std::string::npos || function_name.find("pthread_getspecific") != std::string::npos)
-        has_key = true;
 
       if(code.get_statement() == ID_block)
       {
@@ -299,17 +282,30 @@ void symex_bmct::svcomp_get_interesting_codes()
         assumes.push_back(to_code_assume(code));
       else if(code.get_statement() == ID_expression)
         expressions.push_back(to_code_expression(code));
-      else if(code.get_statement() == ID_assign)
-        assigns.push_back(to_code_assign(code));
       else if(code.get_statement() == ID_function_call)
         function_calls.push_back(to_code_function_call(code));
+      else if(code.get_statement() == ID_assign)
+        assigns.push_back(to_code_assign(code));
+      // __WP_ADD_BEGIN__
+      else if(code.get_statement() == ID_decl_block)
+      {
+        for(auto& element : to_code_block(code).statements())
+          codes.push_back(element);
+      }
+      else if(code.get_statement() == ID_decl)
+        decls.push_back(to_code_decl(code));
       else if(code.get_statement() == ID_ifthenelse)
+      {
         ifthenelses.push_back(to_code_ifthenelse(code));
+        codes.push_back(to_code_ifthenelse(code).then_case());
+        codes.push_back(to_code_ifthenelse(code).else_case());
+      }
+      // __WP_ADD_END__
     }
   }
 }
 
-void symex_bmct::svcomp_get_assume_upperbounds()
+void symex_bmct::get_assume_upperbounds()
 {
   for(auto& assume_code : assumes)
   {
@@ -336,7 +332,7 @@ void symex_bmct::svcomp_get_assume_upperbounds()
         int constant = string2integer(right.get_string(ID_value), 16).to_long();
         if(expr.id() == ID_lt)
           constant--;
-        svcomp_update_assume_upperbound(variable, constant);
+        update_assume_upperbound(variable, constant);
       }
       if((expr.id() == ID_ge || expr.id() == ID_gt) && right.id() == ID_symbol && left.id() == ID_constant) // c > v
       {
@@ -344,7 +340,7 @@ void symex_bmct::svcomp_get_assume_upperbounds()
         int constant = string2integer(left.get_string(ID_value), 16).to_long();
         if(expr.id() == ID_gt)
           constant--;
-        svcomp_update_assume_upperbound(variable, constant);
+        update_assume_upperbound(variable, constant);
       }
     }
   }
@@ -371,7 +367,7 @@ void symex_bmct::svcomp_get_assume_upperbounds()
         int constant = string2integer(right.get_string(ID_value), 16).to_long();
         if(expr.id() == ID_lt)
           constant--;
-        svcomp_update_assume_upperbound(variable, constant);
+        update_assume_upperbound(variable, constant);
       }
       if((expr.id() == ID_ge || expr.id() == ID_gt) && right.id() == ID_symbol && left.id() == ID_constant) // c > v
       {
@@ -379,34 +375,137 @@ void symex_bmct::svcomp_get_assume_upperbounds()
         int constant = string2integer(left.get_string(ID_value), 16).to_long();
         if(expr.id() == ID_gt)
           constant--;
-        svcomp_update_assume_upperbound(variable, constant);
+        update_assume_upperbound(variable, constant);
       }
     }
   }
 }
 
-void symex_bmct::svcomp_get_const_values()
+void symex_bmct::get_const_values()
 {
+  // __WP_ADD_BEGIN__
   for(auto& assign_code : assigns)
   {
+
     if(assign_code.lhs().id() != ID_symbol)
       continue;
-    if(assign_code.rhs().id() != ID_constant)
-      continue;
+    // if(assign_code.rhs().id() != ID_constant)
+    //   continue;
 
     auto& left = to_symbol_expr(assign_code.lhs());
-    auto& right = to_constant_expr(assign_code.rhs());
+    // if(!left.type().get_bool("#constant"))
+    //   continue;
+    exprt simp_right = simplify_expr(assign_code.rhs(), ns);
 
-    if(!left.type().get_bool("#constant"))
+    // std::cout << "left: " << left.pretty() << "\n" << "simp_right: " << simp_right.pretty() << "\n";
+    // for (auto& const_value: const_values)
+    //   std::cout << "const_value_id: " << const_value.first.pretty() << "\nconst_value: \n" << const_value.second << "\n";
+
+    if(simp_right.id() == ID_typecast)
+      simp_right = simp_right.op0();
+    if(simp_right.id() != ID_constant &&
+      !(simp_right.id() == ID_symbol && simp_right.type().get_bool("#constant"))
+      // &&!(simp_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_right)) != const_values.end())
+      )
       continue;
 
-    int right_value = string2integer(right.get_string(ID_value).c_str(), 16).to_long();
-    const_values[left] = right_value;
+    if (simp_right.id() == ID_constant)
+      const_values[left] = string2integer(simp_right.get_string(ID_value), 16).to_long();
+    else if(simp_right.id() == ID_symbol && simp_right.type().get_bool("#constant"))
+      const_values[left] = const_values[to_symbol_expr(simp_right)];
+    // else if(simp_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_right)) != const_values.end())
+    //   const_values[left] = const_values[to_symbol_expr(simp_right)];
   }
+
+  for(auto& decl_code : decls)
+  {
+    // std::cout << "decl_const_value: " << decl_code.pretty() << "\n";
+
+    if(decl_code.operands().size() == 1)
+      continue;
+    if(decl_code.op0().id() != ID_symbol)
+      continue;
+
+    auto& left = to_symbol_expr(decl_code.op0());
+    // if(!left.type().get_bool("#constant"))
+    //   continue;
+    exprt simp_right = simplify_expr(decl_code.op1(), ns);
+
+    // std::cout << "left: " << left.pretty() << "\n" << "simp_right: " << simp_right.pretty() << "\n";
+    // for (auto& const_value: const_values)
+    //   std::cout << "const_value_id: " << const_value.first.pretty() << "\nconst_value: \n" << const_value.second << "\n";
+
+
+    if(simp_right.id() == ID_typecast)
+      simp_right = simp_right.op0();
+    if(simp_right.id() != ID_constant &&
+      !(simp_right.id() == ID_symbol && simp_right.type().get_bool("#constant"))
+      // &&!(simp_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_right)) != const_values.end())
+      )
+      continue;
+
+    if (simp_right.id() == ID_constant)
+      const_values[left] = string2integer(simp_right.get_string(ID_value), 16).to_long();
+    else if(simp_right.id() == ID_symbol && simp_right.type().get_bool("#constant"))
+      const_values[left] = const_values[to_symbol_expr(simp_right)];
+    // else if(simp_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_right)) != const_values.end())
+    //   const_values[left] = const_values[to_symbol_expr(simp_right)];
+  }
+
+  for(auto& expression_code : expressions)
+  {
+    std::vector<exprt> exprs;
+    exprs.push_back(expression_code.expression());
+    while(!exprs.empty())
+    {
+      auto expr = exprs.back();
+      exprs.pop_back();
+      for(auto& operand : expr.operands())
+        exprs.push_back(operand);
+
+      if (expr.id() == ID_side_effect)
+      {
+        // std::cout << "expr_side_effect: " << expr.pretty() << "\n";
+
+        if (static_cast<const codet &>(expr).get_statement() != ID_assign) {
+          // std::cout << "static_cast<const codet &>(expr).get_statement(): " << static_cast<const codet &>(expr).get_statement() << "\n";
+          continue;
+        }
+
+        if(expr.op0().id() != ID_symbol) {
+          // std::cout << "expr.op0().id(): " << expr.op0().id() << "\n";
+          continue;
+        }
+
+        exprt simp_right = simplify_expr(expr.op1(), ns);
+        if(simp_right.id() == ID_typecast)
+          simp_right = simp_right.op0();
+        if(simp_right.id() != ID_constant &&
+          !(simp_right.id() == ID_symbol && simp_right.type().get_bool("#constant")))
+          continue;
+
+        auto& left = to_symbol_expr(expr.op0());
+        // if(!left.type().get_bool("#constant"))
+        //   continue;
+
+        if (simp_right.id() == ID_constant)
+          const_values[left] = string2integer(simp_right.get_string(ID_value), 16).to_long();
+        else if(simp_right.id() == ID_symbol && simp_right.type().get_bool("#constant"))
+          const_values[left] = const_values[to_symbol_expr(simp_right)];
+
+        // std::cout << "left: " << left.pretty() << "\n" << "right_value: " << right_value << "\n";
+
+        continue;
+      }
+    }
+  }
+  // __WP_ADD_END__
 }
 
-int symex_bmct::svcomp_for_unwind_limit_single(code_fort& code)
+int symex_bmct::for_unwind_limit_single(code_fort& code)
 {
+  // std::cout << "It's in for_unwind_limit_single.\n";
+
   int limit = 0;
   exprt op0 = code.init();
   //// __FHY_ADD_BEGIN__
@@ -425,7 +524,7 @@ int symex_bmct::svcomp_for_unwind_limit_single(code_fort& code)
   exprt op2 = code.iter();
   //// __FHY_ADD_BEGIN__
   // std::cout << "updating for unwind limit\n";
-  // std::cout << "op0 " << op0 << " op1 " << op1 << " op2 " << op2 << "\n";
+  // std::cout << "op0 " << op0.pretty() << " op1:" << op1 .pretty() << " op2:" << op2.pretty() << "\n";
   //// __FHY_ADD_END__
 
   if (op1.id() != ID_lt && op1.id() != ID_le && op1.id() != ID_gt && op1.id() != ID_ge)
@@ -434,52 +533,88 @@ int symex_bmct::svcomp_for_unwind_limit_single(code_fort& code)
   }
   std::string type_str, value_str;
 
-//	std::cout << type_str << "\n";
+  //std::cout << type_str << "\n";
 
   //auto* init_left = &op0.op0();
   //auto* init_right = &op0.op1();
   auto* cond_left = &op1.op0();
   auto* cond_right = &op1.op1();
+  exprt simp_cond_right = simplify_expr(*cond_right, ns);
   auto* iter_left = &op2.op0();
+
+  // std::cout << iter_left->pretty() << "\n==========================\n";
+  
+  int a0 = 0;
+  bool is_find_inital = false;
+  auto iter_var_name = to_symbol_expr(*iter_left).get_identifier().c_str();
+
+  // for (auto& const_value: const_values)
+  //   std::cout << "const_value_id: " << const_value.first.pretty() << "\nconst_value: \n" << const_value.second << "\n";
+
+  for (auto& const_value : const_values) {
+    if (const_value.first.get_identifier().c_str() == iter_var_name) {
+      a0 = const_value.second;
+      is_find_inital = true;
+      break;
+    }
+  }
+
+  // for (int i = assigns.size() - 1; i >= 0; --i) {
+
+  //   if(assigns[i].lhs().id() != ID_symbol)
+  //     continue;
+  //   if(assigns[i].rhs().id() != ID_constant)
+  //     continue;
+    
+  //   auto& assign_left = to_symbol_expr(assigns[i].lhs());
+
+  //   std::cout << assigns[i].lhs().pretty() << "\n";
+
+  //   if(!assign_left.type().get_bool("#constant"))
+  //     continue;
+    
+  //   if (assign_left.get_identifier().c_str() == iter_var_name) {
+  //     a0 = const_values[assign_left];
+  //     is_find_inital = true;
+  //     break;
+  //   }
+  // }
+
+  if (!is_find_inital) {
+    std::cout << "No Find Inital\n";
+    return 0;
+  }
 
   // __SZH_ADD_BEGIN__
   // if(init_right->id() == ID_typecast)
   //     init_right = &init_right->op0();
 
-  if(cond_right->id() == ID_typecast)
-      cond_right = &cond_right->op0();
+  if(simp_cond_right.id() == ID_typecast)
+      simp_cond_right = simp_cond_right.op0();
   // __SZH_ADD_END__
 
-  if (//init_left->id() == ID_symbol &&
-      cond_left->id() == ID_symbol && 
-      iter_left->id() == ID_symbol && 
-      //*init_left == *cond_left && 
-      *cond_left == *iter_left &&
-      //init_right->id() == ID_constant &&
-      (cond_right->id() == ID_constant ||
-      (cond_right->id() == ID_symbol && cond_right->type().get_bool("#constant")) ||
-      //// __FHY_ADD_BEGIN__
-      (cond_right->id() == ID_symbol && assume_upperbounds.find(to_symbol_expr(*cond_right).get_identifier().c_str()) != assume_upperbounds.end())))
-      //// __FHY_ADD_END__
-  {
-      int a0, a1;
-      // if(init_right->id() == ID_constant)
-      //   a0 = string2integer(init_right->get_string(ID_value), 16).to_long();
-      // else
-        a0 = 0;
+  // std::cout << "cond_left:" << cond_left->pretty() << "\ncond_right:" << simp_cond_right.pretty() << "\n";
 
-      //// __FHY_ADD_BEGIN__
-      if (cond_right->id() == ID_constant)
-        a1 = string2integer(cond_right->get_string(ID_value), 16).to_long();
-      else if(cond_right->id() == ID_symbol && cond_right->type().get_bool("#constant"))
-      {
-        a1 = const_values[to_symbol_expr(*cond_right)];
-      }
+  if (cond_left->id() == ID_symbol && 
+      iter_left->id() == ID_symbol && 
+      *cond_left == *iter_left &&
+      (simp_cond_right.id() == ID_constant ||
+      (simp_cond_right.id() == ID_symbol && simp_cond_right.type().get_bool("#constant")) ||
+      (simp_cond_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_cond_right)) != const_values.end())||
+      (simp_cond_right.id() == ID_symbol && assume_upperbounds.find(to_symbol_expr(simp_cond_right).get_identifier().c_str()) != assume_upperbounds.end())))
+  {
+      int a1;
+
+      if (simp_cond_right.id() == ID_constant)
+        a1 = string2integer(simp_cond_right.get_string(ID_value), 16).to_long();
+      else if(simp_cond_right.id() == ID_symbol && simp_cond_right.type().get_bool("#constant"))
+        a1 = const_values[to_symbol_expr(simp_cond_right)];
+      else if (simp_cond_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_cond_right)) != const_values.end())
+        a1 = const_values[to_symbol_expr(simp_cond_right)];
       else
-      {
-        a1 = assume_upperbounds[to_symbol_expr(*cond_right).get_identifier().c_str()];
-      }
-      //// __FHY_ADD_END__
+        a1 = assume_upperbounds[to_symbol_expr(simp_cond_right).get_identifier().c_str()];
+      
+      // std::cout << "a0:" << a0 << ";  a1:" << a1 << "\n";
 
       // for (int k = a0; k < a1; k += a2)
       if (op1.id() == ID_lt || op1.id() == ID_le) {
@@ -518,6 +653,7 @@ int symex_bmct::svcomp_for_unwind_limit_single(code_fort& code)
 
       // for (int k = a0; k > a1; k -= a2)
       if (op1.id() == ID_gt || op1.id() == ID_ge) {
+          // std::cout << format(code) << " is a decrement one\n";
           limit = a0 - a1;
           if (op1.id() == ID_gt)
               limit--;
@@ -555,130 +691,205 @@ int symex_bmct::svcomp_for_unwind_limit_single(code_fort& code)
   return limit;
 }
 
-int symex_bmct::svcomp_while_unwind_limit_single(code_whilet& code)
-{
-  //todo: very simple, it that enough?
 
+// __WP_ADD_BEGIN__
+
+int symex_bmct::while_unwind_limit_single(code_whilet& code) {
   int limit = 0;
 
-  exprt& cond = code.cond();
-  if(cond.id() == ID_lt && cond.op1().id() == ID_constant)
-    limit = string2integer(cond.op1().get_string(ID_value), 16).to_long();
-  if(cond.id() == ID_le && cond.op1().id() == ID_constant)
-    limit = string2integer(cond.op1().get_string(ID_value), 16).to_long() + 1;
+  exprt op1 = code.cond();
 
-  return limit;
+  if (op1.id() != ID_lt && op1.id() != ID_le && op1.id() != ID_gt && op1.id() != ID_ge)
+    return 0;
+
+  auto* cond_left = &op1.op0();
+  auto* cond_right = &op1.op1();
+  exprt simp_cond_right = simplify_expr(*cond_right, ns);
+
+  if (cond_left->id() != ID_symbol)
+    return 0;
+  
+  if(simp_cond_right.id() == ID_typecast)
+      simp_cond_right = simp_cond_right.op0();
+  
+  if(simp_cond_right.id() != ID_constant &&
+      !(simp_cond_right.id() == ID_symbol && simp_cond_right.type().get_bool("#constant")) &&
+      !(simp_cond_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_cond_right)) != const_values.end()) &&
+      !(simp_cond_right.id() == ID_symbol && assume_upperbounds.find(to_symbol_expr(simp_cond_right).get_identifier().c_str()) != assume_upperbounds.end()))
+      return 0;
+  
+  int a1;
+
+  if (simp_cond_right.id() == ID_constant)
+    a1 = string2integer(simp_cond_right.get_string(ID_value), 16).to_long();
+  else if(simp_cond_right.id() == ID_symbol && simp_cond_right.type().get_bool("#constant"))
+    a1 = const_values[to_symbol_expr(simp_cond_right)];
+  else if (simp_cond_right.id() == ID_symbol && const_values.find(to_symbol_expr(simp_cond_right)) != const_values.end())
+    a1 = const_values[to_symbol_expr(simp_cond_right)];
+  else
+    a1 = assume_upperbounds[to_symbol_expr(simp_cond_right).get_identifier().c_str()];
+
+  int a0 = 0;
+  bool is_find_inital = false;
+
+  if(cond_left->id() != ID_symbol)
+  {
+    std::cout << "No Find Cond-variable\n";
+    return 0;
+  }
+  auto cond_var_name = to_symbol_expr(*cond_left).get_identifier().c_str();
+
+  // for (auto& const_value: const_values)
+  //   std::cout << "const_value_id: " << const_value.first.pretty() << "\nconst_value: \n" << const_value.second << "\n";
+
+  for (auto& const_value : const_values) {
+    if (const_value.first.get_identifier().c_str() == cond_var_name) {
+      a0 = const_value.second;
+      is_find_inital = true;
+      break;
+    }
+  }
+
+  if (!is_find_inital) {
+    std::cout << "No Find Initial\n";
+    return 0;
+  }
+
+  codet& body = code.body();
+  std::vector<codet> body_codes;
+  body_codes.push_back(to_code(body));
+
+  // std::cout << "The whole code of " << id << " is " << symbol.value.pretty() << "\n";
+
+  std::vector<code_expressiont> body_expressions;
+  while(!body_codes.empty())
+  {
+    auto code = body_codes.back();
+    body_codes.pop_back();
+
+    if(code.get_statement() == ID_block)
+    {
+      for(auto& element : to_code_block(code).statements())
+        body_codes.push_back(element);
+    }
+    else if(code.get_statement() == ID_expression)
+      body_expressions.push_back(to_code_expression(code));
+  }
+
+  std::vector<exprt> exprs;
+  for(auto& expression_code : body_expressions)
+    exprs.push_back(expression_code.expression());
+  
+  while(!exprs.empty())
+  {
+    auto op2 = exprs.back();
+    exprs.pop_back();
+    for(auto& operand : op2.operands())
+      exprs.push_back(operand);
+    
+    if (op2.id() != ID_side_effect)
+      continue;
+
+    if (op2.op0().id() != ID_symbol || to_symbol_expr(op2.op0()).get_identifier().c_str() != cond_var_name)
+      continue;
+
+    // for (int k = a0; k < a1; k += a2)
+    if (op1.id() == ID_lt || op1.id() == ID_le) {
+        limit = a1 - a0;
+        if (op1.id() == ID_lt)
+            limit--;
+        if (to_side_effect_expr(op2).get_statement() == ID_postincrement ||
+            to_side_effect_expr(op2).get_statement() == ID_preincrement)
+            limit++;
+        else if (to_side_effect_expr(op2).get_statement() == ID_assign_plus) {
+            if (op2.op1().id() == ID_constant) {
+                int a2 = string2integer(op2.op1().get_string(ID_value), 16).to_long();
+                if (a2 > 1)
+                    limit = limit / a2 + 1;
+                else
+                    limit++;
+            }
+        } else if (to_side_effect_expr(op2).get_statement() == ID_assign) {
+            if (op2.op1().id() == ID_plus
+                && op2.op1().op0().id() == ID_symbol
+                && op2.op1().op0() == op2.op0() &&
+                op2.op1().op1().id() == ID_constant)
+            {
+                int a2 = string2integer( op2.op1().op1().get_string(ID_value), 16).to_long();
+                if (a2 > 1)
+                    limit = limit / a2 + 1;
+                else
+                    limit++;
+            }
+        } else
+            limit = 0;
+    }
+
+    // for (int k = a0; k > a1; k -= a2)
+    if (op1.id() == ID_gt || op1.id() == ID_ge) {
+        limit = a0 - a1;
+        if (op1.id() == ID_gt)
+            limit--;
+        if (to_side_effect_expr(op2).get_statement() == ID_postdecrement ||
+            to_side_effect_expr(op2).get_statement() == ID_predecrement)
+            limit++;
+        else if (to_side_effect_expr(op2).get_statement() == ID_assign_minus) {
+            if (op2.op1().id() == ID_constant) {
+                int a2 = string2integer(op2.op1().get_string(ID_value), 16).to_long();
+                if (a2 > 1)
+                    limit = limit / a2 + 1;
+                else
+                    limit++;
+            }
+        } else if (to_side_effect_expr(op2).get_statement() == ID_assign) {
+            if (op2.op1().id() == ID_minus
+                && op2.op1().op0().id() == ID_symbol
+                && op2.op1().op0() == op2.op0() &&
+                op2.op1().op1().id() == ID_constant)
+            {
+                int a2 = string2integer(op2.op1().op1().get_string(ID_value), 16).to_long();
+                if (a2 > 1)
+                    limit = limit / a2 + 1;
+                else
+                    limit++;
+            }
+        } else
+            limit = 0;
+      }
+
+      if (limit)
+        return limit;
+  }
+
+  return 0;
 }
 
-int symex_bmct::svcomp_for_while_unwind_limit(std::set<int>& candidate_limits)
+// __WP_ADD_END__
+#include <util/format_expr.h>
+void symex_bmct::unwind_suggest()
 {
-  int unwind_limit = 0;
+  get_interesting_codes();
+  get_assume_upperbounds();
+  get_const_values();
+
+  // __WP_ADD_BEGIN__
   for(auto& code_for : fors)
   {
-    int new_unwind_limit = svcomp_for_unwind_limit_single(code_for);
-    candidate_limits.insert(new_unwind_limit);
-    if(new_unwind_limit > unwind_limit)
-      unwind_limit = new_unwind_limit;
+    int new_unwind_limit = for_unwind_limit_single(code_for);
+    if(new_unwind_limit != 0)
+      single_unwind_limit[code_for.source_location()] = new_unwind_limit + 1;
   }
+
   for(auto& code_while : whiles)
   {
-    int new_unwind_limit = svcomp_while_unwind_limit_single(code_while);
-    candidate_limits.insert(new_unwind_limit);
-    if(new_unwind_limit > unwind_limit)
-      unwind_limit = new_unwind_limit;
+    int new_unwind_limit = while_unwind_limit_single(code_while);
+    if(new_unwind_limit != 0)
+      single_unwind_limit[code_while.source_location()] = new_unwind_limit + 1;
   }
-  return unwind_limit;
+  // __WP_ADD_END__
 }
 
-bool symex_bmct::svcomp_has_array()
-{
-  for(auto& code_assign : assigns)
-  {
-    exprt left =code_assign.lhs();
-    if (left.type().id() == ID_array)
-    {
-      std::string left_str = to_symbol_expr(left).get_identifier().c_str();
-      if(left_str.find("__CPROVER_") == std::string::npos)
-        return true;
-    }
-  }
-  return false;
-}
-
-bool symex_bmct::svcomp_has_mutex_array()
-{
-  for(auto& code_assign : assigns)
-  {
-    exprt left =code_assign.lhs();
-    if (left.type().id() == ID_array)
-    {
-      if(!left.type().has_subtype())
-        continue;
-
-      // std::string left_str = left.type().get_sub()[0].pretty();
-      // std::cout << "find subtype " << left_str << "\n";
-      // if(left_str.find("__pthread_mutex_s") != std::string::npos)
-      // {
-      //   std::cout << "find mutex array " << left.pretty() << "\n";
-      //   return true;
-      // }
-    }
-  }
-  return false;
-}
-
-int symex_bmct::svcomp_unwind_strategy()
-{
-  svcomp_get_interesting_codes();
-  svcomp_get_assume_upperbounds();
-  svcomp_get_const_values();
-
-  std::set<int> candidate_limits;
-  int loop_unwind_limit = svcomp_for_while_unwind_limit(candidate_limits);
-  bool has_array = svcomp_has_array();
-  bool has_mutex_array = svcomp_has_mutex_array();
-
-  //experimental, for 09-regions_20/23/26_*.i
-  // if(candidate_limits.find(10) != candidate_limits.end() && candidate_limits.find(30) != candidate_limits.end())
-  // {
-  //   std::cout << "too many nested unwind!\n";
-  //   std::exit(1);
-  // }
-
-  int max_limit = 2;
-  if(has_array && loop_unwind_limit > 0 && loop_unwind_limit < 30)
-  {
-    std::cout << "set limit type 1\n";
-    max_limit = loop_unwind_limit + 1;
-  }
-  // else if(has_nondet_loop_cond(goto_functions.loop_cond_ids, goto_functions.nondet_ids, symex_pre.assignments))
-  //   max_limit = 2;
-  else if (has_array)
-  {
-    std::cout << "set limit type 2\n";
-    max_limit = 2;
-  }
-  else if (loop_unwind_limit > 0)
-  {
-    std::cout << "set limit type 3\n";
-    max_limit = loop_unwind_limit + 1;
-  }
-
-  if(max_limit >= 9999 || loop_unwind_limit >= 9999) // szh: most goblint-regression/28_race-reach cases unwind 10000, we give up them
-  {
-    std::cout << "too many unwind!\n";
-    std::exit(1);
-  }
-
-  svcomp_special(max_limit, loop_unwind_limit);
-
-  if(enable_reach)
-    svcomp_exit(max_limit, loop_unwind_limit, has_mutex_array);
-
-  return max_limit;
-}
-
-void symex_bmct::svcomp_update_assume_upperbound(std::string& id, int value)
+void symex_bmct::update_assume_upperbound(std::string& id, int value)
 {
   if(assume_upperbounds.find(id) != assume_upperbounds.end())
   {
@@ -690,45 +901,33 @@ void symex_bmct::svcomp_update_assume_upperbound(std::string& id, int value)
   std::cout << id << "'s upper bound is " << value << "\n";
 }
 
-void symex_bmct::svcomp_special(int& max_limit, int for_unwind_limit)
+void symex_bmct::show_unwind_suggest(const goto_functionst &goto_functions)
 {
-  // For 40_barrier_vf_false-unreach-call.i
-  // for(auto& code_ifthenelse : ifthenelses)
-  // {
-  //   const exprt& cond = code_ifthenelse.cond();
-  //   if (cond.id() == ID_equal && cond.op0().id() == ID_symbol && cond.op1().id() == ID_typecast && cond.op1().op0().id() == ID_constant)
-  //   {
-  //     std::string str = to_symbol_expr(cond.op0()).get_identifier().c_str();
-  //     if(str.find("count") != std::string::npos)
-  //     {
-  //       int limit = string2integer(cond.op1().op0().get_string(ID_value), 16).to_long();
-  //       max_limit = limit + 1;
-  //     }
-  //   }
-  // }
-
-  // For pthread/indexer.i
-  // if(max_limit == 2 && for_unwind_limit == 128)
-  // {
-  //   std::cout << "Unsupported function!\n";
-  //   std::exit(1);
-  // }
-}
-
-void symex_bmct::svcomp_exit(int max_limit, int for_unwind_limit, bool has_mutex_array)
-{
-  if(has_sleep || has_key)
+  for(const auto& f : goto_functions.function_map)
   {
-    std::cout << "Unsupported library function!\n";
-    std::exit(1);
-  }
+    auto& function_id = f.first;
+    auto& goto_program = f.second.body;
+    for(const auto& instruction : goto_program.instructions)
+    {
+      if(instruction.is_backwards_goto())
+      {
+        std::cout << "Loop "
+                  << goto_programt::loop_id(function_id, instruction) << ":"
+                  << "\n";
 
-  for(auto& assign_code : assigns)
-  {
-    auto& left = assign_code.lhs();
-    if(left.id() != ID_symbol)
-      continue;
-    std::string left_str = to_symbol_expr(left).get_identifier().c_str();
+        std::cout << "  " << instruction.source_location() << "\n";
+
+        auto& original_code = instruction.code();
+        if(single_unwind_limit.find(original_code.source_location()) != single_unwind_limit.end())
+        {
+          int unwind_limit = single_unwind_limit[original_code.source_location()];
+          std::cout << "Suggested unwind limit: " << unwind_limit << "\n";
+        }
+        else
+          std::cout << "No suggested unwind limit\n";
+        // __SZH_ADD_END__
+      }
+    }
   }
 }
 

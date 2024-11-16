@@ -976,7 +976,7 @@ void goto_convertt::convert_for(
   // y: goto u;
   goto_programt tmp_y;
   goto_programt::targett y = tmp_y.add(
-    goto_programt::make_goto(u, true_exprt(), code.source_location()));
+    goto_programt::make_goto(u, true_exprt(), code, code.source_location()));
 
   // assigns clause, loop invariant and decreases clause
   convert_loop_contracts(code, y, mode);
@@ -1026,7 +1026,7 @@ void goto_convertt::convert_while(
   // y: goto v;
   goto_programt tmp_y;
   goto_programt::targett y = tmp_y.add(
-    goto_programt::make_goto(v, true_exprt(), code.source_location()));
+    goto_programt::make_goto(v, true_exprt(), code, code.source_location()));
 
   // set the targets
   targets.set_break(z);
@@ -1079,7 +1079,7 @@ void goto_convertt::convert_dowhile(
   // do the y label
   goto_programt tmp_y;
   goto_programt::targett y =
-    tmp_y.add(goto_programt::make_incomplete_goto(cond, condition_location));
+    tmp_y.add(goto_programt::make_incomplete_goto(cond, code, condition_location));
 
   // do the z label
   goto_programt tmp_z;

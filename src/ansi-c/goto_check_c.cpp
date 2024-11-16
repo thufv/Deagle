@@ -44,6 +44,10 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <algorithm>
 #include <optional>
 
+#include <util/format_type.h>
+#include <util/format_expr.h>
+#include <iostream>
+
 class goto_check_ct
 {
 public:
@@ -327,6 +331,19 @@ protected:
   /// \returns a pair (name, status) if the match succeeds
   /// and the name is known, nothing otherwise.
   named_check_statust match_named_check(const irep_idt &named_check) const;
+
+  // __SZH_ADD_BEGIN__
+  std::set<irep_idt> useful_component_names;
+  void get_component_names(const exprt& expr);
+
+  std::map<irep_idt, typet> struct_tag_to_struct;
+  typet leak_expr_type;
+
+  void track_expr_rec(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth);
+  void track_pointer(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth);
+  void track_struct(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth);
+  void track_array(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth);
+  // __SZH_ADD_END__
 };
 
 /// Allows to:
@@ -906,10 +923,6 @@ void goto_check_ct::integer_overflow_check(
   }
   else if(expr.id() == ID_shl)
   {
-    // __SZH_ADD_BEGIN__
-    return; // For SV-COMP: SV-COMP's concurrency no-overflow seems not to consider << operator
-    // __SZH_ADD_END__
-
     if(type.id() == ID_signedbv)
     {
       const auto &shl_expr = to_shl_expr(expr);
@@ -1301,8 +1314,11 @@ void goto_check_ct::pointer_rel_check(
   const binary_exprt &expr,
   const guardt &guard)
 {
-  if(!enable_pointer_check)
-    return;
+  // if(!enable_pointer_check)
+  //   return;
+
+  // szh: seems useless in SV-COMP memsafety (at least in SV-COMP 25), disabled.
+  return;
 
   if(
     expr.op0().type().id() == ID_pointer &&
@@ -2087,6 +2103,37 @@ void goto_check_ct::goto_check(
 
   goto_programt &goto_program = goto_function.body;
 
+  // __SZH_ADD_BEGIN__
+  static std::vector<exprt> tids;
+  // __SZH_ADD_END__
+
+  // __SZH_ADD_BEGIN__
+  Forall_goto_program_instructions(it, goto_program)
+  {
+    goto_programt::instructiont &i = *it;
+    if(i.has_condition())
+      get_component_names(i.condition());
+    if(i.is_other())
+      get_component_names(i.get_other());
+    if(i.is_assign())
+    {
+      get_component_names(i.assign_lhs());
+      get_component_names(i.assign_rhs());
+    }
+    if(i.is_function_call())
+    {
+      get_component_names(i.call_lhs());
+      get_component_names(i.call_function());
+      for(const auto &arg : i.call_arguments())
+        get_component_names(arg);
+    }
+    else if(i.is_set_return_value())
+      get_component_names(i.return_value());
+  }
+  // for(auto component_name : useful_component_names)
+  //   std::cout << "Useful component: " << component_name << "\n";
+  // __SZH_ADD_END__
+
   Forall_goto_program_instructions(it, goto_program)
   {
     current_target = it;
@@ -2205,6 +2252,17 @@ void goto_check_ct::goto_check(
       for(const auto &arg : i.call_arguments())
         check(arg);
 
+      auto function_str = id2string(to_symbol_expr(i.call_function()).get_identifier());
+      if(function_str == "pthread_create")
+      {
+        auto arg0 = i.call_arguments()[0];
+        if(arg0.id() == ID_address_of)
+        {
+          auto tid = to_address_of_expr(arg0).object();
+          tids.push_back(tid);
+        }
+      }
+
       // the call might invalidate any assertion
       assertions.clear();
     }
@@ -2250,6 +2308,34 @@ void goto_check_ct::goto_check(
       {
         const symbolt &leak = ns.lookup(CPROVER_PREFIX "memory_leak");
         const symbol_exprt leak_expr = leak.symbol_expr();
+        leak_expr_type = leak_expr.type();
+
+        // __SZH_ADD_BEGIN__
+        // find all trackable pointers
+        for(auto symbol_pair : ns.get_symbol_table())
+        {
+          auto& id = symbol_pair.first;
+          std::string id_str = id.c_str();
+          auto& symbol = symbol_pair.second;
+
+          if(id_str.find("tag-") != id_str.npos && symbol.type.id() == ID_struct)
+          {
+            struct_tag_to_struct[id] = symbol.type;
+            // std::cout << "struct map has " << id << " " << format(symbol.type) << "\n";
+          }
+        }
+
+        std::vector<exprt> tracked;
+        for(auto symbol_pair : ns.get_symbol_table())
+        {
+          auto& symbol = symbol_pair.second;
+          track_expr_rec(tracked, symbol.symbol_expr(), symbol.type, 0);
+        }
+
+        // for(auto expr : tracked)
+        //   std::cout << "Tracked pointer: " << format(expr) << "\n";
+
+        // __SZH_ADD_END__
 
         // add self-assignment to get helpful counterexample output
         new_code.add(goto_programt::make_assignment(leak_expr, leak_expr));
@@ -2257,15 +2343,43 @@ void goto_check_ct::goto_check(
         source_locationt source_location;
         source_location.set_function(function_identifier);
 
-        equal_exprt eq(
+        // __SZH_ADD_BEGIN__
+
+        equal_exprt eq_null(
           leak_expr, null_pointer_exprt(to_pointer_type(leak.type)));
+
+        exprt::operandst eq{eq_null};
+        for(auto& pointer : tracked)
+          eq.push_back(equal_exprt(leak_expr, pointer));
+
+        or_exprt eq_all(eq);
+
+        const symbolt &threads_exited = ns.lookup(CPROVER_PREFIX "threads_exited");
+        const symbol_exprt threads_exited_expr = threads_exited.symbol_expr();
+
+        std::vector<exprt> all_exited_vec;
+        for(auto tid : tids)
+        {
+          typecast_exprt casted_tid(tid, signed_int_type());
+          index_exprt exited(threads_exited_expr, casted_tid);
+          all_exited_vec.push_back(exited);
+        }
+        auto all_exited = conjunction(all_exited_vec);
+
+        auto implied_eq_all = implies_exprt(all_exited, eq_all);
+
+        new_code.add(goto_programt::make_atomic_begin());
+
         add_guarded_property(
-          eq,
+          implied_eq_all,
           "dynamically allocated memory never freed",
           "memory-leak",
           source_location,
-          eq,
+          implied_eq_all,
           identity);
+
+          new_code.add(goto_programt::make_atomic_end());
+        // __SZH_ADD_END__
       }
     }
 
@@ -2366,20 +2480,18 @@ goto_check_ct::get_pointer_points_to_valid_memory_conditions(
       "pointer outside dynamic object bounds"));
   }
 
-  // __SZH_REMOVE_BEGIN__ : SV-COMP memsafety does not seem to care about this
-  // if(unknown || flags.is_dynamic_local() || flags.is_static_lifetime())
-  // {
-  //   const or_exprt object_bounds_violation(
-  //     object_lower_bound(address, nil_exprt()),
-  //     object_upper_bound(address, size));
+  if(unknown || flags.is_dynamic_local() || flags.is_static_lifetime())
+  {
+    const or_exprt object_bounds_violation(
+      object_lower_bound(address, nil_exprt()),
+      object_upper_bound(address, size));
 
-  //   conditions.push_back(conditiont(
-  //     or_exprt(
-  //       in_bounds_of_some_explicit_allocation,
-  //       not_exprt(object_bounds_violation)),
-  //     "pointer outside object bounds"));
-  // }
-  // __SZH_REMOVE_END__
+    conditions.push_back(conditiont(
+      or_exprt(
+        in_bounds_of_some_explicit_allocation,
+        not_exprt(object_bounds_violation)),
+      "pointer outside object bounds"));
+  }
 
   if(unknown || flags.is_integer_address())
   {
@@ -2515,3 +2627,100 @@ goto_check_ct::match_named_check(const irep_idt &named_check) const
   // success
   return std::pair<irep_idt, check_statust>{name, status};
 }
+
+// __SZH_ADD_BEGIN__
+
+void goto_check_ct::get_component_names(const exprt& expr)
+{
+  if(expr.id() == ID_member)
+  {
+    auto component_name = to_member_expr(expr).get_component_name();
+    useful_component_names.insert(component_name);
+  }
+  for(const auto& op : expr.operands())
+    get_component_names(op);
+}
+
+void goto_check_ct::track_expr_rec(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth)
+{
+  if(depth > 10) //todo: a better threshold?
+    return;
+
+  if(expr.id() == ID_symbol)
+  {
+    std::string str = to_symbol_expr(expr).get_identifier().c_str();
+    if(str.find("__CPROVER") != str.npos)
+      return;
+    if(str.find("malloc_value") != str.npos)
+      return;
+    if(str.find("malloc_res") != str.npos)
+      return;
+    if(str.find("return_value_malloc") != str.npos)
+      return;
+    if(str.find("pthread_") != str.npos)
+      return;
+    if(str.find("::") != str.npos) // non-global variables
+      return;
+  }
+
+  // std::cout << "tracking " << format(expr) << " whose type is " << format(type) << "\n";
+
+  if(type.id() == ID_pointer)
+    track_pointer(tracked, expr, type, depth);
+  else if(type.id() == ID_struct_tag)
+    track_struct(tracked, expr, type, depth);
+  else if(type.id() == ID_array)
+    track_array(tracked, expr, type, depth);
+}
+
+
+
+void goto_check_ct::track_pointer(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth)
+{
+  // the entity expr points to should be recursively considered
+  auto base_type = to_pointer_type(type).base_type();
+  track_expr_rec(tracked, dereference_exprt(expr, base_type), base_type, depth + 1);
+
+  tracked.push_back(typecast_exprt(expr, leak_expr_type));
+}
+
+void goto_check_ct::track_struct(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth)
+{
+  // each member should be recursively considered
+  auto struct_tag = to_struct_tag_type(type).get_identifier();
+  if(struct_tag_to_struct.find(struct_tag) == struct_tag_to_struct.end())
+    return;
+
+  auto struct_type = to_struct_type(struct_tag_to_struct[struct_tag]);
+  for(auto& component : struct_type.components())
+  {
+    auto component_name = component.get_name();
+    if(useful_component_names.find(component_name) == useful_component_names.end())
+      continue;
+
+    auto component_type = component.type();
+    track_expr_rec(tracked, member_exprt(expr, component), component_type, depth + 1);
+  }
+}
+
+void goto_check_ct::track_array(std::vector<exprt>& tracked, const exprt& expr, const typet& type, int depth)
+{
+  auto size = to_array_type(type).size();
+  if(size.id() != ID_constant)
+  {
+    std::cout << "Warning: track an array: " << format(expr) << " whose type is " << format(type) << " and whose size is " << format(size) << " (non-constant)\n";
+    return;
+  }
+
+  typet member_type = to_array_type(type).subtype();
+
+  int size_int = std::stoi(to_constant_expr(size).get_value().c_str(), 0, 16);
+
+  for(int i = 0; i < size_int; i++)
+  {
+    irep_idt i_id(std::to_string(i));
+    constant_exprt index(i_id, signed_int_type());
+    track_expr_rec(tracked, index_exprt(expr, index), member_type, depth + 1);
+  }
+}
+// __SZH_ADD_END__

@@ -24,7 +24,6 @@ class symex_nondet_generatort
 public:
   nondet_symbol_exprt operator()(typet type, source_locationt location);
 
-private:
   std::size_t nondet_count = 0;
 };
 
@@ -62,14 +61,6 @@ public:
     PRECONDITION(!empty());
     return private_peek();
   }
-
-  /// \brief Clear all saved paths
-  ///
-  /// This is typically used because we want to terminate symbolic execution
-  /// early. It doesn't matter too much in terms of memory usage since CBMC
-  /// typically exits soon after we do that, however it's nice to have tests
-  /// that check that the worklist is always empty when symex finishes.
-  virtual void clear() = 0;
 
   /// \brief Add a path to resume to the storage
   virtual void push(const patht &) = 0;
@@ -160,6 +151,21 @@ private:
   /// Storage used by \ref get_unique_index.
   name_index_mapt l1_indices;
   name_index_mapt l2_indices;
+
+public:
+
+  /// \brief Clear all saved paths
+  ///
+  /// This is typically used because we want to terminate symbolic execution
+  /// early. It doesn't matter too much in terms of memory usage since CBMC
+  /// typically exits soon after we do that, however it's nice to have tests
+  /// that check that the worklist is always empty when symex finishes.
+  /// SZH: also clear l1_indices and l2_indices
+  virtual void clear() {
+    l1_indices.clear();
+    l2_indices.clear();
+    build_symex_nondet.nondet_count = 0;
+  }
 };
 
 /// \brief LIFO save queue: depth-first search, try to finish paths

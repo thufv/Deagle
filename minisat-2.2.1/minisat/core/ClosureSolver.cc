@@ -351,6 +351,9 @@ lbool ClosureSolver::solve_()
         model.growTo(nVars());
         for (int i = 0; i < nVars(); i++) model[i] = value(i);
 
+        if(!graph.co_complete_check())
+            status = l_Undef;
+
         graph.final_check();
         graph.show_rf();
         graph.show_model();

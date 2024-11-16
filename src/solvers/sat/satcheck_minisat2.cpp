@@ -400,7 +400,7 @@ void deagle_solvert::init()
   solver->init();
 }
 
-void memory_model_solvert::save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_label_tablet& _oc_label_table, oc_location_mapt& _oc_location_map, std::map<std::string, int>& _oc_result_order, cat_modulet& _cat_module, std::map<std::string, unsigned>& _oc_thread_map)
+void memory_model_solvert::save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_label_tablet& _oc_label_table, cat_modulet& _cat_module)
 {
-  solver->save_raw_graph(_oc_edge_table, _oc_label_table, _oc_location_map, _oc_result_order, _cat_module, _oc_thread_map);
+  solver->save_raw_graph(_oc_edge_table, _oc_label_table, _cat_module);
 }

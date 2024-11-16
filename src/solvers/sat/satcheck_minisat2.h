@@ -121,7 +121,7 @@ class memory_model_solvert:
 public:
   using satcheck_minisat2_baset<Minisat::MemoryModelSolver>::satcheck_minisat2_baset;
   const std::string solver_text() override;
-  void save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_label_tablet& _oc_label_table, oc_location_mapt& _oc_location_map, std::map<std::string, int>& _oc_result_order, cat_modulet& _cat_module, std::map<std::string, unsigned>& _oc_thread_map);
+  void save_raw_graph(oc_edge_tablet& _oc_edge_table, oc_label_tablet& _oc_label_table, cat_modulet& _cat_module);
 };
 // __SZH_ADD_END__
 

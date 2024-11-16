@@ -217,8 +217,37 @@ exprt value_set_dereferencet::handle_dereference_base_case(
   const typet &type = to_pointer_type(pointer.type()).base_type();
 
   // collect objects the pointer may point to
-  const std::vector<exprt> points_to_set =
-    dereference_callback.get_value_set(pointer);
+  std::vector<exprt> points_to_set;
+
+  if(overall_value_set)
+  {
+    points_to_set = overall_value_set->get_value_set(pointer, ns);
+
+    bool has_unknown = false;
+
+    // remove NULL pointers (they will cause incorrect false)
+    for(auto it = points_to_set.begin(); it != points_to_set.end();)
+    {
+      if(it->id() == ID_unknown)
+        has_unknown = true;
+      if(it->id() == ID_object_descriptor)
+      {
+        auto object = to_object_descriptor_expr(*it).object();
+        if(object.id() == ID_null_object)
+        {
+          it = points_to_set.erase(it);
+          continue;
+        }
+      }
+      it++;
+    }
+
+    // if points_to_set contains "unknown", it should contain all dynamic objects
+    if(has_unknown)
+      replace_unknown(points_to_set);
+  }
+  else
+    points_to_set = dereference_callback.get_value_set(pointer);
 
   // get the values of these
   const std::vector<exprt> retained_values =
@@ -778,4 +807,30 @@ bool value_set_dereferencet::memory_model_bytes(
   value=result;
 
   return true;
+}
+
+void value_set_dereferencet::replace_unknown(std::vector<exprt>& points_to_set)
+{
+  std::vector<exprt> new_set;
+  for(auto& e : points_to_set)
+  {
+    if(e.id() == ID_unknown)
+      continue;
+    else if(e.id() == ID_object_descriptor && e.op0().id() == ID_symbol)
+    {
+      auto str = id2string(to_symbol_expr(e.op0()).get_identifier());
+      if(str.find("dynamic_object") != str.npos)
+        continue;
+    }
+    new_set.push_back(e);
+  }
+
+  for(auto& dynamic_object : dynamic_objects)
+  {
+    object_descriptor_exprt dynamic_descriptor;
+    dynamic_descriptor.build(dynamic_object, ns);
+    new_set.push_back(dynamic_descriptor);
+  }
+
+  points_to_set = new_set;
 }

@@ -97,8 +97,8 @@ void *calloc(__CPROVER_size_t nmemb, __CPROVER_size_t size)
 {
 __CPROVER_HIDE:;
   __CPROVER_size_t alloc_size;
-  if(__builtin_mul_overflow(nmemb, size, &alloc_size))
-    return (void *)0;
+  // if(__builtin_mul_overflow(nmemb, size, &alloc_size))
+  //   return (void *)0;
 
   if(__CPROVER_malloc_failure_mode == __CPROVER_malloc_failure_mode_return_null)
   {

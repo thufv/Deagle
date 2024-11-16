@@ -1,6 +1,5 @@
-let fr = rf^-1 ; co
 let hb = po | rf | co | fr
 let hbplus = hb+
 irreflexive hbplus
-let hbe = ext (hbplus)
+let hbe = ext & hbplus
 empty rmw & (hbe ; hbe)

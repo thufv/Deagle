@@ -36,6 +36,8 @@ Author: Daniel Kroening, Peter Schrammel
 #include "goto_symex_property_decider.h"
 #include "symex_bmc.h"
 
+#include "util/std_code.h"
+
 void message_building_error_trace(messaget &log)
 {
   log.status() << "Building error trace" << messaget::eom;
@@ -183,18 +185,19 @@ get_memory_model(const optionst &options, const namespacet &ns)
   else // is this a .cat file?
   {
     cat_parsing_drivert cat_parser;
+    cat_parser.mm_flag = options.get_bool_option("mm-flag");
+
     if(cat_parser.parse(mm))
     {
       std::cout << "cat parsing failed: " << mm << "\n";
       std::exit(1);
     }
-    cat_parser.get_module().known_real_spread();
-    cat_parser.get_module().calc_advance();
-    cat_parser.get_module().simplify_graph();
-    cat_parser.get_module().remove_dummy();
-    //cat_parser.get_module().guard_extension();
+    cat_parser.get_module().replace_plus();
+    cat_parser.get_module().remove_unnecessary();
 
-    return util_make_unique<memory_model_generalt>(ns, cat_parser.get_module());
+    bool strict_guard = options.get_bool_option("mm-strict-guard");
+
+    return util_make_unique<memory_model_generalt>(ns, cat_parser.get_module(), strict_guard);
   }
 // __SZH_ADD_END__
 }
@@ -214,18 +217,9 @@ void setup_symex(
 
   symex.last_source_location.make_nil();
 
-  // __SZH_ADD_BEGIN__
-  if(options.get_option("unwind") != "")
-    symex.unwindset.parse_unwind(options.get_option("unwind"));
-  else if(options.get_list_option("unwindset").size() != 0u)
-    symex.unwindset.parse_unwindset(options.get_list_option("unwindset"), ui_message_handler);
-  else if(options.get_bool_option("svcomp"))
-  {
-    std::string new_unwind = std::to_string(symex.svcomp_unwind_strategy());
-    symex.unwindset.parse_unwind(new_unwind);
-    std::cout << "Use SV-COMP unwinding strategy: " << new_unwind << "\n";
-  }
-  // __SZH_ADD_END__
+  symex.unwindset.parse_unwind(options.get_option("unwind"));
+  symex.unwindset.parse_unwindset(
+    options.get_list_option("unwindset"), ui_message_handler);
 }
 
 void slice(
@@ -432,9 +426,9 @@ std::chrono::duration<double> prepare_property_decider(
     oc_edge_tablet oc_edge_table;
     for(auto& edge: equation.oc_edges)
     {
-      literalt guard = decision_procedure.convert(edge.guard_expr);
-      Minisat::Lit guard_final = Minisat::mkLit(guard.var_no(), guard.sign());
-      oc_edge_table.push_back(std::make_pair(std::make_pair(edge.e1_str, edge.e2_str), std::make_pair(guard_final, edge.kind)));
+      literalt expr = decision_procedure.convert(edge.expr);
+      Minisat::Lit expr_final = Minisat::mkLit(expr.var_no(), expr.sign());
+      oc_edge_table.push_back(std::make_pair(std::make_pair(edge.e1_str, edge.e2_str), std::make_pair(expr_final, edge.kind)));
 
       //std::cout << edge.e1_str << " " << edge.e2_str << ": " << edge.kind << "\n";
     }
@@ -442,29 +436,17 @@ std::chrono::duration<double> prepare_property_decider(
     oc_label_tablet oc_label_table;
     for(auto& label: equation.oc_labels)
     {
-      Minisat::Lit guard_final = Minisat::toLit(-1);
-      oc_label_table.push_back(std::make_pair(label.e_str, std::make_pair(guard_final, label.label)));
+      literalt expr = decision_procedure.convert(label.expr);
+      Minisat::Lit expr_final = Minisat::mkLit(expr.var_no(), expr.sign());
+      oc_label_table.push_back(std::make_pair(label.e_str, std::make_pair(expr_final, label.label)));
 
       //std::cout << label.e_str << ": " << label.label << "\n";
     }
 
-    oc_location_mapt oc_location_map;
-    for(auto& e_it: equation.oc_guard_map)
-    {
-        std::string name = id2string(e_it->ssa_lhs.get_identifier());
-        int location = std::atoi(e_it->source.pc->source_location().get_line().c_str());
-        literalt guard = decision_procedure.convert(e_it->guard);
-        Minisat::Lit guard_final = Minisat::mkLit(guard.var_no(), guard.sign());
-        oc_label_table.push_back(std::make_pair(name, std::make_pair(guard_final, "guard")));
-        oc_location_map.insert(std::make_pair(name, location));
-
-        //std::cout << name << ": guard\n";
-    }
-
-    memory_model_solver.save_raw_graph(oc_edge_table, oc_label_table, oc_location_map, equation.oc_result_order, equation.cat, equation.oc_thread_map);
+    memory_model_solver.save_raw_graph(oc_edge_table, oc_label_table, equation.cat);
     //deagle_solver.init();
   }
-  else if(!equation.oc_edges.empty()) // temporary, since options are unavailable here
+  else
   {
     auto& deagle_solver = *(deagle_solvert*)(&(property_decider.get_solver()->prop()));
     auto& decision_procedure = *(prop_conv_solvert*)(&(property_decider.get_decision_procedure()));
@@ -476,9 +458,9 @@ std::chrono::duration<double> prepare_property_decider(
 
     for(auto& edge: equation.oc_edges)
     {
-      literalt guard = decision_procedure.convert(edge.guard_expr);
-      Minisat::Lit guard_final = Minisat::mkLit(guard.var_no(), guard.sign());
-      oc_edge_table.push_back(std::make_pair(std::make_pair(edge.e1_str, edge.e2_str), std::make_pair(guard_final, edge.kind)));
+      literalt expr = decision_procedure.convert(edge.expr);
+      Minisat::Lit expr_final = Minisat::mkLit(expr.var_no(), expr.sign());
+      oc_edge_table.push_back(std::make_pair(std::make_pair(edge.e1_str, edge.e2_str), std::make_pair(expr_final, edge.kind)));
 
       //std::cout << edge.e1_str << " " << edge.e2_str << ": " << edge.kind << "\n";
     }

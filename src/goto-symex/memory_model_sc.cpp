@@ -35,6 +35,10 @@ operator()(symex_target_equationt &equation, message_handlert &message_handler)
 
   if(!use_deagle)
     from_read(equation);
+
+  // std::cout << "see the equation!\n";
+  // equation.output(std::cout);
+  // std::cout << "finish seeing!\n";
 }
 
 exprt memory_model_sct::before(event_it e1, event_it e2)
@@ -148,8 +152,9 @@ void memory_model_sct::program_order(
   if(use_deagle)
     build_guard_map_write(equation);
 
-  std::set<std::pair<std::string, std::string>> array_update_set;
-  equation.build_array_update_set(array_update_set);
+  std::set<std::pair<std::string, std::string>> apo_set;
+  equation.build_array_update_set(apo_set);
+  equation.build_same_pointer_set(apo_set);
 
   // iterate over threads
 
@@ -180,7 +185,7 @@ void memory_model_sct::program_order(
       }
 
       if(use_deagle)
-        add_oc_edge(equation, previous, *e_it, is_apo(array_update_set, previous, *e_it) ? "apo" : "po", true_exprt());
+        add_oc_edge(equation, previous, *e_it, is_apo(apo_set, previous, *e_it) ? "apo" : "po", true_exprt());
       else
         add_constraint(equation, before(previous, *e_it), "po", (*e_it)->source);
 

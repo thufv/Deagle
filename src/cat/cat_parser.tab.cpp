@@ -228,17 +228,13 @@ namespace yy {
   {
     switch (that.type_get ())
     {
-      case 42: // constraint
-        value.YY_MOVE_OR_COPY< cat_axiomt > (YY_MOVE (that.value));
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.YY_MOVE_OR_COPY< cat_relationt > (YY_MOVE (that.value));
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.YY_MOVE_OR_COPY< std::string > (YY_MOVE (that.value));
         break;
 
@@ -257,17 +253,13 @@ namespace yy {
   {
     switch (that.type_get ())
     {
-      case 42: // constraint
-        value.move< cat_axiomt > (YY_MOVE (that.value));
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.move< cat_relationt > (YY_MOVE (that.value));
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.move< std::string > (YY_MOVE (that.value));
         break;
 
@@ -286,17 +278,13 @@ namespace yy {
     state = that.state;
     switch (that.type_get ())
     {
-      case 42: // constraint
-        value.copy< cat_axiomt > (that.value);
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.copy< cat_relationt > (that.value);
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.copy< std::string > (that.value);
         break;
 
@@ -314,17 +302,13 @@ namespace yy {
     state = that.state;
     switch (that.type_get ())
     {
-      case 42: // constraint
-        value.move< cat_axiomt > (that.value);
-        break;
-
-      case 41: // rel
+      case 43: // rel
         value.move< cat_relationt > (that.value);
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         value.move< std::string > (that.value);
         break;
 
@@ -578,17 +562,13 @@ namespace yy {
          when using variants.  */
       switch (yyr1_[yyn])
     {
-      case 42: // constraint
-        yylhs.value.emplace< cat_axiomt > ();
-        break;
-
-      case 41: // rel
+      case 43: // rel
         yylhs.value.emplace< cat_relationt > ();
         break;
 
-      case 37: // ID
-      case 38: // QPATH
-      case 40: // qualified_ID
+      case 39: // ID
+      case 40: // QPATH
+      case 42: // qualified_ID
         yylhs.value.emplace< std::string > ();
         break;
 
@@ -613,187 +593,205 @@ namespace yy {
           switch (yyn)
             {
   case 2:
-#line 111 "cat_parser.ypp"
+#line 112 "cat_parser.ypp"
                                 { }
-#line 619 "cat_parser.tab.cpp"
+#line 599 "cat_parser.tab.cpp"
     break;
 
   case 3:
-#line 112 "cat_parser.ypp"
+#line 113 "cat_parser.ypp"
                                 { }
-#line 625 "cat_parser.tab.cpp"
+#line 605 "cat_parser.tab.cpp"
     break;
 
   case 4:
-#line 115 "cat_parser.ypp"
+#line 116 "cat_parser.ypp"
                                            { }
-#line 631 "cat_parser.tab.cpp"
+#line 611 "cat_parser.tab.cpp"
     break;
 
   case 5:
-#line 116 "cat_parser.ypp"
-                                           { drv.registerID(yystack_[2].value.as < std::string > (), std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 637 "cat_parser.tab.cpp"
+#line 117 "cat_parser.ypp"
+          {}
+#line 617 "cat_parser.tab.cpp"
     break;
 
   case 6:
-#line 126 "cat_parser.ypp"
-                                           { drv.addConstraint(std::move(yystack_[0].value.as < cat_axiomt > ()), "", yylhs.location); }
-#line 643 "cat_parser.tab.cpp"
+#line 118 "cat_parser.ypp"
+                                           { drv.rename_relation(std::move(yystack_[0].value.as < cat_relationt > ()), yystack_[2].value.as < std::string > (), false); }
+#line 623 "cat_parser.tab.cpp"
     break;
 
   case 7:
-#line 129 "cat_parser.ypp"
-                        { yylhs.value.as < std::string > () = yystack_[0].value.as < std::string > (); }
-#line 649 "cat_parser.tab.cpp"
+#line 119 "cat_parser.ypp"
+                                                 { drv.rename_relation(std::move(yystack_[0].value.as < cat_relationt > ()), yystack_[2].value.as < std::string > (), true); }
+#line 629 "cat_parser.tab.cpp"
     break;
 
   case 8:
-#line 130 "cat_parser.ypp"
-                        { yylhs.value.as < std::string > () = yystack_[2].value.as < std::string > () + "::" + yystack_[0].value.as < std::string > (); }
-#line 655 "cat_parser.tab.cpp"
-    break;
-
-  case 9:
-#line 133 "cat_parser.ypp"
-                                        { yylhs.value.as < cat_axiomt > () = cat_axiomt(rel_axiomt::EMPTY, std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 661 "cat_parser.tab.cpp"
+#line 120 "cat_parser.ypp"
+                                     { drv.make_dummy_relation(std::move(yystack_[2].value.as < std::string > ())); }
+#line 635 "cat_parser.tab.cpp"
     break;
 
   case 10:
-#line 134 "cat_parser.ypp"
-                                { yylhs.value.as < cat_axiomt > () = cat_axiomt(rel_axiomt::ACYCLIC, std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 667 "cat_parser.tab.cpp"
+#line 124 "cat_parser.ypp"
+                        { yylhs.value.as < std::string > () = yystack_[0].value.as < std::string > (); }
+#line 641 "cat_parser.tab.cpp"
     break;
 
   case 11:
-#line 135 "cat_parser.ypp"
-                                { yylhs.value.as < cat_axiomt > () = cat_axiomt(rel_axiomt::IRREFLEXIVE, std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 673 "cat_parser.tab.cpp"
+#line 125 "cat_parser.ypp"
+                        { yylhs.value.as < std::string > () = yystack_[2].value.as < std::string > () + "::" + yystack_[0].value.as < std::string > (); }
+#line 647 "cat_parser.tab.cpp"
     break;
 
   case 12:
-#line 136 "cat_parser.ypp"
-                        { yylhs.value.as < cat_axiomt > () = cat_axiomt(rel_axiomt::EMPTY, std::move(yystack_[2].value.as < cat_relationt > ())); }
-#line 679 "cat_parser.tab.cpp"
+#line 128 "cat_parser.ypp"
+                                        { drv.addConstraint(rel_axiomt::EMPTY, std::move(yystack_[0].value.as < cat_relationt > ())); }
+#line 653 "cat_parser.tab.cpp"
     break;
 
   case 13:
-#line 137 "cat_parser.ypp"
-                                { yylhs.value.as < cat_axiomt > () = cat_axiomt(rel_axiomt::ACYCLIC, std::move(yystack_[2].value.as < cat_relationt > ())); }
-#line 685 "cat_parser.tab.cpp"
+#line 129 "cat_parser.ypp"
+                                { drv.addConstraint(rel_axiomt::ACYCLIC, std::move(yystack_[0].value.as < cat_relationt > ())); }
+#line 659 "cat_parser.tab.cpp"
     break;
 
   case 14:
-#line 138 "cat_parser.ypp"
-                                        { yylhs.value.as < cat_axiomt > () = cat_axiomt(rel_axiomt::IRREFLEXIVE, std::move(yystack_[2].value.as < cat_relationt > ())); }
-#line 691 "cat_parser.tab.cpp"
+#line 130 "cat_parser.ypp"
+                                { drv.addConstraint(rel_axiomt::IRREFLEXIVE, std::move(yystack_[0].value.as < cat_relationt > ())); }
+#line 665 "cat_parser.tab.cpp"
     break;
 
   case 15:
-#line 141 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt("id"); }
-#line 697 "cat_parser.tab.cpp"
+#line 131 "cat_parser.ypp"
+                        { drv.addConstraint(rel_axiomt::EMPTY, std::move(yystack_[2].value.as < cat_relationt > ())); }
+#line 671 "cat_parser.tab.cpp"
     break;
 
   case 16:
-#line 142 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(yystack_[0].value.as < std::string > ()); }
-#line 703 "cat_parser.tab.cpp"
+#line 132 "cat_parser.ypp"
+                                { drv.addConstraint(rel_axiomt::ACYCLIC, std::move(yystack_[2].value.as < cat_relationt > ())); }
+#line 677 "cat_parser.tab.cpp"
     break;
 
   case 17:
-#line 143 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = std::move(yystack_[1].value.as < cat_relationt > ()); }
-#line 709 "cat_parser.tab.cpp"
+#line 133 "cat_parser.ypp"
+                                        { drv.addConstraint(rel_axiomt::IRREFLEXIVE, std::move(yystack_[2].value.as < cat_relationt > ())); }
+#line 683 "cat_parser.tab.cpp"
     break;
 
   case 18:
-#line 144 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::BRACKET, std::move(yystack_[1].value.as < cat_relationt > ())); }
-#line 715 "cat_parser.tab.cpp"
+#line 134 "cat_parser.ypp"
+                        { drv.addConstraint(rel_axiomt::NOT_EMPTY, std::move(yystack_[0].value.as < cat_relationt > ())); }
+#line 689 "cat_parser.tab.cpp"
     break;
 
   case 19:
-#line 145 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt("id"); }
-#line 721 "cat_parser.tab.cpp"
+#line 135 "cat_parser.ypp"
+                                { drv.addConstraint(rel_axiomt::NOT_EMPTY, std::move(yystack_[2].value.as < cat_relationt > ())); }
+#line 695 "cat_parser.tab.cpp"
     break;
 
   case 20:
-#line 146 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::ALT, std::move(yystack_[2].value.as < cat_relationt > ()), std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 727 "cat_parser.tab.cpp"
+#line 138 "cat_parser.ypp"
+                                    { yylhs.value.as < cat_relationt > () = drv.make_base("id"); }
+#line 701 "cat_parser.tab.cpp"
     break;
 
   case 21:
-#line 147 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::SEQ, std::move(yystack_[2].value.as < cat_relationt > ()), std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 733 "cat_parser.tab.cpp"
+#line 139 "cat_parser.ypp"
+                                { yylhs.value.as < cat_relationt > () = cat_relationt(yystack_[0].value.as < std::string > (), rel_opt::TERMINAL, std::vector<std::string>{}); }
+#line 707 "cat_parser.tab.cpp"
     break;
 
   case 22:
-#line 148 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::AND, std::move(yystack_[2].value.as < cat_relationt > ()), std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 739 "cat_parser.tab.cpp"
+#line 140 "cat_parser.ypp"
+                                  { yylhs.value.as < cat_relationt > () = std::move(yystack_[1].value.as < cat_relationt > ()); }
+#line 713 "cat_parser.tab.cpp"
     break;
 
   case 23:
-#line 149 "cat_parser.ypp"
-                        { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::MINUS, std::move(yystack_[2].value.as < cat_relationt > ()), std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 745 "cat_parser.tab.cpp"
+#line 141 "cat_parser.ypp"
+                                  { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::BRACKET, std::vector<std::string>{yystack_[1].value.as < cat_relationt > ().name}); }
+#line 719 "cat_parser.tab.cpp"
     break;
 
   case 24:
-#line 150 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::TIMES, std::move(yystack_[2].value.as < cat_relationt > ()), std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 751 "cat_parser.tab.cpp"
+#line 142 "cat_parser.ypp"
+                                      { yylhs.value.as < cat_relationt > () = drv.make_base("id"); }
+#line 725 "cat_parser.tab.cpp"
     break;
 
   case 25:
-#line 151 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::PLUS, std::move(yystack_[1].value.as < cat_relationt > ())); }
-#line 757 "cat_parser.tab.cpp"
+#line 143 "cat_parser.ypp"
+                                  { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::ALT, std::vector<std::string>{yystack_[2].value.as < cat_relationt > ().name, yystack_[0].value.as < cat_relationt > ().name}); }
+#line 731 "cat_parser.tab.cpp"
     break;
 
   case 26:
-#line 152 "cat_parser.ypp"
-              { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::STAR, std::move(yystack_[1].value.as < cat_relationt > ())); }
-#line 763 "cat_parser.tab.cpp"
+#line 144 "cat_parser.ypp"
+                                  { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::SEQ, std::vector<std::string>{yystack_[2].value.as < cat_relationt > ().name, yystack_[0].value.as < cat_relationt > ().name}); }
+#line 737 "cat_parser.tab.cpp"
     break;
 
   case 27:
-#line 153 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::QMARK, std::move(yystack_[1].value.as < cat_relationt > ())); }
-#line 769 "cat_parser.tab.cpp"
+#line 145 "cat_parser.ypp"
+                                  { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::AND, std::vector<std::string>{yystack_[2].value.as < cat_relationt > ().name, yystack_[0].value.as < cat_relationt > ().name}); }
+#line 743 "cat_parser.tab.cpp"
     break;
 
   case 28:
-#line 154 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::ROT, std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 775 "cat_parser.tab.cpp"
+#line 146 "cat_parser.ypp"
+                          { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::SUB, std::vector<std::string>{yystack_[2].value.as < cat_relationt > ().name, yystack_[0].value.as < cat_relationt > ().name}); }
+#line 749 "cat_parser.tab.cpp"
     break;
 
   case 29:
-#line 155 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::INT, std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 781 "cat_parser.tab.cpp"
+#line 147 "cat_parser.ypp"
+                                  { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::PROD, std::vector<std::string>{yystack_[2].value.as < cat_relationt > ().name, yystack_[0].value.as < cat_relationt > ().name}); }
+#line 755 "cat_parser.tab.cpp"
     break;
 
   case 30:
-#line 156 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::EXT, std::move(yystack_[0].value.as < cat_relationt > ())); }
-#line 787 "cat_parser.tab.cpp"
+#line 148 "cat_parser.ypp"
+                                      { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::PLUS, std::vector<std::string>{yystack_[1].value.as < cat_relationt > ().name}); }
+#line 761 "cat_parser.tab.cpp"
     break;
 
   case 31:
-#line 157 "cat_parser.ypp"
-                                { yylhs.value.as < cat_relationt > () = cat_relationt(rel_opt::FLIP, std::move(yystack_[2].value.as < cat_relationt > ())); }
-#line 793 "cat_parser.tab.cpp"
+#line 149 "cat_parser.ypp"
+                    { yylhs.value.as < cat_relationt > () = drv.make_star(yystack_[1].value.as < cat_relationt > ().name); }
+#line 767 "cat_parser.tab.cpp"
+    break;
+
+  case 32:
+#line 150 "cat_parser.ypp"
+                                      { yylhs.value.as < cat_relationt > () = drv.make_qmark(yystack_[1].value.as < cat_relationt > ().name); }
+#line 773 "cat_parser.tab.cpp"
+    break;
+
+  case 33:
+#line 151 "cat_parser.ypp"
+                                { yylhs.value.as < cat_relationt > () = drv.make_relation(rel_opt::FLIP, std::vector<std::string>{yystack_[2].value.as < cat_relationt > ().name}); }
+#line 779 "cat_parser.tab.cpp"
+    break;
+
+  case 34:
+#line 152 "cat_parser.ypp"
+                    { yylhs.value.as < cat_relationt > () = drv.make_fencerel(yystack_[0].value.as < cat_relationt > ().name); }
+#line 785 "cat_parser.tab.cpp"
+    break;
+
+  case 35:
+#line 153 "cat_parser.ypp"
+                  { yylhs.value.as < cat_relationt > () = drv.make_free(); }
+#line 791 "cat_parser.tab.cpp"
     break;
 
 
-#line 797 "cat_parser.tab.cpp"
+#line 795 "cat_parser.tab.cpp"
 
             default:
               break;
@@ -974,111 +972,120 @@ namespace yy {
   }
 
 
-  const signed char parser::yypact_ninf_ = -37;
+  const signed char parser::yypact_ninf_ = -38;
 
   const signed char parser::yytable_ninf_ = -1;
 
-  const signed char
+  const short
   parser::yypact_[] =
   {
-     -37,    82,   -37,    11,    11,    11,   -36,   -34,   -37,   -37,
-     -37,    11,    11,    11,    11,     4,   -17,   -37,    24,    36,
-      48,   -37,   -14,   -37,    95,    95,    70,   -37,    83,   -32,
-     -25,    11,    11,    11,    11,   -37,    11,   -37,    -2,    -6,
-       3,    11,   -37,   -37,   -37,   -37,   -15,   112,   104,   112,
-     -15,   -37,   -37,   -37,    95
+     -38,     9,   -38,    23,    23,    23,    -7,   -37,   -12,   -38,
+     -38,   -38,   -38,   -38,    23,     3,    23,   -17,   -38,    37,
+      57,    69,    23,   -38,   -32,   -13,   101,   -38,   113,   -38,
+     -19,   -18,    23,    23,    23,    23,   -38,    23,   -38,    -3,
+      -5,     4,    89,    11,    13,   -38,   -38,   -38,   -38,    41,
+      77,   134,    77,    41,   -38,   -38,   -38,     5,    23,   -38,
+     125,   -38,   125
   };
 
   const signed char
   parser::yydefact_[] =
   {
-       2,     0,     1,     0,     0,     0,     0,     0,     6,     3,
-      15,     0,     0,     0,     0,     0,     7,    16,    10,    11,
-       9,     4,     0,    28,    29,    30,     0,    19,     0,     0,
-       0,     0,     0,     0,     0,    25,    26,    27,     0,     0,
-       0,     0,    17,    18,     8,    13,    21,    22,    20,    23,
-      24,    31,    14,    12,     5
+       2,     0,     1,     0,     0,     0,     0,     0,     0,     5,
+       3,     9,    35,    20,     0,     0,     0,    10,    21,    13,
+      14,    12,     0,     4,     0,     0,     0,    24,     0,    34,
+       0,     0,     0,     0,     0,     0,    30,    31,    32,     0,
+       0,     0,    18,     0,     0,    22,    23,    11,    16,    26,
+      27,    25,    28,    29,    33,    17,    15,     0,     0,     8,
+       6,    19,     7
   };
 
   const signed char
   parser::yypgoto_[] =
   {
-     -37,   -37,    -4,   -37,   -37,   -37
+     -38,   -38,    -4,   -38,   -38,   -38
   };
 
   const signed char
   parser::yydefgoto_[] =
   {
-      -1,    17,    18,     8,     1,     9
+      -1,    18,    19,     1,    10,    11
   };
 
   const signed char
   parser::yytable_[] =
   {
-      19,    20,    21,    22,    29,    44,    41,    23,    24,    25,
-      26,    28,    45,    10,    35,    36,    37,    11,    12,    13,
-      10,    38,    51,     0,    11,    12,    13,    46,    47,    48,
-      49,    52,    50,     0,    30,     0,    14,    54,    15,    27,
-      53,    16,     0,    14,     0,    15,    39,     0,    16,    31,
-      32,    33,    34,    35,    36,    37,     0,     0,    40,     0,
-      38,    31,    32,    33,    34,    35,    36,    37,     0,     0,
-       0,     0,    38,    31,    32,    33,    34,    35,    36,    37,
-       0,     0,     2,     0,    38,     3,     4,     0,     0,     5,
-       0,     0,     0,     6,     7,    31,    32,    33,    34,    35,
-      36,    37,     0,    42,     0,     0,    38,     0,    31,    32,
-      33,    34,    35,    36,    37,     0,     0,     0,    43,    38,
-      31,    32,    33,    34,    35,    36,    37,     0,     0,    31,
-      32,    38,    34,    35,    36,    37,     0,    31,     0,     0,
-      38,    35,    36,    37,     0,     0,     0,     0,    38
+      20,    21,    22,    23,    24,    30,    12,    43,    44,     2,
+      26,    28,    29,     3,     4,    13,    12,     5,    42,     6,
+      47,    48,    54,     7,     8,    13,    12,    25,    49,    50,
+      51,    52,    58,    53,    55,    13,    14,    59,    15,    27,
+      60,    16,    17,    56,    61,     0,    14,     0,    15,     9,
+      31,    16,    17,     0,    62,     0,    14,     0,    15,     0,
+       0,    16,    17,    32,    33,    34,    35,    36,    37,    38,
+      40,    36,    37,    38,    39,     0,     0,     0,    39,     0,
+       0,     0,    41,    32,    33,    34,    35,    36,    37,    38,
+       0,     0,     0,     0,    39,    32,    33,    34,    35,    36,
+      37,    38,    57,    32,     0,     0,    39,    36,    37,    38,
+       0,     0,     0,     0,    39,    32,    33,    34,    35,    36,
+      37,    38,     0,     0,     0,     0,    39,    32,    33,    34,
+      35,    36,    37,    38,     0,    45,     0,     0,    39,    32,
+      33,    34,    35,    36,    37,    38,     0,     0,     0,    46,
+      39,    32,    33,    34,    35,    36,    37,    38,     0,     0,
+      32,    33,    39,    35,    36,    37,    38,     0,     0,     0,
+       0,    39
   };
 
   const signed char
   parser::yycheck_[] =
   {
-       4,     5,    38,    37,    21,    37,    20,    11,    12,    13,
-      14,    15,    37,     9,    29,    30,    31,    13,    14,    15,
-       9,    36,    24,    -1,    13,    14,    15,    31,    32,    33,
-      34,    37,    36,    -1,    10,    -1,    32,    41,    34,    35,
-      37,    37,    -1,    32,    -1,    34,    10,    -1,    37,    25,
-      26,    27,    28,    29,    30,    31,    -1,    -1,    10,    -1,
-      36,    25,    26,    27,    28,    29,    30,    31,    -1,    -1,
-      -1,    -1,    36,    25,    26,    27,    28,    29,    30,    31,
-      -1,    -1,     0,    -1,    36,     3,     4,    -1,    -1,     7,
-      -1,    -1,    -1,    11,    12,    25,    26,    27,    28,    29,
-      30,    31,    -1,    33,    -1,    -1,    36,    -1,    25,    26,
-      27,    28,    29,    30,    31,    -1,    -1,    -1,    35,    36,
-      25,    26,    27,    28,    29,    30,    31,    -1,    -1,    25,
-      26,    36,    28,    29,    30,    31,    -1,    25,    -1,    -1,
-      36,    29,    30,    31,    -1,    -1,    -1,    -1,    36
+       4,     5,     9,    40,    16,    22,     3,    39,    21,     0,
+      14,    15,    16,     4,     5,    12,     3,     8,    22,    10,
+      39,    39,    25,    14,    15,    12,     3,    39,    32,    33,
+      34,    35,    21,    37,    39,    12,    33,    24,    35,    36,
+      44,    38,    39,    39,    39,    -1,    33,    -1,    35,    40,
+      13,    38,    39,    -1,    58,    -1,    33,    -1,    35,    -1,
+      -1,    38,    39,    26,    27,    28,    29,    30,    31,    32,
+      13,    30,    31,    32,    37,    -1,    -1,    -1,    37,    -1,
+      -1,    -1,    13,    26,    27,    28,    29,    30,    31,    32,
+      -1,    -1,    -1,    -1,    37,    26,    27,    28,    29,    30,
+      31,    32,    13,    26,    -1,    -1,    37,    30,    31,    32,
+      -1,    -1,    -1,    -1,    37,    26,    27,    28,    29,    30,
+      31,    32,    -1,    -1,    -1,    -1,    37,    26,    27,    28,
+      29,    30,    31,    32,    -1,    34,    -1,    -1,    37,    26,
+      27,    28,    29,    30,    31,    32,    -1,    -1,    -1,    36,
+      37,    26,    27,    28,    29,    30,    31,    32,    -1,    -1,
+      26,    27,    37,    29,    30,    31,    32,    -1,    -1,    -1,
+      -1,    37
   };
 
   const signed char
   parser::yystos_[] =
   {
-       0,    43,     0,     3,     4,     7,    11,    12,    42,    44,
-       9,    13,    14,    15,    32,    34,    37,    40,    41,    41,
-      41,    38,    37,    41,    41,    41,    41,    35,    41,    21,
-      10,    25,    26,    27,    28,    29,    30,    31,    36,    10,
-      10,    20,    33,    35,    37,    37,    41,    41,    41,    41,
-      41,    24,    37,    37,    41
+       0,    44,     0,     4,     5,     8,    10,    14,    15,    40,
+      45,    46,     3,    12,    33,    35,    38,    39,    42,    43,
+      43,    43,     9,    40,    16,    39,    43,    36,    43,    43,
+      22,    13,    26,    27,    28,    29,    30,    31,    32,    37,
+      13,    13,    43,    39,    21,    34,    36,    39,    39,    43,
+      43,    43,    43,    43,    25,    39,    39,    13,    21,    24,
+      43,    39,    43
   };
 
   const signed char
   parser::yyr1_[] =
   {
-       0,    39,    43,    43,    44,    44,    44,    40,    40,    42,
-      42,    42,    42,    42,    42,    41,    41,    41,    41,    41,
-      41,    41,    41,    41,    41,    41,    41,    41,    41,    41,
-      41,    41
+       0,    41,    44,    44,    45,    45,    45,    45,    45,    45,
+      42,    42,    46,    46,    46,    46,    46,    46,    46,    46,
+      43,    43,    43,    43,    43,    43,    43,    43,    43,    43,
+      43,    43,    43,    43,    43,    43
   };
 
   const signed char
   parser::yyr2_[] =
   {
-       0,     2,     0,     2,     2,     4,     1,     1,     3,     2,
-       2,     2,     4,     4,     4,     1,     1,     3,     3,     2,
-       3,     3,     3,     3,     3,     2,     2,     2,     2,     2,
-       2,     3
+       0,     2,     0,     2,     2,     1,     4,     5,     4,     1,
+       1,     3,     2,     2,     2,     4,     4,     4,     3,     5,
+       1,     1,     3,     3,     2,     3,     3,     3,     3,     3,
+       2,     2,     2,     3,     2,     1
   };
 
 
@@ -1088,24 +1095,24 @@ namespace yy {
   const char*
   const parser::yytname_[] =
   {
-  "YYEOF", "error", "$undefined", "\"acyclic\"", "\"irreflexive\"",
-  "\"declare\"", "\"declare-loc\"", "\"empty\"", "\"error\"", "\"id\"",
-  "\"as\"", "\"include\"", "\"let\"", "\"rot\"", "\"int\"", "\"ext\"",
-  "\"save\"", "\"total\"", "\"view\"", "\"warning\"", "\"=\"", "\"::\"",
-  "\",\"", "\"0\"", "\"-1\"", "\";\"", "\"&\"", "\"|\"", "\"\\\\\"",
-  "\"+\"", "\"*\"", "\"?\"", "\"(\"", "\")\"", "\"[\"", "\"]\"", "\"^\"",
-  "ID", "QPATH", "$accept", "qualified_ID", "rel", "constraint", "main",
-  "decl", YY_NULLPTR
+  "YYEOF", "error", "$undefined", "\"free\"", "\"acyclic\"",
+  "\"irreflexive\"", "\"declare\"", "\"declare-loc\"", "\"empty\"",
+  "\"~empty\"", "\"flag\"", "\"error\"", "\"id\"", "\"as\"", "\"include\"",
+  "\"let\"", "\"rec\"", "\"save\"", "\"total\"", "\"view\"", "\"warning\"",
+  "\"=\"", "\"::\"", "\",\"", "\"0\"", "\"-1\"", "\";\"", "\"&\"", "\"|\"",
+  "\"\\\\\"", "\"+\"", "\"*\"", "\"?\"", "\"(\"", "\")\"", "\"[\"",
+  "\"]\"", "\"^\"", "\"fencerel\"", "ID", "QPATH", "$accept",
+  "qualified_ID", "rel", "main", "decl", "constraint", YY_NULLPTR
   };
 
 
   const unsigned char
   parser::yyrline_[] =
   {
-       0,   111,   111,   112,   115,   116,   126,   129,   130,   133,
-     134,   135,   136,   137,   138,   141,   142,   143,   144,   145,
-     146,   147,   148,   149,   150,   151,   152,   153,   154,   155,
-     156,   157
+       0,   112,   112,   113,   116,   117,   118,   119,   120,   121,
+     124,   125,   128,   129,   130,   131,   132,   133,   134,   135,
+     138,   139,   140,   141,   142,   143,   144,   145,   146,   147,
+     148,   149,   150,   151,   152,   153
   };
 
   // Print the state stack on the debug stream.
@@ -1139,9 +1146,9 @@ namespace yy {
 
 
 } // yy
-#line 1143 "cat_parser.tab.cpp"
+#line 1150 "cat_parser.tab.cpp"
 
-#line 160 "cat_parser.ypp"
+#line 156 "cat_parser.ypp"
 
 
 void yy::parser::error(const location_type &l, const std::string &m)

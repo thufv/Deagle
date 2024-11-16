@@ -4,28 +4,25 @@ let cacq = ACQ | (SC & (R | F)) | ACQ_REL | (F & CON)
 let crel = REL | (SC & (W | F)) | ACQ_REL
 let ccon = R & CON
 
-let fr = rf^-1 ; co
-let fre = ext(fr)
-
 let dd = (data | addr)+
 
 let fpo = po & (F * _)
 let pof = po & (_ * F)
 
-let rs_prime = int(_ * (R & W))
+let rs_prime = int & (_ * (R & W))
 let rs = co & rs_prime \ ((co \ rs_prime) ; co)
 
 let swra =
- ext(
+ ext &
  ([crel] ; fpo? ; [A & W] ; rs? ; rf ;
- [R & A] ; pof? ; [cacq]))
+ [R & A] ; pof? ; [cacq])
 
 let pp_asw = asw \ (asw ; po)
 let sw = pp_asw | swra
 
 let cad = ((rf & po) | dd)+
 let dob =
- ext([W & crel] ; fpo? ; [A & W] ; rs?; rf; [ccon]);
+ (ext & ([W & crel] ; fpo? ; [A & W] ; rs?; rf; [ccon]));
  cad?
 
 let ithbr = sw | dob | (sw ; po)
@@ -63,4 +60,4 @@ acyclic (((SC * SC) & scp) \ id) as Spartial
 //undefined_unless empty lu as badUnlock
 
 // Atomicity
-empty rmw & (fre; ext(co)) as atomic
+empty rmw & (fre; coe) as atomic

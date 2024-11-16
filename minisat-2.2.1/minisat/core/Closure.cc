@@ -1227,7 +1227,15 @@ void closure::show_model()
             std::cout << "\t" << nodes[rf.from] << " " << nodes[rf.to] << "\n";
     std::cout << "\n";
 
-    
+    std::cout << "Races:\n";
+    for(auto race_pair: pair_to_inactive_races)
+    {
+        int from = race_pair.first.first;
+        int to = race_pair.first.second;
+        auto race_lit = race_pair.second;
+        if(get_assignment(race_lit) == l_True)
+            std::cout << "\t" << nodes[from] << " " << nodes[to] << "\n";
+    }
 }
 
 closure::simple_nodet closure::simplify_node(int node_id)
@@ -1247,6 +1255,45 @@ closure::simple_nodet closure::simplify_node(int node_id)
 }
 
 std::vector<std::string> write_order;
+
+bool closure::co_complete_check() // true if ok, false if incomplete
+{
+    if(!pair_to_inactive_races.empty())
+        return true;
+
+    for(int i = 0; i < int(nodes.size()); i++)
+        for(int j = i + 1; j < int(nodes.size()); j++)
+        {
+            auto& node1 = nodes[i];
+            auto& node2 = nodes[j];
+            if(!node1.is_write || !node2.is_write || node1.address != node2.address)
+                continue;
+
+            bool i_prior_to_j = has_edge(i, j);
+            bool j_prior_to_i = has_edge(j, i);
+
+            if(!(i_prior_to_j || j_prior_to_i))
+            {
+                bool ok = false;
+                int base_level = trail_edge_lim.size();
+                push_scope();
+                ok = !activate_edge(i, j, OC_NA, empty_lv);
+                pop_scope(base_level);
+                if(!ok)
+                {
+                    push_scope();
+                    ok = !activate_edge(i, j, OC_NA, empty_lv);
+                    pop_scope(base_level);
+                }
+                if(!ok)
+                {
+                    std::cout << "Write " << node1 << " and " << node2 << " cannot be ordered!\n";
+                    return false;
+                }
+            }
+        }
+    return true;
+}
 
 void closure::final_check()
 {
@@ -1293,13 +1340,8 @@ void closure::final_check()
         {
             auto item = item_location.first;
             auto name = simple_nodes[item].name;
-            // if(simple_nodes[item].is_write && 
-            //     name.find("__CPROVER") == std::string::npos && 
-            //     name.find("argv'") == std::string::npos)
-            {
-                write_order.push_back(name);
-                solver->oc_result_order->insert(std::make_pair(name, node_order));
-            }
+            write_order.push_back(name);
+            solver->oc_result_order->insert(std::make_pair(name, node_order));
         }
 
         for(auto out_node : simple_nodes[visiting_node].out)

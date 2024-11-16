@@ -139,8 +139,17 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
   }
 
   // __SZH_ADD_BEGIN__
-  if(cmdline.isset("svcomp"))
-    options.set_option("svcomp", true);
+  if(cmdline.isset("unwind-suggest"))
+    options.set_option("unwind-suggest", true);
+  
+  if(cmdline.isset("mm-strict-guard"))
+    options.set_option("mm-strict-guard", true);
+  
+  if(cmdline.isset("mm-flag"))
+    options.set_option("mm-flag", true);
+
+  if(cmdline.isset("allow-pointer-unsoundness"))
+    options.set_option("allow-pointer-unsoundness", true);
   // __SZH_ADD_END__
 
   if(cmdline.isset("max-field-sensitivity-array-size"))
@@ -389,7 +398,7 @@ int cbmc_parse_optionst::doit()
 {
   if(cmdline.isset("version"))
   {
-    std::cout << "2.2" << '\n';
+    std::cout << "4.0.1" << '\n';
     return CPROVER_EXIT_SUCCESS;
   }
 
@@ -871,7 +880,7 @@ void cbmc_parse_optionst::help()
   // clang-format off
 
   // __SZH_ADD_BEGIN__
-  std::cout << "\n" << banner_string("Deagle", "2.2") << '\n'
+  std::cout << "\n" << banner_string("Deagle", "4.0.1") << '\n'
             << align_center_with_border("Zhihang Sun, Hongyu Fan, and Fei HE") << '\n'
             << align_center_with_border("School of Software, Tsinghua University") << '\n'
             << align_center_with_border("hefei@tsinghua.edu.cn") << '\n';
