@@ -19,11 +19,12 @@ Simply run
 ```
 cd src && make
 ```
-This generates executable target src/cbmc/deagle_exe.
+This generates executable binary **deagle_exe** in directory src/cbmc.
 
 Note: Higher versions of Bison may generate *.tab.h/*.tab.cpp that triggers warnings. On such occasions, please try removing -Werror from CXXFLAGS in src/config.inc.
 
 ## Usage
+
 ```
 deagle_exe <input file> <memory model options> <unwind options> <specifications>
 ```
@@ -62,7 +63,7 @@ Deagle unwinds it over and over again and never terminates.
 
 ## Usage in SV-COMP
 
-In SV-COMP, we cannot manually set an unwind option for each benchmark. Therefore, we determine an unwinding strategy, which hopefully provides reliable results for most tasks in SV-COMP benchmarks. We propose a simple static analysis algorithm to suggest an unwind limit for each loop, which can be invoked with option **--unwind-suggest** and outputs information in the form of:
+In SV-COMP, we cannot manually set an unwind option for each benchmark. Instead, we design a script **svcomp_stuff/deagle** to invoke the executable deagle_exe with an unwinding strategy, which hopefully provides reliable results for most tasks in SV-COMP benchmarks. We propose a simple static analysis algorithm to suggest an unwind limit for each loop, which takes effect by invoking deagle_exe with option **--unwind-suggest** and outputs information in the form of:
 ```
 Loop loop1.id:
   file <input_filename> line 11 function main
@@ -71,10 +72,14 @@ Loop loop2.id:
   file <input_filename> line 12 function main
 No suggested unwind limit
 ```
-Based on the suggestion, if each loop is suggested with an unwind limit, we use **--unwindset** to set each loop to its corresponding suggested limit, under which the result is conclusive.
+Based on the suggestion, if each loop is suggested with an unwind limit, this script invokes deagle_exe with argument **--unwindset** to set each loop to its corresponding suggested limit, under which the result is conclusive.
 
-Otherwise, if there exists any loop whose unwind limit cannot be statically suggested, we try the following strategy:
-- Step 1: Briefly (with timeout 5s) run the task without unwind options, trying to find whether Deagle can automatically fully unwind all loops. If so, we directly obtain a conclusive result.
-- Step 2: If Step 1 fails to automatically unwind all loops, we use **--unwindset** to set each loop to its corresponding suggested limit (for loops whose unwind limits are not suggested, we set the unwind limit to 3). Consequently, TRUE results might not be conclusive, so that this strategy is deprecated for academic usage.
+Otherwise, if there exists any loop whose unwind limit cannot be statically suggested, we conduct the following steps:
+- Step 1: Briefly (with timeout 5s) invoke deagle_exe without unwind options, trying to find whether deagle_exe can automatically fully unwind all loops. If so, we directly obtain a conclusive result.
+- Step 2: If Step 1 fails to automatically unwind all loops, this script invokes deagle_exe with argument **--unwindset** to set each loop to its corresponding suggested limit (for loops whose unwind limits are not suggested, we set the unwind limit to 3). Consequently, TRUE results might not be conclusive, so that this strategy is deprecated for academic usage.
 
-Please run script svcomp_stuff/deagle for SV-COMP usage.
+For SV-COMP use, please ensure that the script deagle and the binary deagle_exe are placed in the same directory, and run
+```
+./deagle <property> <input file>
+```
+where ``<property>`` can be unreach-call.prp, no-data-race.prp, no-overflow.prp, or valid-memsafety.prp.
