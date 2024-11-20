@@ -155,6 +155,7 @@ void memory_model_sct::program_order(
   std::set<std::pair<std::string, std::string>> apo_set;
   equation.build_array_update_set(apo_set);
   equation.build_same_pointer_set(apo_set);
+  equation.build_same_line_atomic_set(ns, apo_set);
 
   // iterate over threads
 

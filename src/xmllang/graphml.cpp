@@ -205,7 +205,7 @@ bool read_graphml(
   return build_graph(xml, dest, entry);
 }
 
-bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, bool enable_datarace)
+bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, const optionst& options)
 {
   xmlt graphml("graphml");
   graphml.set_attribute(
@@ -508,21 +508,35 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
   //   data.data="C";
   // }
 
-  // <data key="producer">Deagle 1.3</data>
+  // <data key="producer">Deagle 4.1.0</data>
   {
     xmlt &data=graph.new_element("data");
     data.set_attribute("key", "producer");
-    data.data="Deagle 2.0";
+    data.data="Deagle 4.1.0";
   }
 
   // <data key="specification">CHECK( init(main()), LTL(G ! call(__VERIFIER_error())) )</data>
   {
     xmlt &data=graph.new_element("data");
     data.set_attribute("key", "specification");
-    if(enable_datarace)
-      data.data="CHECK( init(main()), LTL(G ! data-race) )";
-    else
+
+    bool enable_unreach_call = !options.get_bool_option("no-assertions");
+    bool enable_datarace = options.get_bool_option("datarace");
+    bool enable_overflow = options.get_bool_option("signed-overflow-check") || options.get_bool_option("signed-overflow-check");
+    bool enable_memsafety = options.get_bool_option("pointer-check") || options.get_bool_option("alloc-check") || options.get_bool_option("memory-leak-check");
+
+    if(enable_unreach_call)
       data.data="CHECK( init(main()), LTL(G ! call(reach_error())) )";
+    else if(enable_datarace)
+      data.data="CHECK( init(main()), LTL(G ! data-race) )";
+    else if(enable_overflow)
+      data.data="CHECK( init(main()), LTL(G ! overflow) )";
+    else if(enable_memsafety)
+    {
+      data.data="CHECK( init(main()), LTL(G valid-free) )\n";
+      data.data+="CHECK( init(main()), LTL(G valid-deref) )\n";
+      data.data+="CHECK( init(main()), LTL(G valid-memtrack) )\n";
+    }
   }
 
   // <data key="programfile">../../sv-benchmarks/c/bitvector/s3_clnt_3_true-unreach-call.BV.c.cil.c</data>

@@ -18,6 +18,7 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 #include <util/irep.h>
 #include <util/graph.h>
 #include <util/xml.h>
+#include <util/options.h>
 
 class message_handlert;
 
@@ -78,6 +79,6 @@ bool read_graphml(
   graphmlt::node_indext &entry,
   message_handlert &message_handler);
 
-bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, bool enable_datarace);
+bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, const optionst& options);
 
 #endif // CPROVER_XMLLANG_GRAPHML_H

@@ -356,8 +356,14 @@ public:
   void build_index_map(std::map<std::string, exprt>& index_map);
   void build_array_update_set(std::set<std::pair<std::string, std::string>>& apo_set);
   void build_same_pointer_set(std::set<std::pair<std::string, std::string>>& apo_set);
+  void apply_same_line_atomic_set(const namespacet& ns, std::vector<symex_target_equationt::event_it>& same_line_events, std::set<std::pair<std::string, std::string>>& apo_set);
+  void build_same_line_atomic_set(const namespacet& ns, std::set<std::pair<std::string, std::string>>& apo_set);
   void build_datarace(const namespacet& ns, bool filter);
   bool choose_datarace();
+
+  std::set<std::string> atomic_dynamic_objects;
+  void dynamic_object_atomicity(const namespacet& ns);
+  bool symbol_is_atomic(const namespacet& ns, irep_idt symbol_name);
 
   void remove_dummy_accesses();
 

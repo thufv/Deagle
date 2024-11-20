@@ -5,18 +5,9 @@ import os
 import re
 import time
 
-timelimit = 890
 limit_solverbound = 300
 
-def update_result(old_result, new_result):
-    if old_result == "UNKNOWN":
-        return new_result
-    elif old_result == "SUCCESS" and new_result == "FAILURE":
-        return new_result
-    else:
-        return old_result
-
-def check_unwind_ok():
+def ensure_successful_unwind():
     with open("deagle_tmp_output", "r") as output:
         lines = output.readlines()
         for line in lines:
@@ -28,39 +19,24 @@ def check_result_normality(lines):
     last_line = lines[-1]
     return "VERIFICATION SUCCESSFUL" in last_line or "VERIFICATION FAILED" in last_line
 
-def get_result():
-    property_result = "SUCCESS"
-    unwind_result = "SUCCESS"
+def get_result(remove = True):
+    result = "SUCCESS"
     with open("deagle_tmp_output", "r") as output:
         lines = output.readlines()
         if not check_result_normality(lines):
-            return ("ERROR", "SUCCESS")
+            return "ERROR"
         for line in lines:
             obj = re.match(r"\[(.*)\](.*): (.*)", line) # is a result line
             if not obj:
                 continue
-            name = obj.group(1)
-            result = obj.group(3)
-            if ".unwind." in name:
-                unwind_result = update_result(unwind_result, result)
-            else:
-                property_result = update_result(property_result, result)
+            new_result = obj.group(3)
+            if new_result == "FAILURE" and result == "SUCCESS":
+                result = "FAILURE"
             print(line,end="")
-    print("Property: %s" % property_result)
-    return (property_result, unwind_result)
-
-def output_result(result, last_result):
-    if result == "UNKNOWN" or result == "ERROR":
-        result = last_result
-    if result == "SUCCESS":
-        print("SUCCESSFUL")
-        sys.exit(0)
-    elif result == "FAILURE":
-        print("FAILED")
-        sys.exit(0)
-    else:
-        print(result)
-        sys.exit(1)
+    print("Property: %s" % result)
+    if(remove):
+        os.system("rm deagle_tmp_output")
+    return result
 
 def get_loop_info(program_path, flags):
     cmd = "./deagle_exe %s %s --unwind-suggest > deagle_tmp_unwind_suggest 2>&1" % (program_path, flags)
@@ -83,7 +59,12 @@ def get_loop_info(program_path, flags):
                 loop_limit = int(obj.group(1))
                 loops_limit.append(loop_limit)
                 if loop_limit > limit_solverbound:
-                    is_onlystatic = False
+                    # When a loop's unwind limit can be determined but is too large
+                    # We give up this verification task
+                    # (otherwise TLE, wasting too much time)
+                    print("Too large unwind limit: %d!" % loop_limit)
+                    print("UNKNOWN")
+                    sys.exit(0)
             
             obj = re.match(r"No suggested unwind limit", lines[i])
             if obj:
@@ -102,7 +83,7 @@ def generate_unwindset(loops_name, loops_limit):
     return unwindset
 
 if len(sys.argv) < 2 or sys.argv[1] == "-v" or sys.argv[1] == "--version":
-    print("4.0.1")
+    print("4.1.0")
     sys.exit(0)
 
 if sys.argv[1] == "--witness":
@@ -110,12 +91,11 @@ if sys.argv[1] == "--witness":
     sys.exit(0)
 
 if len(sys.argv) < 3:
-    print("Usage: ./deagle.py property_path program_path")
+    print("Usage: ./deagle property_path program_path")
     sys.exit(0)
 
 property_path = sys.argv[1]
 program_path = sys.argv[2]
-# flags = "--unwinding-assertions --graphml-witness error-witness.graphml "
 flags = "--allow-pointer-unsoundness --graphml-witness error-witness.graphml "
 
 if "unreach-call.prp" in property_path:
@@ -132,112 +112,59 @@ else:
 
 loops_name, loops_limit, is_onlystatic = get_loop_info(program_path, flags)
 
-# szh: give up when loop limit is too large
-for loop_limit in loops_limit:
-    if loop_limit > limit_solverbound:
-        print("Too large unwind limit: %d!" % loop_limit)
-        sys.exit(0)
-
 if not loops_name:
-    # 若无循环，则不需要加 unwindset 参数直接调用 deagle_exe 即可
+    # No loops, run deagle_exe without any loop specification!
     print("No loops!")
-    start_time = time.perf_counter()
-    end_time = start_time + timelimit
-    now = time.perf_counter()
-    timeout = int(end_time - now)
-    cmd = "timeout %d ./deagle_exe %s %s > deagle_tmp_output 2>&1" % (timeout, program_path, flags)
+    cmd = "./deagle_exe %s %s > deagle_tmp_output 2>&1" % (program_path, flags)
     print(cmd)
     os.system(cmd)
-    property_result, unwind_result = get_result()
+    result = get_result()
 elif is_onlystatic:
-    # 若有循环，且检测到所有循环的循环次数均都不超过一个阈值，则直接用循环次数作为展开次数调用 deagle_exe
-    print("The loops is not larger than solverbound!")
-    start_time = time.perf_counter()
-    end_time = start_time + timelimit
-    now = time.perf_counter()
-    timeout = int(end_time - now)
+    # All loops are static
+    print("All loops can be statically determined!")
     unwindset = generate_unwindset(loops_name, loops_limit)
-    
-    cmd = "timeout %d ./deagle_exe %s %s --unwindset %s > deagle_tmp_output 2>&1" % (timeout, program_path, flags, unwindset)
-    print("\nUnwindset: %s, Available time: %d" % (unwindset, timeout))
+    cmd = "./deagle_exe %s %s --unwindset %s > deagle_tmp_output 2>&1" % (program_path, flags, unwindset)
     print(cmd)
-
     os.system(cmd)
-    property_result, unwind_result = get_result()
+    result = get_result()
 else:
-    # Try whether this is solvable without giving unwind limit
+    # Try whether this verification task is solvable without giving unwind limit
     try_cmd = "timeout 5 ./deagle_exe %s %s > deagle_tmp_output 2>&1" % (program_path, flags)
     print(try_cmd)
     os.system(try_cmd)
-    try_property_result, try_unwind_result = get_result()
-    if try_property_result == "SUCCESS" or try_property_result == "FAILURE":
+    try_result = get_result(False)
+    if try_result == "SUCCESS" or try_result == "FAILURE":
+        # Solvable in 5 seconds
         print("Solved within the single try!")
-        os.system("rm deagle_tmp_output")
-        output_result(try_property_result, try_property_result)
-        sys.exit(0)
-    elif check_unwind_ok():
-        print("Not solved within the single try, but we find the unwind limit is not a problem")
-        os.system("rm deagle_tmp_output")
-        try_cmd = "timeout 885 ./deagle_exe %s %s > deagle_tmp_output 2>&1" % (program_path, flags)
-        print(try_cmd)
-        os.system(try_cmd)
-        try_property_result, try_unwind_result = get_result()
-        os.system("rm deagle_tmp_output")
-        output_result(try_property_result, try_property_result)
-        sys.exit(0)
-    os.system("rm deagle_tmp_output")
-
-    # 若有循环但没检测到循环次数，则多次尝试展开次数做 unwindset 参数去调用 deagle_exe 寻找反例
-    print("The bound of loops is not determined!")
-    
-    iterations = 1
-    undetermine_limits = [3]
-
-    last_result = "UNKNOWN"
-    last_unwindset = "N/A"
-    start_time = time.perf_counter()
-    end_time = start_time + timelimit
-    for it in range(iterations):
-        now = time.perf_counter()
-        timeout = int(end_time - now)
-
-        loops_limit_it = [loop_limit if loop_limit else undetermine_limits[it] for loop_limit in loops_limit]
-        unwindset = generate_unwindset(loops_name, loops_limit_it)
-        if unwindset == last_unwindset: # Identical to the previous unwindset, just output last result
-            output_result(last_result, last_result)
-        else:
-            last_unwindset = unwindset
-
-        if unwindset != "":
-            cmd = "timeout %d ./deagle_exe %s %s --unwindset %s > deagle_tmp_output 2>&1" % (timeout, program_path, flags, unwindset)
-        else:
-            cmd = "timeout %d ./deagle_exe %s %s > deagle_tmp_output 2>&1" % (timeout, program_path, flags)
-        
-        print("\nUnwindset: %s, Available time: %d" % (unwindset, timeout))
+        result = try_result
+    elif ensure_successful_unwind():
+        # Not solved, but fully unwinded in 5 seconds
+        print("Not solved within the single try, but at least unwinding is successful!")
+        cmd = "./deagle_exe %s %s > deagle_tmp_output 2>&1" % (program_path, flags)
         print(cmd)
-
         os.system(cmd)
-        property_result, unwind_result = get_result()
+        result = get_result()
+        
+    else:
+        # Let undetermined loops unwind 3 times
+        print("The bound of loops is not determined!")
+        
+        undetermine_limit = 3
+        loops_limit_it = [loop_limit if loop_limit else undetermine_limit for loop_limit in loops_limit]
+        unwindset = generate_unwindset(loops_name, loops_limit_it)
+        cmd = "./deagle_exe %s %s --unwindset %s > deagle_tmp_output 2>&1" % (program_path, flags, unwindset)
+        
+        print("\nUnwindset: %s" % unwindset)
+        print(cmd)
+        os.system(cmd)
+        result = get_result()
 
-        os.system("rm deagle_tmp_output")
-
-        if property_result == "FAILURE" or it >= iterations - 1:
-            output_result(property_result, last_result)
-
-        now = time.perf_counter()
-        if now - start_time > timelimit - 1:
-            print("Nearly timeup! %fs" % (now - start_time))
-            output_result(property_result, last_result)
-
-        last_result = property_result
-
-
-if property_result == "SUCCESS":
+if result == "SUCCESS":
     print("SUCCESSFUL")
     sys.exit(0)
-elif property_result == "FAILURE":
+elif result == "FAILURE":
     print("FAILED")
     sys.exit(0)
 else:
-    print(property_result)
+    print(result)
     sys.exit(1)

@@ -108,6 +108,8 @@ void multi_path_symex_only_checkert::generate_equation()
 
   symex.remove_dummy_accesses();
 
+  equation.dynamic_object_atomicity(ns);
+
   if(symex.enable_datarace)
     symex.symex_datarace(options.get_option("filename"));
 

@@ -585,6 +585,9 @@ static void parse_smt2_options(const cmdlinet &cmdline, optionst &options)
 
   if(cmdline.isset("datarace"))
     options.set_option("datarace", true);
+
+  if(cmdline.isset("no-assertions"))
+    options.set_option("no-assertions", true);
   
   options.set_option("filename", cmdline.args[0]);
 

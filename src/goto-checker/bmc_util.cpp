@@ -119,18 +119,24 @@ void output_graphml(
   if(graphml.empty())
     return;
 
+  // __SZH_ADD_BEGIN__
+  // FALSE proof not required in no-data-race
+  bool enable_datarace = options.get_bool_option("datarace");
+  if(enable_datarace)
+    return;
+  // __SZH_ADD_END__
+
   graphml_witnesst graphml_witness(ns);
   graphml_witness(goto_trace);
 
   std::string filename = options.get_option("filename");
-  bool enable_datarace = options.get_bool_option("datarace");
 
   if(graphml == "-")
-    write_graphml(graphml_witness.graph(), std::cout, filename, enable_datarace);
+    write_graphml(graphml_witness.graph(), std::cout, filename, options);
   else
   {
     std::ofstream out(graphml);
-    write_graphml(graphml_witness.graph(), out, filename, enable_datarace);
+    write_graphml(graphml_witness.graph(), out, filename, options);
   }
 }
 
@@ -144,18 +150,24 @@ void output_graphml(
   if(graphml.empty())
     return;
 
+  // __SZH_ADD_BEGIN__
+  // TRUE proof only required in no-overflow
+  bool enable_overflow_check = options.get_bool_option("signed-overflow-check") || options.get_bool_option("unsigned-overflow-check");
+  if(!enable_overflow_check)
+    return;
+  // __SZH_ADD_END__
+
   graphml_witnesst graphml_witness(ns);
   graphml_witness(symex_target_equation);
 
   std::string filename = options.get_option("filename");
-  bool enable_datarace = options.get_bool_option("datarace");
 
   if(graphml == "-")
-    write_graphml(graphml_witness.graph(), std::cout, filename, enable_datarace);
+    write_graphml(graphml_witness.graph(), std::cout, filename, options);
   else
   {
     std::ofstream out(graphml);
-    write_graphml(graphml_witness.graph(), out, filename, enable_datarace);
+    write_graphml(graphml_witness.graph(), out, filename, options);
   }
 }
 

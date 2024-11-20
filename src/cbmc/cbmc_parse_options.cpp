@@ -398,7 +398,7 @@ int cbmc_parse_optionst::doit()
 {
   if(cmdline.isset("version"))
   {
-    std::cout << "4.0.1" << '\n';
+    std::cout << "4.1.0" << '\n';
     return CPROVER_EXIT_SUCCESS;
   }
 
@@ -880,8 +880,8 @@ void cbmc_parse_optionst::help()
   // clang-format off
 
   // __SZH_ADD_BEGIN__
-  std::cout << "\n" << banner_string("Deagle", "4.0.1") << '\n'
-            << align_center_with_border("Zhihang Sun, Hongyu Fan, and Fei HE") << '\n'
+  std::cout << "\n" << banner_string("Deagle", "4.1.0") << '\n'
+            << align_center_with_border("Zhihang Sun, Pei Wang, Hongyu Fan, and Fei HE") << '\n'
             << align_center_with_border("School of Software, Tsinghua University") << '\n'
             << align_center_with_border("hefei@tsinghua.edu.cn") << '\n';
   

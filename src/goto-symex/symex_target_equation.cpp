@@ -1127,6 +1127,87 @@ void symex_target_equationt::build_same_pointer_set(std::set<std::pair<std::stri
   }
 }
 
+bool same_source(const symex_targett::sourcet& source1, const symex_targett::sourcet& source2)
+{
+  return source1.function_id == source2.function_id &&
+    source1.pc->source_location() == source2.pc->source_location() &&
+    source1.thread_nr == source2.thread_nr;
+}
+
+void symex_target_equationt::apply_same_line_atomic_set(const namespacet& ns, std::vector<symex_target_equationt::event_it>& same_line_events, std::set<std::pair<std::string, std::string>>& apo_set)
+{
+  for(int i = 0; i < int(same_line_events.size()); i++)
+  {
+    if(!symbol_is_atomic(ns, same_line_events[i]->ssa_lhs.get_l1_object_identifier()))
+      continue;
+    for(int j = i + 1; j < int(same_line_events.size()); j++)
+    {
+      std::string it1_basename = same_line_events[i]->ssa_lhs.get_l1_object_identifier().c_str();
+      std::string it2_basename = same_line_events[j]->ssa_lhs.get_l1_object_identifier().c_str();
+      if(it1_basename == it2_basename)
+      {
+        for(int k = i; k < j; k++)
+        {
+          std::string from_name = same_line_events[k]->ssa_lhs.get_identifier().c_str();
+          std::string to_name = same_line_events[k + 1]->ssa_lhs.get_identifier().c_str();
+          apo_set.insert(std::make_pair(from_name, to_name));
+          std::cout << from_name << " and " << to_name << " should be atomic\n";
+        }
+      }
+    }
+  }
+}
+
+void symex_target_equationt::build_same_line_atomic_set(const namespacet& ns, std::set<std::pair<std::string, std::string>>& apo_set)
+{
+  std::vector<event_it> same_line_events;
+
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!same_line_events.empty() && !same_source(e_it->source, same_line_events.back()->source))
+    {
+      apply_same_line_atomic_set(ns, same_line_events, apo_set);
+      same_line_events.clear();
+    }
+
+    if(!e_it->is_shared_read() && !e_it->is_shared_write())
+      continue;
+
+    same_line_events.push_back(e_it);
+  }
+  apply_same_line_atomic_set(ns, same_line_events, apo_set);
+}
+
+void symex_target_equationt::dynamic_object_atomicity(const namespacet& ns)
+{
+  // dynamic objects can also be atomic, if
+  // ptr = address_of(dynamic_object[0])
+  // where ptr is atomic
+  for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_assignment())
+      continue;
+
+    const auto& lhs = e_it->ssa_lhs;
+    const auto& rhs = e_it->ssa_rhs;
+    if(rhs.id() != ID_address_of)
+      continue;
+    if(!symbol_is_atomic(ns, lhs.get_l1_object_identifier()))
+      continue;
+
+    auto rhs_symbols = find_symbols(rhs);
+    for(auto& rhs_symbol : rhs_symbols)
+    {
+      std::string rhs_dynamic = rhs_symbol.type().get("#dynamic").c_str();
+      if(rhs_dynamic == "1")
+      {
+        std::cout << rhs_symbol.get_identifier() << " is an atomic_dynamic_object\n";
+        atomic_dynamic_objects.insert(id2string(rhs_symbol.get_identifier()));
+      }
+    }
+  }
+}
+
 void symex_target_equationt::build_index_map(std::map<std::string, exprt>& index_map)
 {
   // arr#2 = with(arr#1, i, value)
@@ -1195,14 +1276,30 @@ void symex_target_equationt::build_index_map(std::map<std::string, exprt>& index
 }
 
 #include <util/symbol.h>
+#include <util/format_type.h>
+#include <util/pointer_expr.h>
 
-bool is_atomic_type(const namespacet& ns, irep_idt symbol_name) {
+bool type_is_atomic(const typet& type)
+{
+  std::string symbol_typedef = type.get("#typedef").c_str();
+  std::string symbol_atomic = type.get("#atomic").c_str();
+  if(symbol_typedef.find("atomic_") != std::string::npos || symbol_atomic == "1")
+    return true;
+  if(type.id() == ID_pointer) // todo: to be added later
+    if(type_is_atomic(to_pointer_type(type).base_type()))
+      return true;
+  return false;
+}
+
+bool symex_target_equationt::symbol_is_atomic(const namespacet& ns, irep_idt symbol_name) {
+  if(atomic_dynamic_objects.find(id2string(symbol_name)) != atomic_dynamic_objects.end())
+    return true;
+
   const symbolt *symbol_ptr;
   if(ns.lookup(symbol_name, symbol_ptr)) // true if not found
     return false;
 
-  std::string symbol_typedef = symbol_ptr->type.get("#typedef").c_str();
-  return symbol_typedef.find("atomic_") != std::string::npos;
+  return type_is_atomic(symbol_ptr->type);
 }
 
 void symex_target_equationt::build_datarace(const namespacet& ns, bool filter)
@@ -1274,7 +1371,7 @@ void symex_target_equationt::build_datarace(const namespacet& ns, bool filter)
               continue;
 
             // check whether the variable is like atomic_int
-            if(is_atomic_type(ns, first_event->ssa_lhs.get_l1_object_identifier()))
+            if(symbol_is_atomic(ns, first_event->ssa_lhs.get_l1_object_identifier()))
               continue;
 
             std::string var_name = id2string(first_event->ssa_lhs.get_identifier());
