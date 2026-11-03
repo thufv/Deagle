@@ -109,6 +109,7 @@ public:
 
   NODISCARD exprt l2_rename_rvalues(exprt lvalue, const namespacet &ns);
 
+  /// \param access_guard: restricts shared writes, not SSA value maintenance
   /// \return lhs renamed to level 2
   NODISCARD renamedt<ssa_exprt, L2> assignment(
     ssa_exprt lhs,    // L0/L1
@@ -116,7 +117,8 @@ public:
     const namespacet &ns,
     bool rhs_is_simplified,
     bool record_value,
-    bool allow_pointer_unsoundness = false);
+    bool allow_pointer_unsoundness = false,
+    const exprt &access_guard = true_exprt());
 
   field_sensitivityt field_sensitivity;
 
@@ -208,9 +210,16 @@ public:
   };
 
   bool l2_thread_read_encoding(ssa_exprt &expr, const namespacet &ns);
-  bool l2_thread_write_encoding(const ssa_exprt &expr, const namespacet &ns);
+  bool l2_thread_write_encoding(
+    const ssa_exprt &expr,
+    const namespacet &ns,
+    const exprt &access_guard);
   write_is_shared_resultt
   write_is_shared(const ssa_exprt &expr, const namespacet &ns) const;
+
+  // The built-in mutex models read and write the same selected object.
+  // These conditions exclude acquisition success, so failed reads remain active.
+  std::map<ssa_exprt, exprt::operandst> mutex_access_guards;
 
   std::stack<bool> record_events;
 

@@ -2419,6 +2419,30 @@ void smt2_convt::convert_expr(const exprt &expr)
       out << ')';
     }
   }
+// __SZH_ADD_BEGIN__
+  else if(expr.id() == ID_pred_po || expr.id() == ID_pred_atom || 
+    expr.id() == ID_pred_rf || expr.id() == ID_pred_ws || expr.id() == ID_pred_race ||
+    expr.id() == ID_guard_of || expr.id() == ID_addr_of)
+  {
+    static std::map<irep_idt, std::string> pred_map = {
+      {ID_pred_po, "po"},
+      {ID_pred_atom, "atom"},
+      {ID_pred_rf, "rf"},
+      {ID_pred_ws, "ws"},
+      {ID_pred_race, "race"},
+      {ID_guard_of, "guard-of"},
+      {ID_addr_of, "addr-of"}
+    };
+
+    out << "(" << pred_map[expr.id()];
+    for(const auto& op : expr.operands())
+    {
+      out << " ";
+      convert_expr(op);
+    }
+    out << ")";
+  }
+// __SZH_ADD_END__
   else
     INVARIANT_WITH_DIAGNOSTICS(
       false,
@@ -5565,6 +5589,12 @@ void smt2_convt::convert_type(const typet &type)
   {
     out << "state";
   }
+// __SZH_ADD_BEGIN__
+  else if(type.id() == ID_event)
+  {
+    out << "Event";
+  }
+// __SZH_ADD_END__
   else
   {
     UNEXPECTEDCASE("unsupported type: "+type.id_string());

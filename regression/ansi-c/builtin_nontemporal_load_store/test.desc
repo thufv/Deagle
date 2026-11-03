@@ -1,0 +1,6 @@
+CORE test-c++-front-end
+main.c
+
+^EXIT=0$
+^SIGNAL=0$
+--

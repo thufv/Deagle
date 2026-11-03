@@ -1,0 +1,9 @@
+CORE pthread
+main.c
+--deadlock --no-assertions --unwinding-assertions --no-self-loops-to-assumptions -DSELF_DEADLOCK
+^EXIT=10$
+^SIGNAL=0$
+^\[nodeadlock\..*: FAILURE$
+^VERIFICATION FAILED$
+--
+^warning: ignoring

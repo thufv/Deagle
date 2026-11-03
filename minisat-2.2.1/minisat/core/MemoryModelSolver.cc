@@ -17,7 +17,7 @@
 
 #define RETURN_IF_TRUE(statement) {if(statement) return true;}
 
-#define get_assignment(l) ((l).x == -1 ? l_True : value(l))
+#define get_assignment(l) ((l).x == -1 ? l_True : ((l).x == -2 ? l_False : value(l)))
 
 #define stl_contains(container, key) ((container).find(key) != (container).end())
 
@@ -185,7 +185,7 @@ void MemoryModelSolver::static_analyze()
             if(kind_arities[kind] == 2)
             {
                 std::cout << kind_str << "'s may set:\n\t";
-                for(auto pair : binary_may_sets[kind].elements)
+                for(auto pair : binary_may_sets[kind].get_elements())
                     std::cout << "(" << pair.first << ", " << pair.second << ") ";
                 std::cout << "\n";
             }
@@ -231,9 +231,9 @@ void MemoryModelSolver::static_analyze()
                     row.resize(node_num());
             }
 
-            for(auto pair : binary_may_sets[kind].elements)
+            for(auto pair : binary_may_sets[kind].get_elements())
             {
-                for(auto another_pair : binary_may_sets[another_kind].elements)
+                for(auto another_pair : binary_may_sets[another_kind].get_elements())
                 {
                     if(pair.second != another_pair.first)
                         continue;
@@ -817,7 +817,7 @@ void MemoryModelSolver::analyze(CRef confl, vec<Lit>& out_learnt, int& out_btlev
 
 bool MemoryModelSolver::add_label(int node, int kind, reasont& reason)
 {
-    if(unary_sets[kind].contains(node)) // if this already exists
+    if(has_label(node, kind))
         return false;
 
     if(MM_VERBOSITY >= 1)
@@ -840,7 +840,7 @@ bool MemoryModelSolver::add_label(int node, int kind, reasont& reason)
         auto& link = propagation.link;
         if(link.link_type == ALT)
         {
-            RETURN_IF_TRUE(add_label(node, next_kind, reason))
+            RETURN_IF_TRUE(add_label(node, next_kind, this_reason))
         }
         else if(link.link_type == AND)
         {
@@ -857,8 +857,7 @@ bool MemoryModelSolver::add_label(int node, int kind, reasont& reason)
         {
             auto& another_kind = link.another_kind;
             auto& another_neg_unary_set = neg_unary_sets[another_kind];
-            auto& another_unary_may_set = unary_may_sets[another_kind];
-            if(another_neg_unary_set.contains(node) || !another_unary_may_set.contains(node))
+            if(has_label(node, another_kind))
             {
                 reasont& another_reason = another_neg_unary_set.get_reason(node);
                 reasont next_reason(&this_reason, &another_reason);
@@ -867,10 +866,10 @@ bool MemoryModelSolver::add_label(int node, int kind, reasont& reason)
         }
         else if(link.link_type == SUB && link.link_position == RIGHT)
         {
-            if(!need_negation[next_kind] || !unary_may_sets[next_kind].contains(node))
+            if(!need_negation[next_kind])
                 continue;
 
-            RETURN_IF_TRUE(add_neglabel(node, next_kind, reason))
+            RETURN_IF_TRUE(add_neglabel(node, next_kind, this_reason))
         }
         else if(link.link_type == PROD)
         {
@@ -901,10 +900,7 @@ bool MemoryModelSolver::add_label(int node, int kind, reasont& reason)
 
 bool MemoryModelSolver::add_neglabel(int node, int kind, reasont& reason)
 {
-    if(!need_negation[kind])
-        return false;
-
-    if(neg_unary_sets[kind].contains(node)) // if this already exists
+    if(!need_negation[kind] || has_neglabel(node, kind))
         return false;
 
     if(MM_VERBOSITY >= 1)
@@ -935,13 +931,13 @@ bool MemoryModelSolver::add_neglabel(int node, int kind, reasont& reason)
         auto& link = propagation.link;
         if(link.link_type == ALT)
         {
-            if(!need_negation[next_kind] || !unary_may_sets[next_kind].contains(node))
+            if(!need_negation[next_kind] || has_neglabel(node, next_kind))
                 continue;
 
             auto& another_kind = link.another_kind;
             auto& another_neg_unary_set = neg_unary_sets[another_kind];
             auto& another_unary_may_set = unary_may_sets[another_kind];
-            if(another_neg_unary_set.contains(node) || !another_unary_may_set.contains(node))
+            if(has_neglabel(node, another_kind))
             {
                 reasont& another_reason = another_neg_unary_set.get_reason(node);
                 reasont next_reason(&this_reason, &another_reason);
@@ -950,14 +946,10 @@ bool MemoryModelSolver::add_neglabel(int node, int kind, reasont& reason)
         }
         else if(link.link_type == AND)
         {
-            if(!need_negation[next_kind] || !unary_may_sets[next_kind].contains(node))
-                continue;
             RETURN_IF_TRUE(add_neglabel(node, next_kind, this_reason))
         }
         else if(link.link_type == SUB && link.link_position == LEFT)
         {
-            if(!need_negation[next_kind] || !unary_may_sets[next_kind].contains(node))
-                continue;
             RETURN_IF_TRUE(add_neglabel(node, next_kind, this_reason))
         }
         else if(link.link_type == SUB && link.link_position == RIGHT)
@@ -980,22 +972,16 @@ bool MemoryModelSolver::add_neglabel(int node, int kind, reasont& reason)
             {
                 if(link.link_position == LEFT)
                 {
-                    if(!binary_may_sets[next_kind].contains(node, another_node))
-                        continue;
                     RETURN_IF_TRUE(add_negedge(node, another_node, next_kind, this_reason))
                 }
                 else if(link.link_position == RIGHT)
                 {
-                    if(!binary_may_sets[next_kind].contains(node, another_node))
-                        continue;
                     RETURN_IF_TRUE(add_negedge(another_node, node, next_kind, this_reason))
                 }
             }
         }
         else if(link.link_type == BRACKET)
         {
-            if(!need_negation[next_kind] || !binary_may_sets[next_kind].contains(node, node))
-                continue;
             RETURN_IF_TRUE(add_negedge(node, node, next_kind, this_reason));
         }
         else
@@ -1008,7 +994,7 @@ bool MemoryModelSolver::add_neglabel(int node, int kind, reasont& reason)
 
 bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason)
 {
-    if(binary_sets[kind].contains(node1, node2)) // if this already exists
+    if(has_edge(node1, node2, kind))
         return false;
 
     if(MM_VERBOSITY >= 1)
@@ -1055,11 +1041,11 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
         auto& link = propagation.link;
         if(link.link_type == ALT)
         {
-            RETURN_IF_TRUE(add_edge(node1, node2, next_kind, reason))
+            RETURN_IF_TRUE(add_edge(node1, node2, next_kind, this_reason))
         }
         else if(link.link_type == FLIP)
         {
-            RETURN_IF_TRUE(add_edge(node2, node1, next_kind, reason))
+            RETURN_IF_TRUE(add_edge(node2, node1, next_kind, this_reason))
         }
         else if(link.link_type == SEQ)
         {
@@ -1073,6 +1059,9 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
                 auto& node2_outs = another_binary_set.get_outs(node2);
                 for(auto node3_id : node2_outs)
                 {
+                    if(has_edge(node1, node3_id, next_kind))
+                        continue;
+
                     reasont& another_reason = another_binary_set.get_reason(node2, node3_id);
                     reasont next_reason(&this_reason, &another_reason);
                     RETURN_IF_TRUE(add_edge(node1, node3_id, next_kind, next_reason))
@@ -1081,6 +1070,9 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
                 auto& node1_dangerous_outs = next_dangerous_binary_set.get_outs(node1);
                 for(auto node3_id : node1_dangerous_outs)
                 {
+                    if(!should_add_dangerous_edge(node2, node3_id, another_kind))
+                        continue;
+
                     reasont& dangerous_reason = next_dangerous_binary_set.get_reason(node1, node3_id);
                     reasont next_reason(&this_reason, &dangerous_reason);
                     RETURN_IF_TRUE(add_dangerous_edge(node2, node3_id, another_kind, next_reason))
@@ -1091,6 +1083,9 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
                 auto& node1_ins = another_binary_set.get_ins(node1);
                 for(auto node0_id : node1_ins)
                 {
+                    if(has_edge(node0_id, node2, next_kind))
+                        continue;
+
                     reasont& another_reason = another_binary_set.get_reason(node0_id, node1);
                     reasont next_reason(&this_reason, &another_reason);
                     RETURN_IF_TRUE(add_edge(node0_id, node2, next_kind, next_reason))
@@ -1099,6 +1094,9 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
                 auto& node2_dangerous_ins = next_dangerous_binary_set.get_ins(node2);
                 for(auto node0_id : node2_dangerous_ins)
                 {
+                    if(!should_add_dangerous_edge(node0_id, node1, another_kind))
+                        continue;
+
                     reasont& dangerous_reason = next_dangerous_binary_set.get_reason(node0_id, node2);
                     reasont next_reason(&this_reason, &dangerous_reason);
                     RETURN_IF_TRUE(add_dangerous_edge(node0_id, node1, another_kind, next_reason))
@@ -1121,7 +1119,7 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
             auto& another_kind = link.another_kind;
             auto& another_binary_may_set = binary_may_sets[another_kind];
             auto& another_neg_binary_set = neg_binary_sets[another_kind];
-            if(another_neg_binary_set.contains(node1, node2) || !another_binary_may_set.contains(node1, node2))
+            if(has_negedge(node1, node2, another_kind))
             {
                 reasont& another_reason = another_neg_binary_set.get_reason(node1, node2);
                 reasont next_reason(&this_reason, &another_reason);
@@ -1130,7 +1128,7 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
         }
         else if(link.link_type == SUB && link.link_position == RIGHT)
         {
-            if(!need_negation[next_kind] || !binary_may_sets[next_kind].contains(node1, node2))
+            if(!need_negation[next_kind])
                 continue;
             RETURN_IF_TRUE(add_negedge(node1, node2, next_kind, this_reason))
         }
@@ -1155,7 +1153,7 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
                     auto& n1_ins = next_binary_set.get_ins(n1);
                     for(auto& n3 : n2_outs)
                     {
-                        if(next_binary_set.contains(n1, n3))
+                        if(has_edge(n1, n3, next_kind))
                             continue;
                         reasont& reason_n2_n3 = next_binary_set.get_reason(n2, n3);
                         reasont reason_n1_n3(&reason_n1_n2, &reason_n2_n3);
@@ -1164,7 +1162,7 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
                     }
                     for(auto& n0 : n1_ins)
                     {
-                        if(next_binary_set.contains(n0, n2))
+                        if(has_edge(n0, n2, next_kind))
                             continue;
                         reasont& reason_n0_n1 = next_binary_set.get_reason(n0, n1);
                         reasont reason_n0_n2(&reason_n0_n1, &reason_n1_n2);
@@ -1179,6 +1177,8 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
             auto& node1_dangerous_outs = next_dangerous_binary_set.get_outs(node1);
             for(auto node3_id : node1_dangerous_outs)
             {
+                if(!should_add_dangerous_edge(node2, node3_id, next_kind))
+                    continue;
                 reasont& dangerous_reason = next_dangerous_binary_set.get_reason(node1, node3_id);
                 reasont next_dangerous_reason(&dangerous_reason, &this_reason);
                 RETURN_IF_TRUE(add_dangerous_edge(node2, node3_id, next_kind, next_dangerous_reason))
@@ -1186,6 +1186,8 @@ bool MemoryModelSolver::add_edge(int node1, int node2, int kind, reasont& reason
             auto& node2_dangerous_ins = next_dangerous_binary_set.get_ins(node2);
             for(auto node0_id : node2_dangerous_ins)
             {
+                if(!should_add_dangerous_edge(node0_id, node1, next_kind))
+                    continue;
                 reasont& dangerous_reason = next_dangerous_binary_set.get_reason(node0_id, node2);
                 reasont next_dangerous_reason(&dangerous_reason, &this_reason);
                 RETURN_IF_TRUE(add_dangerous_edge(node0_id, node1, next_kind, next_dangerous_reason))
@@ -1205,7 +1207,7 @@ bool MemoryModelSolver::add_negedge(int node1, int node2, int kind, reasont& rea
     if(!need_negation[kind])
         return false;
 
-    if(neg_binary_sets[kind].contains(node1, node2) || !binary_may_sets[kind].contains(node1, node2)) // if this already exists
+    if(has_negedge(node1, node2, kind))
         return false;
 
     if(MM_VERBOSITY >= 1)
@@ -1229,7 +1231,7 @@ bool MemoryModelSolver::add_negedge(int node1, int node2, int kind, reasont& rea
     if(axioms[kind] == NOT_EMPTY)
     {
         int existing_num = neg_binary_set.get_element_num();
-        int maximal_num = binary_may_sets[kind].elements.size();
+        int maximal_num = binary_may_sets[kind].size();
         if(existing_num >= maximal_num)
         {
             reasont total_reason;
@@ -1250,7 +1252,7 @@ bool MemoryModelSolver::add_negedge(int node1, int node2, int kind, reasont& rea
 
         if(link.link_type == ALT)
         {
-            if(!need_negation[next_kind] || !binary_may_sets[next_kind].contains(node1, node2))
+            if(!need_negation[next_kind] || has_negedge(node1, node2, next_kind))
                 continue;
 
             auto& another_kind = link.another_kind;
@@ -1265,7 +1267,7 @@ bool MemoryModelSolver::add_negedge(int node1, int node2, int kind, reasont& rea
         }
         else if(link.link_type == FLIP)
         {
-            if(!need_negation[next_kind] || !binary_may_sets[next_kind].contains(node2, node1))
+            if(!need_negation[next_kind])
                 continue;
 
             RETURN_IF_TRUE(add_negedge(node2, node1, next_kind, this_reason))
@@ -1323,14 +1325,14 @@ bool MemoryModelSolver::add_negedge(int node1, int node2, int kind, reasont& rea
         }
         else if(link.link_type == AND)
         {
-            if(!need_negation[next_kind] || !binary_may_sets[next_kind].contains(node1, node2))
+            if(!need_negation[next_kind])
                 continue;
 
             RETURN_IF_TRUE(add_negedge(node1, node2, next_kind, this_reason))
         }
         else if(link.link_type == SUB && link.link_position == LEFT)
         {
-            if(!need_negation[next_kind] || !binary_may_sets[next_kind].contains(node1, node2))
+            if(!need_negation[next_kind])
                 continue;
 
             RETURN_IF_TRUE(add_negedge(node1, node2, next_kind, this_reason))
@@ -1360,15 +1362,11 @@ bool MemoryModelSolver::add_negedge(int node1, int node2, int kind, reasont& rea
 
 bool MemoryModelSolver::add_dangerous_label(int node, int kind, reasont& reason)
 {
-    auto& unary_may_set = unary_may_sets[kind];
-    if(!unary_may_set.contains(node))
+    if(!should_add_dangerous_label(node, kind))
         return false;
 
     auto& dangerous_unary_set = dangerous_unary_sets[kind];
     auto& unary_set = unary_sets[kind];
-
-    if(dangerous_unary_set.contains(node)) // if this already exists
-        return false;
 
     if(MM_VERBOSITY >= 1)
     {
@@ -1464,15 +1462,11 @@ bool MemoryModelSolver::add_dangerous_label(int node, int kind, reasont& reason)
 
 bool MemoryModelSolver::add_dangerous_edge(int node1, int node2, int kind, reasont& reason)
 {
-    auto& binary_may_set = binary_may_sets[kind];
-    if(!binary_may_set.contains(node1, node2))
+    if(!should_add_dangerous_edge(node1, node2, kind))
         return false;
 
     auto& dangerous_binary_set = dangerous_binary_sets[kind];
     auto& binary_set = binary_sets[kind];
-
-    if(dangerous_binary_set.contains(node1, node2)) // if this already exists
-        return false;
 
     if(MM_VERBOSITY >= 1)
     {
@@ -1556,7 +1550,9 @@ bool MemoryModelSolver::add_dangerous_edge(int node1, int node2, int kind, reaso
                 auto& node1_outs = last_binary_set.get_outs(node1);
                 for(auto node3_id : node1_outs)
                 {
-                    reasont& last_reason = last_binary_set.get_reason(node3_id, node2);
+                    if(!should_add_dangerous_edge(node3_id, node2, another_kind))
+                        continue;
+                    reasont& last_reason = last_binary_set.get_reason(node1, node3_id);
                     reasont next_reason(&last_reason, &this_reason);
                     RETURN_IF_TRUE(add_dangerous_edge(node3_id, node2, another_kind, next_reason))
                 }
@@ -1566,7 +1562,9 @@ bool MemoryModelSolver::add_dangerous_edge(int node1, int node2, int kind, reaso
                 auto& node2_ins = last_binary_set.get_ins(node2);
                 for(auto node3_id : node2_ins)
                 {
-                    reasont& last_reason = last_binary_set.get_reason(node1, node3_id);
+                    if(!should_add_dangerous_edge(node1, node3_id, another_kind))
+                        continue;
+                    reasont& last_reason = last_binary_set.get_reason(node3_id, node2);
                     reasont next_reason(&last_reason, &this_reason);
                     RETURN_IF_TRUE(add_dangerous_edge(node1, node3_id, another_kind, next_reason))
                 }
@@ -1593,6 +1591,8 @@ bool MemoryModelSolver::add_dangerous_edge(int node1, int node2, int kind, reaso
             auto& node1_outs = last_binary_set.get_outs(node1);
             for(auto node3_id : node1_outs)
             {
+                if(dangerous_binary_sets[kind].contains(node3_id, node2))
+                    continue;
                 reasont& last_reason = last_binary_set.get_reason(node3_id, node2);
                 reasont next_reason(&last_reason, &this_reason);
                 RETURN_IF_TRUE(add_dangerous_edge(node3_id, node2, kind, next_reason))
@@ -1601,6 +1601,8 @@ bool MemoryModelSolver::add_dangerous_edge(int node1, int node2, int kind, reaso
             auto& node2_ins = last_binary_set.get_ins(node2);
             for(auto node3_id : node2_ins)
             {
+                if(dangerous_binary_sets[kind].contains(node1, node3_id))
+                    continue;
                 reasont& last_reason = last_binary_set.get_reason(node1, node3_id);
                 reasont next_reason(&last_reason, &this_reason);
                 RETURN_IF_TRUE(add_dangerous_edge(node1, node3_id, kind, next_reason))
@@ -1697,7 +1699,7 @@ bool MemoryModelSolver::use_available_info(bool is_first)
             if(axioms[kind] == rel_axiomt::NOT_EMPTY)
             {
                 int arity = kind_arities[kind];
-                if((arity == 1 && unary_may_sets[kind].elements.empty()) || (arity == 2 && binary_may_sets[kind].elements.empty()))
+                if((arity == 1 && unary_may_sets[kind].size() == 0) || (arity == 2 && binary_may_sets[kind].size() == 0))
                 {
                     std::cout << "A not-empty relation's may set is empty! Never consistent!\n";
                     conflict_clause = literal_vector();
@@ -1739,7 +1741,7 @@ bool MemoryModelSolver::use_available_info(bool is_first)
             it = lit_to_labels.erase(it);
             continue;
         }
-        else if(is_first)
+        else if(get_assignment(lit) == l_Undef && is_first)
             set_correspond_label(lit, label);
 
         it++;
@@ -1758,7 +1760,7 @@ bool MemoryModelSolver::use_available_info(bool is_first)
             it = lit_to_neglabels.erase(it);
             continue;
         }
-        else if(is_first)
+        else if(get_assignment(lit) == l_Undef && is_first)
             set_correspond_neglabel(lit, label);
 
         it++;
@@ -1777,7 +1779,7 @@ bool MemoryModelSolver::use_available_info(bool is_first)
             it = lit_to_edges.erase(it);
             continue;
         }
-        else if(is_first)
+        else if(get_assignment(lit) == l_Undef && is_first)
             set_correspond_edge(lit, edge);
 
         it++;
@@ -1796,7 +1798,7 @@ bool MemoryModelSolver::use_available_info(bool is_first)
             it = lit_to_negedges.erase(it);
             continue;
         }
-        else if(is_first)
+        else if(get_assignment(lit) == l_Undef && is_first)
             set_correspond_negedge(lit, edge);
 
         it++;

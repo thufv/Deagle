@@ -73,6 +73,8 @@ void goto_check_c(
   " --no-assertions              ignore user assertions\n" \
   " --no-assumptions             ignore user assumptions\n" \
   " --assert-to-assume           convert user assertions to assumptions\n" \
+  " --datarace                   (SZH) enable datarace detection\n" \
+  " --deadlock                   (WP) enable deadlock detection\n"
 
 #define PARSE_OPTIONS_GOTO_CHECK(cmdline, options) \
   options.set_option("alloc-check", cmdline.isset("alloc-check")); \

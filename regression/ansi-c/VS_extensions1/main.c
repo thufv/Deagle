@@ -20,9 +20,14 @@ __declspec(thread) int thread_local;
 
 struct __declspec(dllimport) some_struct_tag { int x; };
 
+typedef union __declspec(intrin_type) __declspec(align(8)) u {
+  int x;
+  int y;
+} u2;
+
 //__delegate int GetDayOfWeek();
 
-// __event 
+// __event
 
 void f4()
 {
@@ -54,11 +59,13 @@ __int16 i16;
 
 __int32 i32;
 
+_int64 i64_with_just_one_underscore;
+
 __int64 i64;
 
 __int8 i8;
 
-// __interface 
+// __interface
 
 void f9()
 {
@@ -83,7 +90,7 @@ void f9()
 
 // __property
 
-// __raise 
+// __raise
 
 // __sealed
 

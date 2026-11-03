@@ -1,0 +1,12 @@
+FUTURE cvc4_bug
+regexp_all_sat.smt2
+
+^EXIT=0$
+^SIGNAL=0$
+^sat$
+--
+error
+--
+cvc4 (--strings-exp):
+re.all not supported
+(cvc4 1.7-prerelease [git master e1dc3932])

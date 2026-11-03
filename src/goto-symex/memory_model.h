@@ -31,12 +31,14 @@ public:
   bool assume_local_consistency = true;
 
   bool use_deagle;
+  bool use_zord;
   std::map<std::string, exprt> id_to_guard;
   void build_guard_map_write(symex_target_equationt &equation);
   void build_guard_map_all(symex_target_equationt &equation);
   bool is_apo(event_it e1, event_it e2);
   bool is_apo(std::set<std::pair<std::string, std::string>>& array_update_set, event_it e1, event_it e2); // this apo considers whether e1 and e2 belong to the same array update operation
   std::string get_name(event_it e);
+  std::string get_name_with_clk(event_it e);
   void add_oc_edge(symex_target_equationt &equation, event_it e1, event_it e2, std::string kind, exprt guard_expr);
   void add_oc_edge(symex_target_equationt &equation, std::string e1_str, std::string e2_str, std::string kind, exprt guard_expr);
 
@@ -48,10 +50,17 @@ public:
   bool enable_datarace;
   void data_race(symex_target_equationt &equation);
   exprt array_find_index(symex_target_equationt &equation, event_it event);
+
+  exprt zord_pred(irep_idt pred, event_it e1, event_it e2, symbol_exprt reason);
+  exprt zord_pred(irep_idt pred, event_it e1, event_it e2);
   // __SZH_ADD_END__
 
   // __WP_ADD_BEGIN__
   bool enable_deadlock;
+
+  int simplified_rf_val_count, total_rf_val_count;
+  std::set<irep_idt> key_identifiers;
+  void simplify_assignment_encoding(symex_target_equationt &equation);
   // __WP_ADD_END__
 
 protected:

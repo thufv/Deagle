@@ -1,0 +1,8 @@
+CORE
+bool3.c
+
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+^warning: ignoring

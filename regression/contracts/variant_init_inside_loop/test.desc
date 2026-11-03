@@ -1,0 +1,20 @@
+CORE new-smt-backend
+main.c
+--apply-loop-contracts _ --unsigned-overflow-check
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[main\.\d+\] .* Check decreases clause on loop iteration: SUCCESS$
+^\[main.assigns.\d+\] .* Check that i is assignable: SUCCESS$
+^\[main\.overflow\.\d+\] .* arithmetic overflow on unsigned - in max - i: SUCCESS$
+^\[main\.overflow\.\d+\] .* arithmetic overflow on unsigned - in max - i: SUCCESS$
+^\[main\.overflow\.\d+\] .* arithmetic overflow on unsigned \+ in i \+ 1u: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+^EXIT=0$
+^SIGNAL=0$
+--
+--
+This test checks that the decreases clause is evaluated only within the loop iteration,
+not outside of it (before the loop guard).
+The `main.overflow.1` check would fail if the decreases clause `(max - i)` is evaluated
+before the loop guard is satisfied. This would occur when `start > max` and therefore
+`i > max` after assuming the invariant.

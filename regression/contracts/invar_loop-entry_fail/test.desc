@@ -1,0 +1,14 @@
+CORE
+main.c
+--apply-loop-contracts
+^EXIT=(10|6)$
+^SIGNAL=0$
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: FAILURE$
+^\[main.assigns.\d+\] line 11 Check that y is assignable: SUCCESS$
+^\[main.assigns.\d+\] line 12 Check that x is assignable: SUCCESS$
+^\[main.assigns.\d+\] line 13 Check that x is assignable: SUCCESS$
+^VERIFICATION FAILED$
+--
+--
+This test ensures that __CPROVER_loop_entry violations are checked.

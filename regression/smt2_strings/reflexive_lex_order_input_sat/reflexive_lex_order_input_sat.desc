@@ -1,0 +1,12 @@
+FUTURE z3_bug
+reflexive_lex_order_input_sat.smt2
+
+^EXIT=0$
+^SIGNAL=0$
+^sat$
+--
+error
+--
+z3:
+str.<= not supported
+Z3 [version 4.8.3 - 64 bit]

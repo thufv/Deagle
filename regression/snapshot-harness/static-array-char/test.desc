@@ -1,0 +1,10 @@
+KNOWNBUG
+main.c
+tmp,first,second,array_size --harness-type initialize-with-memory-snapshot --initial-goto-location main:4
+^SIGNAL=0$
+^EXIT=0$
+VERIFICATION SUCCESSFUL
+--
+unwinding assertion loop \d+: FAILURE
+--
+For more information take a look at github#5351

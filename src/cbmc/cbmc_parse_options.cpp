@@ -12,6 +12,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #include "cbmc_parse_options.h"
 
 #include <cstdlib> // exit()
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -118,6 +119,12 @@ void cbmc_parse_optionst::set_default_options(optionst &options)
 
 void cbmc_parse_optionst::get_command_line_options(optionst &options)
 {
+  if(cmdline.isset("deadlock"))
+  {
+    cmdline.set("unwinding-assertions");
+    cmdline.set("no-self-loops-to-assumptions");
+  }
+
   if(config.set(cmdline))
   {
     usage_error();
@@ -142,14 +149,14 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
   if(cmdline.isset("unwind-suggest"))
     options.set_option("unwind-suggest", true);
   
-  if(cmdline.isset("mm-strict-guard"))
-    options.set_option("mm-strict-guard", true);
-  
   if(cmdline.isset("mm-flag"))
     options.set_option("mm-flag", true);
 
   if(cmdline.isset("mm-cutting"))
     options.set_option("mm-cutting", true);
+
+  if(cmdline.isset("compile-target"))
+    options.set_option("compile-target", cmdline.get_value("compile-target"));
 
   if(cmdline.isset("allow-pointer-unsoundness") || cmdline.isset("refined-pointer-analysis"))
     options.set_option("allow-pointer-unsoundness", true);
@@ -313,6 +320,11 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
   if(cmdline.isset("slice-formula"))
     options.set_option("slice-formula", true);
 
+  // __SZH_ADD_BEGIN__
+  if(cmdline.isset("concurrency-slice"))
+    options.set_option("concurrency-slice", true);
+  // __SZH_ADD_END__
+
   if(cmdline.isset("arrays-uf-always"))
     options.set_option("arrays-uf", "always");
   else if(cmdline.isset("arrays-uf-never"))
@@ -356,7 +368,23 @@ void cbmc_parse_optionst::get_command_line_options(optionst &options)
 
   if(cmdline.isset("graphml-witness"))
   {
+    if(cmdline.get_value("graphml-witness") != "-")
+      std::remove(cmdline.get_value("graphml-witness").c_str());
     options.set_option("graphml-witness", cmdline.get_value("graphml-witness"));
+    options.set_option("stop-on-fail", true);
+    options.set_option("trace", true);
+  }
+
+  if(cmdline.isset("yaml-witness"))
+  {
+    const std::string yaml_witness = cmdline.get_value("yaml-witness");
+    if(yaml_witness.empty() || yaml_witness == "-")
+    {
+      log.error() << "--yaml-witness requires a file path" << messaget::eom;
+      exit(CPROVER_EXIT_USAGE_ERROR);
+    }
+    std::remove(yaml_witness.c_str());
+    options.set_option("yaml-witness", yaml_witness);
     options.set_option("stop-on-fail", true);
     options.set_option("trace", true);
   }
@@ -404,7 +432,7 @@ int cbmc_parse_optionst::doit()
 {
   if(cmdline.isset("version"))
   {
-    std::cout << "4.1.0" << '\n';
+    std::cout << "4.2.0" << '\n';
     return CPROVER_EXIT_SUCCESS;
   }
 
@@ -888,8 +916,8 @@ void cbmc_parse_optionst::help()
   // clang-format off
 
   // __SZH_ADD_BEGIN__
-  std::cout << "\n" << banner_string("Deagle", "4.1.0") << '\n'
-            << align_center_with_border("Zhihang Sun, Pei Wang, Hongyu Fan, and Fei HE") << '\n'
+  std::cout << "\n" << banner_string("Deagle", DEAGLE_VERSION) << '\n'
+            << align_center_with_border("Zhihang Sun, Pei Wang, Zhiheng Cai, Hongyu Fan, Fei He") << '\n'
             << align_center_with_border("School of Software, Tsinghua University") << '\n'
             << align_center_with_border("hefei@tsinghua.edu.cn") << '\n';
   
@@ -912,6 +940,9 @@ void cbmc_parse_optionst::help()
     " cbmc [options] file.c ...    perform bounded model checking\n"
     "\n"
     "Analysis options:\n"
+    " --deadlock                   check for deadlocks (implies\n"
+    "                              --unwinding-assertions and\n"
+    "                              --no-self-loops-to-assumptions)\n"
     HELP_SHOW_PROPERTIES
     " --symex-coverage-report f    generate a Cobertura XML coverage report in f\n" // NOLINT(*)
     " --property id                only check one specific property\n"
@@ -940,6 +971,10 @@ void cbmc_parse_optionst::help()
     HELP_GOTO_CHECK
     HELP_COVER
     " --mm MM                      memory consistency model for concurrent programs (default: sc)\n" // NOLINT(*)
+    " --mm <*.cat>                 (SZH) specify memory model in CAT and use Deagle's general solver\n" // NOLINT(*)
+    " --mm-flag                    (SZH) enable flag (such as data race) checks in general solver\n" // NOLINT(*)
+    " --mm-cutting                 (SZH) use cutting in general solver\n" // NOLINT(*)
+    " --compile-target T           (SZH) compile C11 code into target model (currently support tso, imm, power)\n" // NOLINT(*)
     HELP_CONFIG_LIBRARY
     HELP_REACHABILITY_SLICER
     HELP_REACHABILITY_SLICER_FB

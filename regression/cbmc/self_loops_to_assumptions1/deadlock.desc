@@ -1,0 +1,9 @@
+CORE
+main.c
+--deadlock --unwind 1
+^EXIT=10$
+^SIGNAL=0$
+^\[main\.unwind\.0\].*: FAILURE$
+^VERIFICATION FAILED$
+--
+^replacing self-loop

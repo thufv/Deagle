@@ -1,0 +1,10 @@
+KNOWNBUG
+main.c
+p --harness-type initialize-with-memory-snapshot --initial-goto-location main:4 --havoc-variables p --min-null-tree-depth 10 --max-nondet-tree-depth 3
+^SIGNAL=0$
+^EXIT=0$
+VERIFICATION SUCCESSFUL
+--
+unwinding assertion loop \d+: FAILURE
+--
+For more information take a look at github#5351

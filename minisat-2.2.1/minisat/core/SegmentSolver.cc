@@ -1181,6 +1181,8 @@ lbool SegmentSolver::get_assignment(Lit lit)
 {
     if(lit.x == -1)
         return l_True;
+    if(lit.x == -2)
+        return l_False;
     return value(lit);
 }
 

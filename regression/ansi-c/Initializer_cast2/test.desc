@@ -1,0 +1,7 @@
+CORE broken-test-c++-front-end
+main.c
+
+^EXIT=0$
+^SIGNAL=0$
+--
+^CONVERSION ERROR$

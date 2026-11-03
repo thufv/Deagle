@@ -12,6 +12,7 @@ Author: Michael Tautschnig, mt@eecs.qmul.ac.uk
 #include "graphml.h"
 
 #include <util/message.h>
+#include <util/config.h>
 
 // include last to make sure #define stack(x) of parser.h does not
 // collide with std::stack included by graph.h
@@ -323,7 +324,7 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
   {
     xmlt &key=graphml.new_element("key");
     key.set_attribute("attr.name", "threadId");
-    key.set_attribute("attr.type", "int");
+    key.set_attribute("attr.type", "string");
     key.set_attribute("for", "edge");
     key.set_attribute("id", "threadId");
 
@@ -335,11 +336,10 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
   {
     xmlt &key = graphml.new_element("key");
     key.set_attribute("attr.name", "createThread");
-    key.set_attribute("attr.type", "int");
+    key.set_attribute("attr.type", "string");
     key.set_attribute("for", "edge");
     key.set_attribute("id", "createThread");
 
-    key.new_element("default").data="0";
   }
 
   // <key attr.name="sourcecodeLanguage" attr.type="string" for="graph"
@@ -461,13 +461,13 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
 
   // <key attr.name="enterFunction" attr.type="string" for="edge"
   //      id="enterFunction"/>
-  // {
-  //   xmlt &key=graphml.new_element("key");
-  //   key.set_attribute("attr.name", "enterFunction");
-  //   key.set_attribute("attr.type", "string");
-  //   key.set_attribute("for", "edge");
-  //   key.set_attribute("id", "enterFunction");
-  // }
+  {
+    xmlt &key=graphml.new_element("key");
+    key.set_attribute("attr.name", "enterFunction");
+    key.set_attribute("attr.type", "string");
+    key.set_attribute("for", "edge");
+    key.set_attribute("id", "enterFunction");
+  }
 
   // <key attr.name="returnFromFunction" attr.type="string" for="edge"
   //      id="returnFrom"/>
@@ -508,11 +508,11 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
   //   data.data="C";
   // }
 
-  // <data key="producer">Deagle 4.1.0</data>
+  // <data key="producer">Deagle 4.2.0</data>
   {
     xmlt &data=graph.new_element("data");
     data.set_attribute("key", "producer");
-    data.data="Deagle 4.1.0";
+    data.data="Deagle 4.2.0";
   }
 
   // <data key="specification">CHECK( init(main()), LTL(G ! call(__VERIFIER_error())) )</data>
@@ -525,7 +525,9 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
     bool enable_overflow = options.get_bool_option("signed-overflow-check") || options.get_bool_option("signed-overflow-check");
     bool enable_memsafety = options.get_bool_option("pointer-check") || options.get_bool_option("alloc-check") || options.get_bool_option("memory-leak-check");
 
-    if(enable_unreach_call)
+    if(src.key_values.count("specification"))
+      data.data = src.key_values.at("specification");
+    else if(enable_unreach_call)
       data.data="CHECK( init(main()), LTL(G ! call(reach_error())) )";
     else if(enable_datarace)
       data.data="CHECK( init(main()), LTL(G ! data-race) )";
@@ -563,7 +565,7 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
   {
     xmlt &data=graph.new_element("data");
     data.set_attribute("key", "architecture");
-    data.data="32bit";
+    data.data = std::to_string(config.ansi_c.pointer_width) + "bit";
   }
 
   // <data key="creationtime">2016-12-24T13:15:32+02:00</data>
@@ -582,6 +584,8 @@ bool write_graphml(const graphmlt &src, std::ostream &os, std::string filename, 
 
   for(const auto &kv : src.key_values)
   {
+    if(kv.first == "specification")
+      continue;
     xmlt &data=graph.new_element("data");
     data.set_attribute("key", kv.first);
     data.data=kv.second;

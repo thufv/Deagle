@@ -180,10 +180,11 @@ void run_property_decider(
   "(slice-formula)" \
   "(unwinding-assertions)" \
   "(no-unwinding-assertions)" \
-  "(mm-strict-guard)" \
   "(mm-cutting)" \
   "(mm-flag)" \
+  "(compile-target):" \
   "(unwind-suggest)" \
+  "(concurrency-slice)" \
   "(no-self-loops-to-assumptions)" \
   "(partial-loops)" \
   "(paths):" \
@@ -192,6 +193,7 @@ void run_property_decider(
   "(max-field-sensitivity-array-size):" \
   "(no-array-field-sensitivity)" \
   "(graphml-witness):" \
+  "(yaml-witness):" \
   "(symex-complexity-limit):" \
   "(symex-complexity-failed-child-loops-limit):" \
   "(incremental-loop):" \
@@ -237,6 +239,8 @@ void run_property_decider(
   "                              when using incremental-loop\n" \
   " --show-vcc                   show the verification conditions\n" \
   " --slice-formula              remove assignments unrelated to property\n" \
+  " --concurrency-slice          (SZH) a radical slicing for concurrent programs\n" \
+  "                              (experimental, no correctness assurance)\n" \
   " --unwinding-assertions       generate unwinding assertions (cannot be\n" \
   "                              used with --cover)\n" \
   " --partial-loops              permit paths with partial loops\n" \
@@ -251,7 +255,12 @@ void run_property_decider(
   "                              complexity violations before the loop\n" \
   "                              gets blacklisted\n" \
   " --graphml-witness filename   write the witness in GraphML format to filename\n" /* NOLINT(*) */ \
-  " --symex-cache-dereferences   enable caching of repeated dereferences" \
+  " --yaml-witness filename     write a false-property YAML 2.2/2.3 witness\n" /* NOLINT(*) */ \
+  " --symex-cache-dereferences   enable caching of repeated dereferences\n" \
+  " --allow-pointer-unsoundness  (SZH) do not quit on unsound pointer analysis\n" \
+  "                              for concurrent programs\n" \
+  " --refined-pointer-analysis   (SZH) a better pointer analysis for concurrent\n" \
+  "                              programs (experimental, no correctness assurance)\n"
 // clang-format on
 
 #endif // CPROVER_GOTO_CHECKER_BMC_UTIL_H

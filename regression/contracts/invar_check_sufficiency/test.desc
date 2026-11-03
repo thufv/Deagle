@@ -1,0 +1,14 @@
+CORE
+main.c
+--apply-loop-contracts
+^EXIT=0$
+^SIGNAL=0$
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[main.assigns.\d+\] .* Check that r is assignable: SUCCESS$
+^\[main\.assertion\.1\] .* assertion r == 0: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+This test checks that a loop invariant can be proven to be inductive,
+and is used in conjunction with the negation of the loop guard
+to establish the postcondition.

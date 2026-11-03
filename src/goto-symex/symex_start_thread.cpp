@@ -41,6 +41,13 @@ void goto_symext::symex_start_thread(statet &state)
 
   // put into thread vector
   const std::size_t new_thread_nr = state.threads.size();
+  if(state.call_stack().top().function_identifier == "pthread_create")
+    target.witness_spawn_events.push_back(
+      {state.source.thread_nr,
+       static_cast<unsigned>(new_thread_nr),
+       state.call_stack().top().calling_location,
+       state.guard.as_expr(),
+       nil_exprt()});
   state.threads.push_back(statet::threadt(guard_manager));
   // statet::threadt &cur_thread=state.threads[state.source.thread_nr];
   statet::threadt &new_thread=state.threads.back();

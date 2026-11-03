@@ -1,0 +1,7 @@
+CORE
+main.gb
+--breakpoint checkpoint --symbols st
+i = 3;
+st = \{ .c1=1, .c2=\&i \};
+^EXIT=0$
+^SIGNAL=0$

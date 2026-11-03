@@ -16,9 +16,6 @@ and passing the resulting equation to a decision procedure.
 
 For full information see [cprover.org](http://www.cprover.org/cbmc).
 
-For an overview of the various tools that are part of CProver and
-how to use them see [TOOLS_OVERVIEW.md](TOOLS_OVERVIEW.md).
-
 
 Versions
 ========
@@ -58,7 +55,7 @@ For different linux environments, you have these choices:
    *NOTE*: Because of libc/libc++ ABI compatibility and package
    dependency names, if you follow this path make sure you install the
    package appropriate for the version of operating system you are using.
-3. Compile from source using the instructions [here](COMPILING.md)
+3. For this Deagle distribution, compile from source using the instructions in [README](README.md#installation).
 
 ### macOS
 
@@ -88,7 +85,7 @@ $ brew pin cbmc
 
 If instead of the latest version, you would want to install a historic version, you
 can do so with a [homebrew tap](https://github.com/diffblue/homebrew-cbmc) that we
-maintain. Instructions for that are available in the [documentation](doc/ADR/homebrew_tap.md)
+maintain.
 
 Report bugs
 ===========

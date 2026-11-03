@@ -1,0 +1,35 @@
+let rdw = po-loc & (fre;rfe)
+let AQ = (SC|ACQ|ACQ_REL)
+let RL = (SC|REL|ACQ_REL)
+let RCsc = (SC|ACQ|REL|ACQ_REL) & (RMW)
+
+let r1 = [M];po-loc;[W]
+let r3 = [RMW];rfi;[R]
+let r5 = [AQ];po;[M]
+let r6 = [M];po;[RL]
+let r7 = [RCsc];po;[RCsc]
+let r9 = [M];addr;[M]
+let r10 = [M];data;[W]
+let r11 = [M];ctrl;[W]
+let r12 = [M];(addr|data);[W];rfi;[R]
+let r13 = [M];addr;[M];po;[W]
+
+let ppo =
+  r1
+| rdw
+| r3
+| r5
+| r6
+| r7
+| rmw
+| r9
+| r10
+| r11
+| r12
+| r13
+
+acyclic co|rf|fr|po-loc as Coherence
+
+acyclic co|rfe|fr|ppo as Model
+
+empty rmw & (fre;coe) as Atomic

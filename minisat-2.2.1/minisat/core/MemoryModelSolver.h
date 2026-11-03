@@ -261,19 +261,28 @@ public:
         lit_to_negedges.insert(std::make_pair(l, edget(node1, node2, kind, l)));
     }
 
+    bool has_label(int node, int kind) { return unary_sets[kind].contains(node); }
     bool add_label(int node, int kind, reasont& reason);
     bool add_label(labelt label) { return add_label(label.node, label.kind, label.reason); }
 
+    bool has_edge(int node1, int node2, int kind) { return binary_sets[kind].contains(node1, node2); }
     bool add_edge(int node1, int node2, int kind, reasont& reason);
     bool add_edge(edget edge) { return add_edge(edge.node1, edge.node2, edge.kind, edge.reason); }
 
+    bool has_neglabel(int node, int kind) { return neg_unary_sets[kind].contains(node) || !unary_may_sets[kind].contains(node); }
     bool add_neglabel(int node, int kind, reasont& reason);
     bool add_neglabel(labelt label) { return add_neglabel(label.node, label.kind, label.reason); }
 
+    bool has_negedge(int node1, int node2, int kind) { return neg_binary_sets[kind].contains(node1, node2) || !binary_may_sets[kind].contains(node1, node2); }
     bool add_negedge(int node1, int node2, int kind, reasont& reason);
     bool add_negedge(edget elem) { return add_negedge(elem.node1, elem.node2, elem.kind, elem.reason); }
 
+    bool has_dangerous_label(int node, int kind) { return dangerous_unary_sets[kind].contains(node); }
+    bool should_add_dangerous_label(int node, int kind) { return !has_dangerous_label(node, kind) && unary_may_sets[kind].contains(node); }
     bool add_dangerous_label(int node, int kind, reasont& reason);
+
+    bool has_dangerous_edge(int node1, int node2, int kind) { return dangerous_binary_sets[kind].contains(node1, node2); }
+    bool should_add_dangerous_edge(int node1, int node2, int kind) { return !has_dangerous_edge(node1, node2, kind) && binary_may_sets[kind].contains(node1, node2); }
     bool add_dangerous_edge(int node1, int node2, int kind, reasont& reason);
 
     bool use_available_info(bool is_first);

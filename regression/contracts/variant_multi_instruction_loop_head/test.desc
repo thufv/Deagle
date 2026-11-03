@@ -1,0 +1,16 @@
+CORE
+main.c
+--apply-loop-contracts
+\[main\.\d+\] line \d+ Check loop invariant before entry: SUCCESS$
+\[main\.\d+\] line \d+ Check that loop invariant is preserved: SUCCESS$
+\[main\.\d+\] line \d+ Check decreases clause on loop iteration: SUCCESS$
+\[main\.\d+\] line \d+ Check that loop instrumentation was not truncated: SUCCESS$
+\[main\.assigns\.\d+\] line \d+ Check that x is valid: SUCCESS$
+\[main\.assigns\.\d+\] line \d+ Check that x is assignable: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+^EXIT=0$
+^SIGNAL=0$
+--
+--
+This test checks that decreases clause is properly initialized
+when the loop head and loop invariant compilation emit several goto instructions.

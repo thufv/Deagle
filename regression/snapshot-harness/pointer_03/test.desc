@@ -1,0 +1,10 @@
+KNOWNBUG
+main.c
+x,p --harness-type initialize-with-memory-snapshot --initial-goto-location main:4
+^EXIT=0$
+^SIGNAL=0$
+\[main.assertion.1\] line [0-9]+ assertion \*\(int \*\)p == 3: SUCCESS
+--
+^warning: ignoring
+--
+For more information take a look at github#5351

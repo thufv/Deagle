@@ -1,0 +1,18 @@
+CORE
+main.cpp
+
+^regression/cpp-linter/class-decl-space/main\.cpp:13:  There should be a space between class identifier and :  \[readability/identifier_spacing\] \[4\]$
+^regression/cpp-linter/class-decl-space/main\.cpp:16:  There should be a space between class identifier and :  \[readability/identifier_spacing\] \[4\]$
+^regression/cpp-linter/class-decl-space/main\.cpp:13:  Class or struct identifier should end with t  \[readability/identifiers\] \[4\]$
+^regression/cpp-linter/class-decl-space/main\.cpp:16:  Class or struct identifier should end with t  \[readability/identifiers\] \[4\]$
+^regression/cpp-linter/class-decl-space/main\.cpp:19:  Class or struct identifier should end with t  \[readability/identifiers\] \[4\]$
+^regression/cpp-linter/class-decl-space/main\.cpp:27:  Class or struct identifier should end with t  \[readability/identifiers\] \[4\]$
+^# Total errors found: 6$
+^EXIT=1$
+^SIGNAL=0$
+--
+--
+The following patters are disabled as the corresponding checks in cpplint.py
+were commented out in 56aea470fd6 for they yield too many false positives:
+^regression/cpp-linter/class-decl-space/main\.cpp:31:  Remove spaces around <  \[whitespace/operators\] \[4\]$
+^regression/cpp-linter/class-decl-space/main\.cpp:37:  Remove spaces around <  \[whitespace/operators\] \[4\]$

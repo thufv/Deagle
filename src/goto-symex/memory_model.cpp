@@ -15,7 +15,14 @@ Author: Michael Tautschnig, michael.tautschnig@cs.ox.ac.uk
 #include <util/std_expr.h>
 
 memory_model_baset::memory_model_baset(const namespacet &_ns)
-  : partial_order_concurrencyt(_ns), use_deagle(false), enable_datarace(false), enable_deadlock(false), var_cnt(0)
+  : partial_order_concurrencyt(_ns),
+    use_deagle(false),
+    use_zord(false),
+    enable_datarace(false),
+    enable_deadlock(false),
+    simplified_rf_val_count(0),
+    total_rf_val_count(0),
+    var_cnt(0)
 {
 }
 
@@ -40,6 +47,26 @@ bool memory_model_baset::po(event_it e1, event_it e2)
     return false;
   }
 }
+
+// __SZH_ADD_BEGIN__
+exprt memory_model_baset::zord_pred(irep_idt pred, event_it e1, event_it e2, symbol_exprt reason)
+{
+  assert(pred == ID_pred_rf || pred == ID_pred_ws || pred == ID_pred_race);
+
+  symbol_exprt e1_clock(get_name_with_clk(e1), typet(ID_event));
+  symbol_exprt e2_clock(get_name_with_clk(e2), typet(ID_event));
+  return ternary_exprt(pred, e1_clock, e2_clock, reason, bool_typet());
+}
+
+exprt memory_model_baset::zord_pred(irep_idt pred, event_it e1, event_it e2)
+{
+  assert(pred == ID_pred_po || pred == ID_pred_atom);
+
+  symbol_exprt e1_clock(get_name_with_clk(e1), typet(ID_event));
+  symbol_exprt e2_clock(get_name_with_clk(e2), typet(ID_event));
+  return binary_exprt(e1_clock, pred, e2_clock, bool_typet());
+}
+// __SZH_ADD_END__
 
 void memory_model_baset::read_from(symex_target_equationt &equation)
 {
@@ -91,25 +118,17 @@ void memory_model_baset::read_from(symex_target_equationt &equation)
         // Add the read's guard, each of the writes' guards is implied
         // by each entry in rf_some
 
-        // __SZH_ADD_BEGIN__ add dirty
-        exprt rf_some_cond;
-        if(equation.read_dirties.find(read_event) != equation.read_dirties.end())
-          rf_some_cond = and_exprt(read_event->guard, not_exprt(equation.read_dirties[read_event]));
+        exprt rf_some_implications;
+        if(equation.r2race_vars.find(read_event) != equation.r2race_vars.end())
+          rf_some_implications = or_exprt(disjunction(rf_choice_symbols), disjunction(equation.r2race_vars[read_event])); // // __WP_ADD_ for datarace
         else
-          rf_some_cond = read_event->guard;
+          rf_some_implications = disjunction(rf_choice_symbols);
 
         add_constraint(
           equation,
-          implies_exprt{rf_some_cond, disjunction(rf_choice_symbols)},
-          "rf-undirty-some",
+          implies_exprt{read_event->guard, rf_some_implications},
+          "rf-some",
           read_event->source);
-        // __SZH_ADD_END__
-
-        // add_constraint(
-        //   equation,
-        //   implies_exprt{read_event->guard, disjunction(rf_choice_symbols)},
-        //   "rf-some",
-        //   read_event->source);
       }
     }
 
@@ -127,6 +146,11 @@ void memory_model_baset::read_from(symex_target_equationt &equation)
     }
     // __WP_ADD_END__ for deadlock
   }
+
+  if(enable_datarace) {
+    std::cout << "The number of simplified rf-val constraints: " << simplified_rf_val_count << "\n";
+    std::cout << "The total number of original rf-val constraints: " << total_rf_val_count << "\n";
+  }
 }
 
 symbol_exprt memory_model_baset::register_read_from_choice_symbol(
@@ -142,12 +166,42 @@ symbol_exprt memory_model_baset::register_read_from_choice_symbol(
   // __SZH_ADD_BEGIN__ : completely different when using deagle
   if(use_deagle)
   {
+    // __WP_ADD_BEGIN__ for simplify_assignment_encoding
+
+    total_rf_val_count++;
+    // std::cout << "It's the rf constraint between a read event " << id2string(r->ssa_lhs.get_identifier()) << " and a write event " << id2string(w->ssa_lhs.get_identifier()) << "!\n";
+    
+    if (enable_datarace && key_identifiers.find(r->ssa_lhs.get_identifier()) == key_identifiers.end() && key_identifiers.find(w->ssa_lhs.get_identifier()) == key_identifiers.end()) {
+      add_constraint(
+        equation,
+        implies_exprt{s, and_exprt{w->guard, r->guard}},
+        "rf-val-simplified",
+        r->source);
+      
+      simplified_rf_val_count++;
+      // std::cout << "We simplify the rf-val constraint between a read event " << id2string(r->ssa_lhs.get_identifier()) << " and a write event " << id2string(w->ssa_lhs.get_identifier()) << "!\n";
+    }
+
+    // __WP_ADD_END__ for simplify_assignment_encoding
+
+    else {
+      add_constraint(
+        equation,
+        implies_exprt{s, and_exprt{w->guard, r->guard, equal_exprt{r->ssa_lhs, w->ssa_lhs}}},
+        "rf-val",
+        r->source);
+    }
+    add_oc_edge(equation, w, r, "rf", s); // rf-order constraints
+  }
+  else if(use_zord)
+  {
     add_constraint(
       equation,
       implies_exprt{s, and_exprt{w->guard, r->guard, equal_exprt{r->ssa_lhs, w->ssa_lhs}}},
       "rf",
       r->source);
-    add_oc_edge(equation, w, r, "rf", s);
+
+    add_constraint(equation, zord_pred(ID_pred_rf, w, r, s), "rf-order", r->source);
   }
   // __SZH_ADD_END__
   else
@@ -229,17 +283,30 @@ std::string memory_model_baset::get_name(event_it e)
   return e_str;
 }
 
+std::string memory_model_baset::get_name_with_clk(event_it e)
+{
+  auto basename = get_name(e);
+  if(e->is_shared_read())
+    return basename + "$rclk";
+  if(e->is_shared_write())
+    return basename + "$wclk";
+  return basename;
+}
+
 void memory_model_baset::add_oc_edge(symex_target_equationt &equation, event_it e1, event_it e2, std::string kind, exprt guard_expr)
 {
   add_oc_edge(equation, get_name(e1), get_name(e2), kind, guard_expr);
 }
+
+// #include <util/format_expr.h>
 
 void memory_model_baset::add_oc_edge(symex_target_equationt &equation, std::string e1_str, std::string e2_str, std::string kind, exprt guard_expr)
 {
   if(guard_expr == false_exprt())
     return;
   equation.oc_edges.push_back(oc_edget(e1_str, e2_str, kind, guard_expr));
-  // std::cout << "add relation: " << e1_str << " " << e2_str << " has " << kind << "\n";
+
+  // std::cout << "add " << kind << " edge between " << e1_str << " and " << e2_str << ", with guard " << format(guard_expr) << "\n";
 }
 
 void memory_model_baset::add_oc_label(symex_target_equationt &equation, event_it e, std::string label, exprt guard_expr)
@@ -253,30 +320,11 @@ void memory_model_baset::add_oc_label(symex_target_equationt &equation, std::str
     return;
   equation.oc_labels.push_back(oc_labelt(e_str, label, guard_expr));
 
-  // std::cout << "add " << label << " label: " << get_name(e) << "\n";
+  // std::cout << "add " << label << " label to " << e_str << ", with guard " << format(guard_expr) << "\n";
 }
 
 void memory_model_baset::data_race(symex_target_equationt &equation)
 {
-  for(int id = 0; id < int(equation.numbered_dataraces.size()); id++)
-  {
-    auto& race = equation.numbered_dataraces[id];
-    auto& first_event = race.first;
-    auto& second_event = race.second;
-
-    std::string race_id_str = "race" + std::to_string(id);
-    irep_idt race_id(race_id_str);
-    symbol_exprt race_var(race_id, bool_typet());
-
-    if(use_deagle)
-      add_oc_edge(equation, first_event, second_event, "race", race_var);
-    else
-    {
-      implies_exprt race_order(race_var, before(first_event, second_event));
-      add_constraint(equation, race_order, "race", first_event->source);
-    }
-  }
-
   std::map<symbol_exprt, exprt::operandst> dirty_to_races;
   std::map<symbol_exprt, const symex_targett::sourcet*> dirty_to_source;
 
@@ -290,148 +338,24 @@ void memory_model_baset::data_race(symex_target_equationt &equation)
     irep_idt race_id(race_id_str);
     symbol_exprt race_var(race_id, bool_typet());
 
+    if(use_deagle)
+      add_oc_edge(equation, first_event, second_event, "race", race_var); // rc-order constraints
+    else if(use_zord)
+      add_constraint(equation, zord_pred(ID_pred_race, first_event, second_event, race_var), "race", first_event->source);
+    else
+    {
+      implies_exprt race_order(race_var, before(first_event, second_event));
+      add_constraint(equation, race_order, "race", first_event->source);
+    }
+
     exprt::operandst dirties;
 
     if(first_event->is_shared_read())
-    {
-      if(equation.read_dirties.find(first_event) == equation.read_dirties.end())
-        equation.read_dirties[first_event] = symbol_exprt(nondet_bool_symbol("dirty"));
-      symbol_exprt& dirty_var = to_symbol_expr(equation.read_dirties[first_event]);
-      dirties.push_back(dirty_var);
-      dirty_to_races[dirty_var].push_back(race_var);
-      dirty_to_source[dirty_var] = &(first_event->source);
-    }
-
+      equation.r2race_vars[first_event].push_back(race_var);
+    
     if(second_event->is_shared_read())
-    {
-      if(equation.read_dirties.find(second_event) == equation.read_dirties.end())
-        equation.read_dirties[second_event] = symbol_exprt(nondet_bool_symbol("dirty"));
-      symbol_exprt& dirty_var = to_symbol_expr(equation.read_dirties[second_event]);
-      dirties.push_back(dirty_var);
-      dirty_to_races[dirty_var].push_back(race_var);
-      dirty_to_source[dirty_var] = &(second_event->source);
-    }
-
-    if(!dirties.empty())
-      add_constraint(equation, implies_exprt(race_var, conjunction(dirties)), "race-dirty", first_event->source);
+      equation.r2race_vars[second_event].push_back(race_var);
   }
-
-  for(auto& pair : dirty_to_races)
-  {
-    const symbol_exprt& dirty_var = pair.first;
-    auto& races = pair.second;
-    add_constraint(equation, implies_exprt(dirty_var, disjunction(races)), "dirty-some", *(dirty_to_source[dirty_var]));
-  }
-
-    // std::map<event_it, exprt::operandst> read_to_races;
-
-    // exprt::operandst all_races;
-
-    // event_it any_event;
-
-    // for(auto& datarace_pair: equation.datarace_pairs)
-    // {
-    //   auto first_event = datarace_pair.first;
-    //   auto second_event = datarace_pair.second;
-
-    //   auto e1_str = id2string(id(first_event));
-    //   auto e2_str = id2string(id(second_event));
-      
-    //   symbol_exprt race = symbol_exprt(nondet_bool_symbol("race"));
-    //   std::string race_lit = race.get_identifier().c_str();
-
-    //   implies_exprt race_guard(race, and_exprt(first_event->guard, second_event->guard));
-    //   add_constraint(equation, race_guard, "race", first_event->source);
-
-    //   if(use_deagle)
-    //     add_oc_edge(equation, first_event, second_event, "race", race);
-    //   else
-    //   {
-    //     implies_exprt race_order(race, before(first_event, second_event));
-    //     add_constraint(equation, race_order, "race", first_event->source);
-    //   }
-
-    //   any_event = first_event;
-
-    //   if(first_event->is_shared_read())
-    //   {
-    //     read_to_races[first_event].push_back(race);
-    //     // if(read_disorders.find(first_event) == read_disorders.end())
-    //     //   read_disorders[first_event] = symbol_exprt(nondet_bool_symbol("disorder"));
-    //   }
-
-    //   if(second_event->is_shared_read())
-    //   {
-    //     read_to_races[second_event].push_back(race);
-    //     // if(read_disorders.find(second_event) == read_disorders.end())
-    //     //   read_disorders[second_event] = symbol_exprt(nondet_bool_symbol("disorder"));
-    //   }
-
-    //   all_races.push_back(race);
-
-    //   //if arrays race, we make them access the same index
-    //   if(first_event->ssa_lhs.type().id() == ID_array)
-    //   {
-    //     std::cout << "racing arrays!\n";
-
-    //     exprt first_event_index = array_find_index(equation, first_event);
-    //     exprt second_event_index = array_find_index(equation, second_event);
-
-    //     if(first_event_index.type() == second_event_index.type() && first_event_index != nil_exprt())
-    //     {
-    //       std::cout << "find their indices!!!\n";
-    //       //std::cout << "\t" << first_event_index << " \n\t and " << second_event_index << "\n";
-
-    //       implies_exprt race_array_index(race, equal_exprt(first_event_index, second_event_index));
-    //       add_constraint(equation, race_array_index, "race", first_event->source);
-    //     }
-    //   }
-    // }
-
-    // //Constraint: race_some
-    // if(all_races.empty())
-    // {
-    //   std::cout << "Error: No race to detect.\n";
-    //   std::exit(1);
-    // }
-    // else
-    //   add_constraint(equation, disjunction(all_races), "race_some", any_event->source);
-
-    // //Constraint: disorder_guard
-    // for(auto& affected_read : read_disorders)
-    // {
-    //     auto& read = affected_read.first;
-    //     auto& disorder = affected_read.second;
-
-    //     implies_exprt disorder_guard(disorder, read->guard);
-    //     add_constraint(equation, disorder_guard, "disorder_guard", read->source);
-    // }
-
-    // //Constraint: disorder_some
-    // for(auto& affected_read : read_to_races)
-    // {
-    //     auto& read = affected_read.first;
-    //     auto& initial_races = affected_read.second;
-    //     exprt races;
-
-    //     if(initial_races.empty())
-    //     {
-    //         std::cout << "Error: Read " << id2string(id(read)) << " has no races\n";
-    //         std::exit(1);
-    //     }
-    //     else if(initial_races.empty())
-    //     {
-    //         races = initial_races[0];
-    //     }
-    //     else
-    //     {
-    //         races = or_exprt();
-    //         races.operands().swap(initial_races);
-    //     }
-
-    //     equal_exprt disorder_some(read_disorders[read], races);
-    //     add_constraint(equation, disorder_some, "disorder_some", read->source);
-    // }
 }
 
 #include <algorithm>
@@ -535,3 +459,153 @@ void memory_model_baset::build_per_loc_map(
 }
 
 // __SZH_ADD_END__
+
+
+// __WP_ADD_BEGIN__
+#include <util/find_symbols.h>
+
+void memory_model_baset::simplify_assignment_encoding(symex_target_equationt &equation)
+{
+  std::cout << "simplify assignment_encoding!\n";
+
+  std::map<irep_idt, std::set<irep_idt>> address2identifiers;
+
+  // key_identifiers is initalized to all identifiers in guard condtions
+  std::set<symbol_exprt> reads;
+
+  for(eventst::const_iterator
+    e_it=equation.SSA_steps.begin();
+    e_it!=equation.SSA_steps.end();
+    e_it++) {
+
+      if(e_it->ssa_rhs.id() == ID_if && e_it->ssa_rhs.operands().size() == 3) {
+
+        // std::cout << "This is a ternary expression with condition: " << e_it->ssa_rhs.operands()[0].pretty() << std::endl;
+
+        reads.clear();
+        find_symbols(e_it->ssa_rhs.operands()[0], reads);
+        for (auto& read : reads) {
+          key_identifiers.insert(read.get_identifier());
+          address2identifiers[remove_level_2(to_ssa_expr(read)).get_identifier()].insert(read.get_identifier());
+
+          // std::cout << "read.get_identifier():" << id2string(read.get_identifier()) << "\n";
+          // std::cout << "remove_level_2(to_ssa_expr(read)).get_identifier():" << id2string(remove_level_2(to_ssa_expr(read)).get_identifier()) << "\n";
+        }
+      }
+
+      reads.clear();
+      find_symbols(e_it->guard, reads);
+      for (auto& read : reads) {
+        key_identifiers.insert(read.get_identifier());
+        address2identifiers[remove_level_2(to_ssa_expr(read)).get_identifier()].insert(read.get_identifier());
+
+        // std::cout << "read.get_identifier():" << id2string(read.get_identifier()) << "\n";
+        // std::cout << "remove_level_2(to_ssa_expr(read)).get_identifier():" << id2string(remove_level_2(to_ssa_expr(read)).get_identifier()) << "\n";
+      }
+    }
+
+  // new_identifiers is initalized to all identifiers that may affect the value of the key_identifiers
+  std::set<irep_idt> parent_identifiers(key_identifiers.begin(), key_identifiers.end());
+  std::set<irep_idt> new_identifiers;
+
+  do {
+    new_identifiers.clear();
+    
+    for(eventst::const_iterator
+        e_it=equation.SSA_steps.begin();
+        e_it!=equation.SSA_steps.end();
+        e_it++) {
+
+          if (!e_it->is_assignment())
+            continue;
+
+          // std::cout << "id2string(e_it->ssa_lhs.get_identifier()):" << id2string(e_it->ssa_lhs.get_identifier()) << "\n";
+          // std::cout << "id2string(address(e_it)):" << id2string(address(e_it)) << "\n";
+
+          if (address2identifiers.find(address(e_it)) != address2identifiers.end())
+          {
+            // std::cout << "id2string(e_it->ssa_lhs.get_identifier()):" << id2string(e_it->ssa_lhs.get_identifier()) << "\n";
+            // std::cout << "id2string(address(e_it)):" << id2string(address(e_it)) << "\n";
+
+            if (key_identifiers.find(e_it->ssa_lhs.get_identifier()) == key_identifiers.end()) {
+                new_identifiers.insert(e_it->ssa_lhs.get_identifier());
+                address2identifiers[address(e_it)].insert(e_it->ssa_lhs.get_identifier());
+            }
+
+            std::set<symbol_exprt> reads;
+            find_symbols(e_it->ssa_rhs, reads);
+            for(auto& read : reads) {
+              if (key_identifiers.find(read.get_identifier()) == key_identifiers.end()) {
+                new_identifiers.insert(read.get_identifier());
+                address2identifiers[remove_level_2(to_ssa_expr(read)).get_identifier()].insert(read.get_identifier());
+              }
+            }
+
+          }
+
+        }
+    key_identifiers.insert(new_identifiers.begin(), new_identifiers.end());
+    parent_identifiers = std::move(new_identifiers);
+
+    // std::cout << "parent_identifiers:\n";
+    // for(auto& parent_identifier : parent_identifiers)
+    //   std::cout << id2string(parent_identifier) << "\n";
+    
+    // std::cout << "key_identifiers:\n";
+    // for(auto& key_identifier : key_identifiers)
+    //   std::cout << id2string(key_identifier) << "\n";
+    
+    // std::cout << "address2identifiers:";
+    // for(auto& p : address2identifiers) {
+    //   std::cout << "\naddress:" << id2string(p.first) << "\nidentifiers:";
+    //   for(auto& id : p.second)
+    //     std::cout << id2string(id) << " ";
+    // }
+
+  } while (!parent_identifiers.empty());
+
+  for(auto& key_identifier : key_identifiers)
+    std::cout << "key_identifier:" << id2string(key_identifier) << "\n";
+  
+  // for(auto& p : address2identifiers) {
+  //   std::cout << "\naddress:" << id2string(p.first) << "\nidentifiers:";
+  //   for(auto& id : p.second)
+  //     std::cout << id2string(id) << " ";
+  // }
+
+  
+  // igore all non-key ssa
+  int removed_ssa_count = 0, ssa_total_count = 0;
+  for(eventst::iterator
+      e_it=equation.SSA_steps.begin();
+      e_it!=equation.SSA_steps.end();
+      e_it++) {
+        if (!e_it->is_assignment())
+          continue;
+        if (e_it->assignment_type != symex_targett::assignment_typet::STATE)
+          continue;
+        ssa_total_count++;
+
+  //       if (
+  //         id2string(e_it->ssa_lhs.get_identifier()) == "main::1::p!0@1#2"
+  //   || id2string(e_it->ssa_lhs.get_identifier()) == "main::1::p!0@1#3"
+  //   || id2string(e_it->ssa_lhs.get_identifier()) == "main::1::p!0@1#4"
+  //   || id2string(e_it->ssa_lhs.get_identifier()) == "main::1::p!0@1#5"
+  // ) {
+  //         std::cout << "e_it->output: \n";
+  //         e_it->output(std::cout);
+  //         continue;
+  //       }
+        
+        if (key_identifiers.find(e_it->ssa_lhs.get_identifier()) == key_identifiers.end()) {
+          e_it->ignore = true;
+          removed_ssa_count++;
+
+          // std::cout << "e_it->ssa_lhs.pretty(): " << e_it->ssa_lhs.pretty() << "\n";
+        }
+      }
+  std::cout << "The number of removed ssa encoding: " << removed_ssa_count << "\n";
+  std::cout << "The total number of original ssa encoding: " << ssa_total_count << "\n";
+  
+}
+// __WP_ADD_END__

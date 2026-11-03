@@ -78,7 +78,9 @@ void _Exit(int status)
 
 void abort(void)
 {
-  // __CPROVER_precondition(0, "abort didn't happen");
+#if __CPROVER_DEADLOCK_CHECK
+  __CPROVER_assert(0, "abort didn't happen");
+#endif
   __CPROVER_assume(0);
 #ifdef LIBRARY_CHECK
   __builtin_unreachable();

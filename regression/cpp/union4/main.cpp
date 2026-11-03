@@ -1,6 +1,6 @@
 struct A
 {
-	union {int a;};
-	char a;
+  // 'a' is a duplicate
+  union {int a;};
+  char a;
 };
-

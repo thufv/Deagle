@@ -9,6 +9,9 @@ Author: Michael Tautschnig
 #include "field_sensitivity.h"
 
 #include <util/arith_tools.h>
+#include <util/bitvector_types.h>
+#include <util/pointer_expr.h>
+#include <util/pointer_offset_size.h>
 #include <util/simplify_expr.h>
 #include <util/std_expr.h>
 
@@ -231,7 +234,9 @@ void field_sensitivityt::field_assignments(
   const ssa_exprt &lhs,
   const exprt &rhs,
   symex_targett &target,
-  bool allow_pointer_unsoundness)
+  bool allow_pointer_unsoundness,
+  const exprt &write_lhs,
+  const exprt &access_guard)
 {
   const exprt lhs_fs = apply(ns, state, lhs, false);
 
@@ -240,9 +245,60 @@ void field_sensitivityt::field_assignments(
     bool run_apply_bak = run_apply;
     run_apply = false;
     field_assignments_rec(
-      ns, state, lhs_fs, rhs, target, allow_pointer_unsoundness);
+      ns,
+      state,
+      lhs_fs,
+      rhs,
+      target,
+      allow_pointer_unsoundness,
+      write_lhs,
+      access_guard);
     run_apply = run_apply_bak;
   }
+}
+
+// Expanding a partial update maintains every field's SSA value, but only the
+// fields overlapping the original store are shared writes.
+static exprt field_write_guard(
+  const exprt &field,
+  const exprt &write_lhs,
+  const namespacet &ns)
+{
+  if(write_lhs.id() != ID_byte_extract_little_endian &&
+     write_lhs.id() != ID_byte_extract_big_endian &&
+     write_lhs.id() != ID_member && write_lhs.id() != ID_index &&
+     !is_ssa_expr(write_lhs))
+    return true_exprt();
+
+  object_descriptor_exprt write;
+  write.build(write_lhs, ns);
+  const auto base_offset = compute_pointer_offset(write.root_object(), ns);
+  const auto field_offset = compute_pointer_offset(field, ns);
+  const auto field_size = pointer_offset_size(field.type(), ns);
+  const auto write_size = pointer_offset_size(write_lhs.type(), ns);
+  if(!base_offset.has_value() || !field_offset.has_value() ||
+     !field_size.has_value() || !write_size.has_value() ||
+     *field_size <= 0 || *write_size <= 0 ||
+     (write.offset().type().id() != ID_signedbv &&
+      write.offset().type().id() != ID_unsignedbv))
+    return true_exprt();
+
+  const mp_integer offset = *field_offset - *base_offset;
+  const auto width = to_bitvector_type(write.offset().type()).get_width();
+  const mp_integer limit = mp_integer(1) << width;
+  if(offset < 0 || offset + *field_size > limit || *write_size > limit)
+    return true_exprt();
+
+  // Widen before comparing to avoid overflow in the interval bounds.
+  const signedbv_typet offset_type(width + 2);
+  const typecast_exprt start(write.offset(), offset_type);
+  return simplify_expr(
+    and_exprt(
+      binary_relation_exprt(
+        start, ID_ge, from_integer(offset - *write_size + 1, offset_type)),
+      binary_relation_exprt(
+        start, ID_lt, from_integer(offset + *field_size, offset_type))),
+    ns);
 }
 
 /// Assign to the individual fields \p lhs_fs of a non-expanded symbol \p lhs.
@@ -255,13 +311,17 @@ void field_sensitivityt::field_assignments(
 /// \param ssa_rhs: right-hand-side value to assign
 /// \param target: symbolic execution equation store
 /// \param allow_pointer_unsoundness: allow pointer unsoundness
+/// \param write_lhs: original partial store, with indices renamed to SSA
+/// \param access_guard: pointer-selection condition for the store
 void field_sensitivityt::field_assignments_rec(
   const namespacet &ns,
   goto_symex_statet &state,
   const exprt &lhs_fs,
   const exprt &ssa_rhs,
   symex_targett &target,
-  bool allow_pointer_unsoundness)
+  bool allow_pointer_unsoundness,
+  const exprt &write_lhs,
+  const exprt &access_guard)
 {
   if(is_ssa_expr(lhs_fs))
   {
@@ -272,7 +332,10 @@ void field_sensitivityt::field_assignments_rec(
                                   ns,
                                   true,
                                   true,
-                                  allow_pointer_unsoundness)
+                                  allow_pointer_unsoundness,
+                                  and_exprt(
+                                    access_guard,
+                                    field_write_guard(lhs_fs, write_lhs, ns)))
                                 .get();
 
     // do the assignment
@@ -303,7 +366,8 @@ void field_sensitivityt::field_assignments_rec(
       const exprt &member_lhs = *fs_it;
 
       field_assignments_rec(
-        ns, state, member_lhs, member_rhs, target, allow_pointer_unsoundness);
+        ns, state, member_lhs, member_rhs, target, allow_pointer_unsoundness,
+        write_lhs, access_guard);
       ++fs_it;
     }
   }
@@ -325,7 +389,8 @@ void field_sensitivityt::field_assignments_rec(
       const exprt &index_lhs = *fs_it;
 
       field_assignments_rec(
-        ns, state, index_lhs, index_rhs, target, allow_pointer_unsoundness);
+        ns, state, index_lhs, index_rhs, target, allow_pointer_unsoundness,
+        write_lhs, access_guard);
       ++fs_it;
     }
   }
@@ -340,7 +405,8 @@ void field_sensitivityt::field_assignments_rec(
     for(const exprt &op : ssa_rhs.operands())
     {
       field_assignments_rec(
-        ns, state, *fs_it, op, target, allow_pointer_unsoundness);
+        ns, state, *fs_it, op, target, allow_pointer_unsoundness,
+        write_lhs, access_guard);
       ++fs_it;
     }
   }

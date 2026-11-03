@@ -102,13 +102,17 @@ public:
   ///   the full object
   /// \param target: symbolic execution equation store
   /// \param allow_pointer_unsoundness: allow pointer unsoundness
+  /// \param write_lhs: original partial store, with indices renamed to SSA
+  /// \param access_guard: pointer-selection condition for the store
   void field_assignments(
     const namespacet &ns,
     goto_symex_statet &state,
     const ssa_exprt &lhs,
     const exprt &rhs,
     symex_targett &target,
-    bool allow_pointer_unsoundness);
+    bool allow_pointer_unsoundness,
+    const exprt &write_lhs,
+    const exprt &access_guard);
 
   /// Turn an expression \p expr into a field-sensitive SSA expression.
   /// Field-sensitive SSA expressions have individual symbols for each
@@ -170,7 +174,9 @@ private:
     const exprt &lhs_fs,
     const exprt &ssa_rhs,
     symex_targett &target,
-    bool allow_pointer_unsoundness);
+    bool allow_pointer_unsoundness,
+    const exprt &write_lhs,
+    const exprt &access_guard);
 
   exprt simplify_opt(exprt e, const namespacet &ns) const;
 };

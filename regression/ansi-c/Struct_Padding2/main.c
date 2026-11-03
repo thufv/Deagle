@@ -1,5 +1,8 @@
-#define STATIC_ASSERT(condition) \
-  int some_array##__LINE__[(condition) ? 1 : -1]
+#define CONCAT(a, b) a##b
+#define CONCAT2(a, b) CONCAT(a, b)
+
+#define STATIC_ASSERT(condition)                                               \
+  int CONCAT2(some_array, __LINE__)[(condition) ? 1 : -1]
 
 enum {
  RTAX_UNSPEC,
@@ -144,15 +147,16 @@ struct dst_entry {
  };
 };
 
-// GCC specific
+// GCC specific, and doesn't work on Windows
+#ifndef _WIN32
 #ifdef __GNUC__
 STATIC_ASSERT(
   sizeof(void *)==8?
     (__builtin_offsetof(struct dst_entry,__refcnt) & 63)==0:
     1);
 #endif
+#endif
 
 int main()
 {
 }
-

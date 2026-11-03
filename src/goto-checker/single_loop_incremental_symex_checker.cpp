@@ -20,6 +20,7 @@ Author: Daniel Kroening, Peter Schrammel
 #include <goto-symex/slice.h>
 
 #include "bmc_util.h"
+#include "violation_witness.h"
 #include "counterexample_beautification.h"
 
 single_loop_incremental_symex_checkert::single_loop_incremental_symex_checkert(
@@ -247,5 +248,7 @@ void single_loop_incremental_symex_checkert::output_proof()
 void single_loop_incremental_symex_checkert::output_error_witness(
   const goto_tracet &error_trace)
 {
-  output_graphml(error_trace, ns, options);
+  output_violation_witness(
+    error_trace, equation, property_decider.get_decision_procedure(), ns,
+    options, ui_message_handler);
 }

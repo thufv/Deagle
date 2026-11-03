@@ -776,8 +776,6 @@ struct index_or_membert
   }
 };
 
-#include <regex>
-
 std::string get_component_name(std::string str)
 {
   static std::regex pattern(".*\\.\\.([A-Za-z0-9_]+)");
@@ -1298,6 +1296,10 @@ void symex_target_equationt::build_with_map(std::map<std::string, exprt>& with_m
 
 bool type_is_atomic(const typet& type)
 {
+  if(type.id() == ID_array)
+    return type_is_atomic(to_array_type(type).subtype());
+  // todo: if(type.id() == ID_struct) {}
+
   std::string symbol_typedef = type.get("#typedef").c_str();
   std::string symbol_atomic = type.get("#atomic").c_str();
   if(symbol_typedef.find("atomic_") != std::string::npos || symbol_atomic == "1")
@@ -1308,7 +1310,21 @@ bool type_is_atomic(const typet& type)
   return false;
 }
 
+irep_idt remove_suffix(irep_idt id)
+{
+  std::string str = id.c_str();
+
+  std::regex pattern(R"(([^.[]+)(\.\.[^\[]+)?(\[\[[^\]]+\]\]))");
+  std::smatch matches;
+
+  if (std::regex_match(str, matches, pattern))
+    return matches[1].str();
+  return id;
+}
+
 bool symex_target_equationt::symbol_is_atomic(const namespacet& ns, irep_idt symbol_name) {
+  symbol_name = remove_suffix(symbol_name);
+
   if(atomic_dynamic_objects.find(id2string(symbol_name)) != atomic_dynamic_objects.end())
     return true;
 
@@ -1502,9 +1518,117 @@ bool symex_target_equationt::choose_datarace()
   return true;
 }
 
+void symex_target_equationt::remove_repeating_updates()
+{
+  auto shared_symbols = build_shared_symbols();
+
+  for(auto& step : SSA_steps)
+  {
+    if(!step.is_assignment())
+      continue;
+
+    // for x#(i+1) = if(cond) then new_value else x#i
+    // when cond is false, this is a useless repeated update, so we can remove it.
+    // The whole assignment is converted into x#(i+i) = new_value (with cond as its guard)
+    if(step.ssa_rhs.id() != ID_if)
+      continue;
+    auto if_expr = to_if_expr(step.ssa_rhs);
+    auto true_case = if_expr.true_case();
+    auto false_case = if_expr.false_case();
+    if(false_case.id() != ID_symbol)
+      continue;
+
+    std::string false_case_str = to_symbol_expr(false_case).get_identifier().c_str();
+    if(shared_symbols.find(false_case_str) == shared_symbols.end())
+      continue;
+
+    auto lhs_name = step.ssa_lhs.get_l1_object_identifier();
+    auto rhs_name = to_ssa_expr(false_case).get_l1_object_identifier();
+    if(lhs_name != rhs_name)
+      continue;
+
+    step.ssa_rhs = true_case;
+    step.guard = and_exprt(step.guard, if_expr.cond());
+    step.cond_expr.op1() = step.ssa_rhs;
+  }
+}
+
+std::set<std::string> symex_target_equationt::build_shared_symbols()
+{
+  // collect names of all shared read/write events
+
+  std::set<std::string> shared_events;
+  for(auto e_it = SSA_steps.begin(); e_it != SSA_steps.end(); e_it++)
+    if(e_it->is_shared_read() || e_it->is_shared_write())
+      shared_events.insert(e_it->ssa_lhs.get_identifier().c_str());
+  return shared_events;
+}
+
+std::set<std::string> symex_target_equationt::build_symbols_in_use()
+{
+  std::set<std::string> symbols_in_use;
+  for(auto e_it = SSA_steps.begin(); e_it != SSA_steps.end(); e_it++)
+  {
+    if(e_it->is_assignment())
+    {
+      auto symbol_exprs = find_symbols(e_it->ssa_rhs);
+      for(const auto& symbol_expr : symbol_exprs)
+        symbols_in_use.insert(symbol_expr.get_identifier().c_str());
+    }
+
+    if(e_it->is_assert() || e_it->is_assume())
+    {
+      auto symbol_exprs = find_symbols(e_it->cond_expr);
+      for(const auto& symbol_expr : symbol_exprs)
+        symbols_in_use.insert(symbol_expr.get_identifier().c_str());
+    }
+
+    auto symbol_exprs_guard = find_symbols(e_it->guard);
+    for(const auto& symbol_expr : symbol_exprs_guard)
+      symbols_in_use.insert(symbol_expr.get_identifier().c_str());
+  }
+  return symbols_in_use;
+}
+
+void symex_target_equationt::concurrency_slice()
+{
+  remove_repeating_updates();
+
+  bool changed = true;
+  while(changed)
+  {
+    std::cout << "Concurrency slicing iteration, current SSA size: " << SSA_steps.size() << "\n";
+    int original_size = SSA_steps.size();
+    auto shared_symbols = build_shared_symbols();
+    auto symbols_in_rhs = build_symbols_in_use();
+
+    for(auto e_it = SSA_steps.begin(); e_it != SSA_steps.end();)
+    {
+      if(e_it->is_assignment())
+      {
+        std::string lhs_name = e_it->ssa_lhs.get_identifier().c_str();
+        if(shared_symbols.find(lhs_name) == shared_symbols.end() && symbols_in_rhs.find(lhs_name) == symbols_in_rhs.end() && lhs_name.find("memorder") == std::string::npos)
+        {
+          // std::cout << "Removing step: " << e_it->ssa_lhs.get_identifier() << " := " << format(e_it->ssa_rhs) << "\n";
+          e_it = SSA_steps.erase(e_it);
+          continue;
+        }
+      }
+      e_it++;
+    }
+    remove_dummy_accesses();
+    std::cout << "After a slicing iteration, SSA size becomes: " << SSA_steps.size() << "\n";
+    changed = (SSA_steps.size() != original_size);
+  }
+}
+
 void symex_target_equationt::remove_dummy_accesses()
 {
   std::set<std::string> solid_accesses;
+  for(const auto &acquisition : lock_acquisitions)
+    for(const auto &symbol : find_symbols(
+          and_exprt(acquisition.guard, acquisition.condition)))
+      solid_accesses.insert(id2string(symbol.get_identifier()));
 
   for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
   {
@@ -1581,7 +1705,6 @@ void symex_target_equationt::build_deadlock()
   // build per_thread_lock_guard
   bool isatomic = false;
   bool islocked = false;
-  event_it e_atomic_begin;
   for(event_it e_it=SSA_steps.begin(); e_it!=SSA_steps.end(); e_it++)
   {
     if(e_it->is_function_return() && id2string(e_it->source.function_id) == "main") {
@@ -1606,9 +1729,6 @@ void symex_target_equationt::build_deadlock()
     if(e_it->is_atomic_begin())
     {
       isatomic = true;
-      if(id2string(e_it->source.function_id) == "pthread_mutex_lock")
-        e_atomic_begin = e_it;
-        // per_thread_lock_begins[e_it->source.thread_nr].push_back(e_it);
       continue;
     }
     
@@ -1631,9 +1751,6 @@ void symex_target_equationt::build_deadlock()
       // << "\nline:" << e_it->source.pc->source_location().get_line().c_str()
       // << "\nvar_guard:" << e_it->guard.pretty() << "\n------\n";
 
-      per_thread_lock_writes[e_it->source.thread_nr].push_back(e_it);
-      if(e_it->ssa_lhs.type().pretty().find("#typedef: pthread_mutex_t") != std::string::npos)
-        per_thread_lock_begins[e_it->source.thread_nr].push_back(e_atomic_begin);
       islocked = true;
       continue;
     }

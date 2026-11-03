@@ -1,20 +1,31 @@
 #include <wchar.h>
+#include <stdlib.h> // for size_t
 
-#define STATIC_ASSERT(condition) \
-  int some_array##__LINE__[(condition) ? 1 : -1];    
+#define CONCAT(a, b) a##b
+#define CONCAT2(a, b) CONCAT(a, b)
+
+#define STATIC_ASSERT(condition)                                               \
+  int CONCAT2(some_array, __LINE__)[(condition) ? 1 : -1]
+
+// check size_t
+STATIC_ASSERT(sizeof(void *)==sizeof(size_t));
 
 #ifdef _WIN32
 
-#ifdef _WIN64
+#  ifdef _WIN64
 
 STATIC_ASSERT(sizeof(void *)==8);
 STATIC_ASSERT(sizeof(int)==4);
 STATIC_ASSERT(sizeof(long int)==4);
 STATIC_ASSERT(sizeof(long long int)==8);
 STATIC_ASSERT(sizeof(wchar_t)==2);
+#    ifdef __MINGW64__
+STATIC_ASSERT(sizeof(long double) == 16);
+#    else
 STATIC_ASSERT(sizeof(long double)==8);
+#    endif
 
-#else
+#  else
 
 STATIC_ASSERT(sizeof(void *)==4);
 STATIC_ASSERT(sizeof(int)==4);
@@ -23,7 +34,7 @@ STATIC_ASSERT(sizeof(long long int)==8);
 STATIC_ASSERT(sizeof(wchar_t)==2);
 STATIC_ASSERT(sizeof(long double)==8);
 
-#endif
+#  endif
 
 #else
 

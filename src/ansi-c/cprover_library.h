@@ -33,6 +33,7 @@ std::string get_cprover_library_text(
 /// Parses and typechecks the given src and adds its contents to the
 /// symbol table. Symbols with names found in `keep` will survive
 /// the symbol table cleanup pass and be found in the symbol_table.
+/// Throws analysis_exceptiont if preprocessing, parsing, or typechecking fails.
 void add_library(
   const std::string &src,
   symbol_tablet &,

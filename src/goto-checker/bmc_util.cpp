@@ -119,13 +119,6 @@ void output_graphml(
   if(graphml.empty())
     return;
 
-  // __SZH_ADD_BEGIN__
-  // FALSE proof not required in no-data-race
-  bool enable_datarace = options.get_bool_option("datarace");
-  if(enable_datarace)
-    return;
-  // __SZH_ADD_END__
-
   graphml_witnesst graphml_witness(ns);
   graphml_witness(goto_trace);
 
@@ -207,10 +200,10 @@ get_memory_model(const optionst &options, const namespacet &ns)
     cat_parser.get_module().remove_unnecessary();
     cat_parser.get_module().build_propagate_map_all();
 
-    bool strict_guard = options.get_bool_option("mm-strict-guard");
     bool enable_cutting = options.get_bool_option("mm-cutting");
+    std::string compile_target = options.get_list_option("compile-target").front();
 
-    return util_make_unique<memory_model_generalt>(ns, cat_parser.get_module(), strict_guard, enable_cutting);
+    return util_make_unique<memory_model_generalt>(ns, cat_parser.get_module(), enable_cutting, compile_target);
   }
 // __SZH_ADD_END__
 }
@@ -375,6 +368,10 @@ void postprocess_equation(
       get_memory_model(options, ns);
 
     // __SZH_ADD_BEGIN__
+    if(options.get_bool_option("zord"))
+    {
+      memory_model->use_zord = true;
+    }
     if(options.get_bool_option("deagle-closure"))
     {
       memory_model->use_deagle = true;

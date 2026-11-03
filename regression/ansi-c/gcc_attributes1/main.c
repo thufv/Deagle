@@ -2,7 +2,7 @@
 
 typedef int i32;
 
-i32 __attribute__((aligned)) counter; 
+i32 __attribute__((aligned)) counter;
 
 __attribute__((aligned)) __attribute__((aligned)) int x0;
 const __attribute__((aligned)) int x1;
@@ -37,6 +37,10 @@ __attribute__((noreturn))
 void my_f1()
 {
   while(1);
+}
+
+inline void a() __attribute__((noreturn))
+{
 }
 
 //
@@ -94,7 +98,7 @@ int gvar3 __attribute__((__aligned__));
 struct Scomb {
   int x;
 } __attribute__ ((packed, aligned (64)));
-                
+
 #endif
 
 int main()

@@ -17,6 +17,10 @@ Author: Michael Tautschnig, michael.tautschnig@cs.ox.ac.uk
 void memory_model_sct::
 operator()(symex_target_equationt &equation, message_handlert &message_handler)
 {
+  std::cout << "see the equation!\n";
+  equation.output(std::cout);
+  std::cout << "finish seeing!\n";
+
   messaget log{message_handler};
   log.statistics() << "Adding SC constraints" << messaget::eom;
 
@@ -24,16 +28,26 @@ operator()(symex_target_equationt &equation, message_handlert &message_handler)
   build_clock_type();
 
   if(enable_datarace)
+  {
+    simplify_assignment_encoding(equation);
     data_race(equation);
+  }
 
   read_from(equation);
 
-  write_serialization_external(equation);
+  if(!use_deagle || equation.use_deagle_icd)
+    write_serialization_external(equation);
   
   program_order(equation);
 
-  if(!use_deagle)
+  if(!use_deagle && !use_zord)
     from_read(equation);
+
+  if(use_zord)
+  {
+    build_guard_of(equation);
+    build_addr_of(equation);
+  }
 
   // std::cout << "see the equation!\n";
   // equation.output(std::cout);
@@ -76,6 +90,13 @@ void memory_model_sct::thread_spawn(
       if(next_thread==per_thread_map.end())
         continue;
 
+      // Retain the model order of thread creation for YAML witnesses.
+      for(auto &spawn : equation.witness_spawn_events)
+        if(spawn.child_thread == next_thread_id)
+          spawn.clock = use_deagle
+            ? symbol_exprt::typeless(get_name(e_it))
+            : clock(e_it, AX_PROPAGATION);
+
       // add a constraint for all events,
       // considering regression/cbmc-concurrency/pthread_create_tso1
       for(event_listt::const_iterator
@@ -87,6 +108,12 @@ void memory_model_sct::thread_spawn(
         {
           if(use_deagle)
             add_oc_edge(equation, e_it, *n_it, is_apo(e_it, *n_it) ? "apo" : "po", true_exprt());
+          else if(use_zord)
+          {
+            add_constraint(equation, zord_pred(ID_pred_po, e_it, *n_it), "thread_spawn", e_it->source);
+            if(is_apo(e_it, *n_it))
+              add_constraint(equation, zord_pred(ID_pred_atom, e_it, *n_it), "thread_spawn", e_it->source);
+          }
           else
             add_constraint(equation, before(e_it, *n_it), "thread-spawn", e_it->source);
         }
@@ -186,6 +213,12 @@ void memory_model_sct::program_order(
 
       if(use_deagle)
         add_oc_edge(equation, previous, *e_it, is_apo(apo_set, previous, *e_it) ? "apo" : "po", true_exprt());
+      else if(use_zord)
+      {
+        add_constraint(equation, zord_pred(ID_pred_po, previous, *e_it), "thread_spawn", (*e_it)->source);
+        if(is_apo(previous, *e_it))
+          add_constraint(equation, zord_pred(ID_pred_atom, previous, *e_it), "thread_spawn", (*e_it)->source);
+      }
       else
         add_constraint(equation, before(previous, *e_it), "po", (*e_it)->source);
 
@@ -233,6 +266,11 @@ void memory_model_sct::write_serialization_external(
             add_oc_edge(equation, *w_it1, *w_it2, "ws", s12);
             add_oc_edge(equation, *w_it2, *w_it1, "ws", s21);
           }
+          else if(use_zord)
+          {
+            add_constraint(equation, zord_pred(ID_pred_ws, *w_it1, *w_it2, s12), "ws", (*w_it1)->source);
+            add_constraint(equation, zord_pred(ID_pred_ws, *w_it2, *w_it1, s21), "ws", (*w_it1)->source);
+          }
           else
           {
             add_constraint(equation, implies_exprt(s12, before(*w_it1, *w_it2)), "ws", (*w_it1)->source);
@@ -245,6 +283,8 @@ void memory_model_sct::write_serialization_external(
           add_constraint(equation, equal_exprt(s12, and_exprt((*w_it1)->guard, (*w_it2)->guard)), "ws-some", (*w_it1)->source);
           if(use_deagle)
             add_oc_edge(equation, *w_it1, *w_it2, "ws", s12);
+          else if(use_zord)
+            add_constraint(equation, zord_pred(ID_pred_ws, *w_it1, *w_it2, s12), "ws", (*w_it1)->source);
           else
             add_constraint(equation, implies_exprt(s12, before(*w_it1, *w_it2)), "ws", (*w_it1)->source);
         }
@@ -254,6 +294,8 @@ void memory_model_sct::write_serialization_external(
           add_constraint(equation, equal_exprt(s21, and_exprt((*w_it2)->guard, (*w_it1)->guard)), "ws-some", (*w_it1)->source);
           if(use_deagle)
             add_oc_edge(equation, *w_it2, *w_it1, "ws", s21);
+          else if(use_zord)
+            add_constraint(equation, zord_pred(ID_pred_ws, *w_it2, *w_it1, s21), "ws", (*w_it1)->source);
           else
             add_constraint(equation, implies_exprt(s21, before(*w_it2, *w_it1)), "ws", (*w_it1)->source);
         }
@@ -398,5 +440,45 @@ void memory_model_sct::from_read(symex_target_equationt &equation)
         }
       }
     }
+  }
+}
+
+void memory_model_sct::build_guard_of(symex_target_equationt &equation)
+{
+  for(auto e_it = equation.SSA_steps.begin(); e_it != equation.SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_shared_read() && !e_it->is_shared_write() && !e_it->is_spawn() && !e_it->is_memory_barrier())
+      continue;
+
+    symbol_exprt e_clk(get_name_with_clk(e_it), typet(ID_event));
+    symbol_exprt e_guard(get_name_with_clk(e_it) + "$$guard", bool_typet());
+
+    add_constraint(equation, binary_exprt(e_clk, ID_guard_of, e_guard, bool_typet()), "zord_guard", e_it->source);
+    add_constraint(equation, equal_exprt(e_guard, e_it->guard), "zord_guard", e_it->source);
+  }
+}
+
+#include <util/arith_tools.h>
+#include <util/mathematical_types.h>
+
+void memory_model_sct::build_addr_of(symex_target_equationt &equation)
+{
+
+  std::map<irep_idt, int> addr_to_id;
+
+  for(auto e_it = equation.SSA_steps.begin(); e_it != equation.SSA_steps.end(); e_it++)
+  {
+    if(!e_it->is_shared_read() && !e_it->is_shared_write() && !e_it->is_spawn() && !e_it->is_memory_barrier())
+      continue;
+
+    symbol_exprt e_clk(get_name_with_clk(e_it), typet(ID_event));
+
+    auto addr = (e_it->is_shared_read() || e_it->is_shared_write()) ? e_it->ssa_lhs.get_l1_object_identifier() : get_name(e_it);
+    if(addr_to_id.find(addr) == addr_to_id.end())
+      addr_to_id[addr] = addr_to_id.size();
+    int addr_id = addr_to_id[addr];
+    constant_exprt addr_const = from_integer(addr_id, integer_typet());
+
+    add_constraint(equation, binary_exprt(e_clk, ID_addr_of, addr_const, bool_typet()), "zord_addr", e_it->source);
   }
 }

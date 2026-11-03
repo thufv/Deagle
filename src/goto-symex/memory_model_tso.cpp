@@ -30,8 +30,14 @@ operator()(symex_target_equationt &equation, message_handlert &message_handler)
   
   program_order(equation);
 
-  if(!use_deagle)
+  if(!use_deagle && !use_zord)
     from_read(equation);
+
+  if(use_zord)
+  {
+    build_guard_of(equation);
+    build_addr_of(equation);
+  }
 }
 
 exprt memory_model_tsot::before(event_it e1, event_it e2)
@@ -106,6 +112,12 @@ void memory_model_tsot::program_order(
         {
           if(use_deagle)
             add_oc_edge(equation, *e_it, *e_it2, is_apo(apo_set, *e_it, *e_it2) ? "apo" : "po", true_exprt());
+          else if(use_zord)
+          {
+            add_constraint(equation, zord_pred(ID_pred_po, *e_it, *e_it2), "thread_spawn", (*e_it)->source);
+            if(is_apo(apo_set, *e_it, *e_it2))
+              add_constraint(equation, zord_pred(ID_pred_atom, *e_it, *e_it2), "thread_spawn", (*e_it)->source);
+          }
           else
             add_constraint(equation, before(*e_it, *e_it2), "po", (*e_it)->source);
 
@@ -165,6 +177,12 @@ void memory_model_tsot::program_order(
 
           if(use_deagle)
             add_oc_edge(equation, *e_it, *e_it2, is_apo(apo_set, *e_it, *e_it2) ? "apo" : "po", cond);
+          else if(use_zord)
+          {
+            add_constraint(equation, implies_exprt(cond, zord_pred(ID_pred_po, *e_it, *e_it2)), "po",(*e_it)->source);
+            if(is_apo(apo_set, *e_it, *e_it2))
+              add_constraint(equation, implies_exprt(cond, zord_pred(ID_pred_atom, *e_it, *e_it2)), "po_apo",(*e_it)->source);
+          }
           else
             add_constraint(equation, implies_exprt(cond, ordering), "po",(*e_it)->source);
         }

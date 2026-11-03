@@ -1,0 +1,9 @@
+CORE
+main.c
+--vsd --vsd-arrays every-element --vsd-pointers value-set
+array\[0\] := 5
+array\[.*nondet.*\] := 6
+new_array\[1\] := 7
+^SIGNAL=0$
+^EXIT=0$
+--

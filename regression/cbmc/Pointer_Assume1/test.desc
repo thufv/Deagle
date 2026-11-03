@@ -1,4 +1,4 @@
-KNOWNBUG
+CORE new-smt-backend
 main.c
 
 ^EXIT=0$

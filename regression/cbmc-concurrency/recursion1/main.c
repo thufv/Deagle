@@ -13,7 +13,7 @@ __CPROVER_ASYNC_1:
 
 start2:
   (void)0;
-__CPROVER_ASYNC_1:
+__CPROVER_ASYNC_2:
   goto start2;
 
   rec_spawn();
@@ -22,4 +22,3 @@ __CPROVER_ASYNC_1:
 
   return 0;
 }
-

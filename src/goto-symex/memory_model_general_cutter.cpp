@@ -172,7 +172,9 @@ void cuttert::calc_transitive_closure(const binary_must_may_sett& source, binary
     do
     {
         result_size_before = result.elements.size();
-        calc_composition(source, source, result);
+        binary_must_may_sett double_result;
+        calc_composition(result, result, double_result);
+        calc_binary_union(result, double_result, result);
     } while (result_size_before < int(result.elements.size()));
 }
 
@@ -291,15 +293,15 @@ void cuttert::calc_must_may_sets()
     {
         auto& scc = sccs[scc_id];
 
-        // bool need_must_may_set = false;
-        // for(auto kind : scc)
-        //     if(cat.need_must_may_set_relations.find(kind) != cat.need_must_may_set_relations.end())
-        //     {
-        //         need_must_may_set = true;
-        //         break;
-        //     }
-        // if(!need_must_may_set)
-        //     continue;
+        bool need_cutting = false;
+        for(auto kind : scc)
+            if(cat.need_cutting_relations.find(kind_id2str[kind]) != cat.need_cutting_relations.end())
+            {
+                need_cutting = true;
+                break;
+            }
+        if(!need_cutting)
+            continue;
 
         if(scc.size() == 1) // not recursive
         {
@@ -605,5 +607,6 @@ void cuttert::cutting_flip(int from, int to)
 
 void cuttert::cutting_plus(int from, int to)
 {
+    cutting_binary_alt(from, to);
     cutting_seq(from, to, link_post::LEFT, to);
 }

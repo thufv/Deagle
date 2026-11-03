@@ -1,0 +1,14 @@
+CORE
+main.c
+--apply-loop-contracts
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[main\.\d+\] .* Check decreases clause on loop iteration: FAILURE$
+^\[main.assigns.\d+\] .* Check that i is assignable: SUCCESS$
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+--
+This test fails because the loop invariant is not strong enough for the
+termination proof. We must add 0 <= i to the loop invariant. 

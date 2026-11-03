@@ -1,0 +1,11 @@
+CORE
+main.c
+--enforce-contract foo
+^\[foo.assigns.\d+\] line 3 Check that z is valid: SUCCESS$
+^\[foo.assigns.\d+\] line 6 Check that \*x is assignable: FAILURE$
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+--
+--
+This test checks that verification fails if an expression outside the assigns clause is assigned within the function.

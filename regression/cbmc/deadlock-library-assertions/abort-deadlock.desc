@@ -1,0 +1,8 @@
+CORE
+abort.c
+--deadlock --no-assertions
+^EXIT=10$
+^SIGNAL=0$
+^\[abort\.assertion\.1\].*abort didn't happen: FAILURE$
+^VERIFICATION FAILED$
+--

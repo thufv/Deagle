@@ -26,6 +26,7 @@ void goto_symext::symex_atomic_begin(statet &state)
   state.atomic_section_id=++atomic_section_counter;
   state.read_in_atomic_section.clear();
   state.written_in_atomic_section.clear();
+  state.mutex_access_guards.clear();
   state.read_in_atomic_section_sources.clear();
   state.written_in_atomic_section_sources.clear();
 
@@ -64,6 +65,9 @@ void goto_symext::symex_atomic_end(statet &state)
         it != pair.second.second.end();
         ++it)
       read_guard|=*it;
+    const auto selection = state.mutex_access_guards.find(pair.first);
+    if(selection != state.mutex_access_guards.end())
+      read_guard.add(disjunction(selection->second));
     exprt read_guard_expr=read_guard.as_expr();
     do_simplify(read_guard_expr);
 

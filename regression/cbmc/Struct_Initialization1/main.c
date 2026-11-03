@@ -1,6 +1,11 @@
+#include <assert.h>
+
 struct tag1 {
   int f;
-  int g;
+  int : 32; // unnamed bit-field, ignored during initialization
+  union {
+    int g;
+  }; // anonymous, but not ignored
   int *p;
   int a[2];
 } x;
@@ -40,7 +45,7 @@ int main() {
   assert(S1.f==0);
   assert(S1.g==2);
   assert(S1.p==0);
-  
+
   assert(S2.s1.a==1);
   assert(S2.s1.b==2);
   assert(S2.s2.a==3);

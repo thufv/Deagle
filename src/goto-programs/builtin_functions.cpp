@@ -826,28 +826,6 @@ void goto_convertt::do_havoc_slice(
 }
 
 // __SZH_ADD_BEGIN__
-void goto_convertt::do_atomic_store(
-  const symbol_exprt &function,
-  const exprt::operandst &arguments,
-  goto_programt &dest)
-{
-  dereference_exprt lhs{arguments[0]};
-  dereference_exprt rhs{arguments[1]};
-  dest.add(goto_programt::make_assignment(lhs, rhs, function.source_location()));
-
-  greater_than_or_equal_exprt assumption(arguments[2], from_integer(0, signedbv_typet(32)));
-  dest.add(goto_programt::make_assumption(assumption, function.source_location()));
-}
-
-void goto_convertt::do_atomic_load(
-  const symbol_exprt &function,
-  const exprt::operandst &arguments,
-  goto_programt &dest)
-{
-  dereference_exprt lhs{arguments[1]};
-  dereference_exprt rhs{arguments[0]};
-  dest.add(goto_programt::make_assignment(lhs, rhs, function.source_location()));
-}
 
 void goto_convertt::do_lkmm_load(
   const exprt &lhs,
@@ -1584,23 +1562,9 @@ void goto_convertt::do_function_call_symbol(
       std::move(dead_object_sym), std::move(rhs), source_location};
     targets.destructor_stack.add(assign);
   }
-  // __SZH_ADD_BEGIN__ : C11 and LKMM builtin functions
-  else if(identifier == CPROVER_PREFIX "atomic_store")
-  {
-    do_atomic_store(function, arguments, dest);
-  }
-  else if(identifier == CPROVER_PREFIX "atomic_store_n")
-  {
-    do_atomic_store(function, arguments, dest);
-  }
-  else if(identifier == CPROVER_PREFIX "atomic_load")
-  {
-    do_atomic_load(function, arguments, dest);
-  }
-  else if(identifier == CPROVER_PREFIX "atomic_load_n")
-  {
-    do_atomic_load(function, arguments, dest);
-  }
+  // __SZH_ADD_BEGIN__ : LKMM builtin functions
+  // Note that C11 functions (such as atomic_load) are treated as polymorphic functions elsewhere,
+  // instead of built-in functions here.
   else if(identifier == CPROVER_PREFIX "LKMM_LOAD")
   {
     do_lkmm_load(lhs, function, arguments, dest);
@@ -1609,6 +1573,7 @@ void goto_convertt::do_function_call_symbol(
   {
     do_lkmm_store(function, arguments, dest);
   }
+  // todo: LKMM_FENCE, LKMM_XCHG, LKMM_CMPXCHG, ...
   // __SZH_ADD_END__
   else
   {

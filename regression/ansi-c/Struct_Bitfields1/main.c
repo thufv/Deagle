@@ -1,5 +1,8 @@
-#define STATIC_ASSERT(condition) \
-  int some_array##__LINE__[(condition) ? 1 : -1];
+#define CONCAT(a, b) a##b
+#define CONCAT2(a, b) CONCAT(a, b)
+
+#define STATIC_ASSERT(condition)                                               \
+  int CONCAT2(some_array, __LINE__)[(condition) ? 1 : -1]
 
 struct S1
 {
@@ -34,4 +37,20 @@ STATIC_ASSERT(sizeof(struct S3)==sizeof(int)+sizeof(int)+sizeof(int));
 
 int main()
 {
+  // check some operators
+  struct S1 s1;
+  s1.my_bit+=1;
+  s1.my_bit|=1;
+  s1.my_bit&=1;
+  s1.my_bit^=1;
+  s1.my_bit<<=1;
+  s1.my_bit++;
+  ++s1.my_bit;
+  (unsigned)s1.my_bit;
+
+  int *p;
+  p=p+s1.my_bit;
+  p=p-s1.my_bit;
+  p+=s1.my_bit;
+  p-=s1.my_bit;
 }

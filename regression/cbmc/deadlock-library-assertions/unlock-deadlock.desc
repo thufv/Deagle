@@ -1,0 +1,8 @@
+CORE pthread
+unlock.c
+--deadlock --no-assertions
+^EXIT=10$
+^SIGNAL=0$
+^\[pthread_mutex_unlock\.assertion\.1\].*must hold lock upon unlock: FAILURE$
+^VERIFICATION FAILED$
+--

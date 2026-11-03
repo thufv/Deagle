@@ -1,0 +1,10 @@
+CORE
+main.c
+--show-goto-functions --pointer-check
+^Removal of function pointers and virtual functions$
+^\s*CALL f2\(\)$
+^EXIT=0$
+^SIGNAL=0$
+--
+^warning: ignoring
+function \w+: replacing function pointer by 9 possible targets

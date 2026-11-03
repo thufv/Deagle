@@ -1,0 +1,8 @@
+CORE pthread
+main.c
+--deadlock --no-assertions --unwinding-assertions --no-self-loops-to-assumptions -DNONDET
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring

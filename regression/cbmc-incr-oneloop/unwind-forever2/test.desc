@@ -1,0 +1,11 @@
+THOROUGH
+main.c
+--incremental-loop main.0 --unwinding-assertions
+^EXIT=(142|14)$
+^SIGNAL=0$
+--
+^warning: ignoring
+--
+Tests whether goto-symex does not stop early when it cannot figure out the
+loop bound and there is no error in the loop.
+Mac OS exit code is 14

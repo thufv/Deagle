@@ -11,6 +11,7 @@ Author: Daniel Kroening, kroening@kroening.com
 #include <sstream>
 
 #include <util/config.h>
+#include <util/exception_utils.h>
 #include <util/symbol_table.h>
 
 #include "ansi_c_language.h"
@@ -43,6 +44,9 @@ static std::string get_cprover_library_text(
 
   if(config.ansi_c.string_abstraction)
     library_text << "#define " CPROVER_PREFIX "STRING_ABSTRACTION\n";
+
+  library_text << "#define " CPROVER_PREFIX "DEADLOCK_CHECK "
+               << config.ansi_c.deadlock_check << '\n';
 
   // cprover_library.inc may not have been generated when running Doxygen, thus
   // make Doxygen skip this part
@@ -122,9 +126,12 @@ void add_library(
 
   ansi_c_languaget ansi_c_language;
   ansi_c_language.set_message_handler(message_handler);
-  ansi_c_language.parse(in, "");
+  if(ansi_c_language.parse(in, ""))
+    throw analysis_exceptiont(
+      "Failed to preprocess or parse CPROVER built-in library");
 
-  ansi_c_language.typecheck(symbol_table, "<built-in-library>", true, keep);
+  if(ansi_c_language.typecheck(symbol_table, "<built-in-library>", true, keep))
+    throw analysis_exceptiont("Failed to typecheck CPROVER built-in library");
 }
 
 void cprover_c_library_factory_force_load(

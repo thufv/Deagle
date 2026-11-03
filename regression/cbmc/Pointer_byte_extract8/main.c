@@ -1,41 +1,58 @@
+#include <assert.h>
 #include <stdlib.h>
 
-typedef union
-{
-  int a;
-  int b;
-} Union;
+#ifdef _MSC_VER
+#  define _Static_assert(x, m) static_assert(x, m)
+#endif
 
-typedef struct
-{
-  int Count;
-  Union List[1];
-} __attribute__((packed)) Struct3;
+struct list;
 
-extern size_t __CPROVER_malloc_size;
+typedef struct list list_nodet;
+
+list_nodet fill_node(signed int depth_tag_list);
+
+struct list
+{
+  int datum;
+  struct list *next;
+};
+
+int max_depth = 2;
+
+list_nodet *build_node(int depth)
+{
+  if(max_depth < depth)
+    return ((list_nodet *)NULL);
+  else
+  {
+    _Static_assert(sizeof(list_nodet) == 16, "");
+    list_nodet *result = malloc(16);
+
+    if(result)
+    {
+      *result = fill_node(depth + 1);
+    }
+    return result;
+  }
+}
+
+list_nodet fill_node(int depth)
+{
+  list_nodet result;
+  result.datum = depth;
+  result.next = build_node(depth);
+  return result;
+}
 
 int main()
 {
-  Struct3 *p = malloc (sizeof (int) + 2 * sizeof(Union));
-  p->Count = 3;
-  int po=0;
-  size_t m=__CPROVER_malloc_size;
-
-  // this should be fine
-  p->List[0].a = 555;
-
-  __CPROVER_assert(p->List[0].b==555, "p->List[0].b==555");
-  __CPROVER_assert(p->List[0].a==555, "p->List[0].a==555");
-
-  // this should be fine
-  p->List[1].b = 999;
-
-  __CPROVER_assert(p->List[1].b==999, "p->List[1].b==999");
-  __CPROVER_assert(p->List[1].a==999, "p->List[1].a==999");
-
-  // this is out-of-bounds
-  p->List[2].a = 0;
-
+  list_nodet *node = build_node(0);
+  int i = 0;
+  list_nodet *list_walker = node;
+  for(; list_walker; list_walker = list_walker->next)
+  {
+    i = i + 1;
+  }
+  assert(i == 3);
   return 0;
 }
-

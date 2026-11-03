@@ -1,5 +1,8 @@
-#define STATIC_ASSERT(condition) \
-  int some_array##__LINE__[(condition) ? 1 : -1];
+#define CONCAT(a, b) a##b
+#define CONCAT2(a, b) CONCAT(a, b)
+
+#define STATIC_ASSERT(condition)                                               \
+  int CONCAT2(some_array, __LINE__)[(condition) ? 1 : -1]
 
 // character literals such as are of type int in C
 STATIC_ASSERT(sizeof('a')==sizeof(int));
@@ -11,7 +14,7 @@ STATIC_ASSERT('\144' == 100);
 STATIC_ASSERT('\xff' == (char)0xff);
 
 // wide ones
-  
+
 STATIC_ASSERT(L'\xff'==255);
 STATIC_ASSERT(L'a'=='a');
 

@@ -36,6 +36,11 @@ protected:
   void program_order(symex_target_equationt &equation);
   void from_read(symex_target_equationt &equation);
   void write_serialization_external(symex_target_equationt &equation);
+
+// __SZH_ADD_BEGIN__
+  void build_guard_of(symex_target_equationt &equation);
+  void build_addr_of(symex_target_equationt &equation);
+// __SZH_ADD_END__
 };
 
 #endif // CPROVER_GOTO_SYMEX_MEMORY_MODEL_SC_H

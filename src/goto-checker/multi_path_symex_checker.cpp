@@ -20,6 +20,7 @@ Author: Daniel Kroening, Peter Schrammel
 #include "bmc_util.h"
 #include "counterexample_beautification.h"
 #include "goto_symex_fault_localizer.h"
+#include "violation_witness.h"
 
 multi_path_symex_checkert::multi_path_symex_checkert(
   const optionst &options,
@@ -145,7 +146,9 @@ void multi_path_symex_checkert::output_proof()
 void multi_path_symex_checkert::output_error_witness(
   const goto_tracet &error_trace)
 {
-  output_graphml(error_trace, ns, options);
+  output_violation_witness(
+    error_trace, equation, property_decider.get_decision_procedure(), ns,
+    options, ui_message_handler);
 }
 
 fault_location_infot

@@ -1,0 +1,10 @@
+CORE thorough-paths thorough-smt-backend
+main.c
+
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+--
+This test actually passes with the SMT2 back-end, but takes 88 seconds to do so.

@@ -76,7 +76,8 @@ renamedt<ssa_exprt, L2> goto_symex_statet::assignment(
   const namespacet &ns,
   bool rhs_is_simplified,
   bool record_value,
-  bool allow_pointer_unsoundness)
+  bool allow_pointer_unsoundness,
+  const exprt &access_guard)
 {
   // identifier should be l0 or l1, make sure it's l1
   lhs = rename_ssa<L1>(std::move(lhs), ns).get();
@@ -96,7 +97,7 @@ renamedt<ssa_exprt, L2> goto_symex_statet::assignment(
   lhs = l2_lhs.get();
 
   // in case we happen to be multi-threaded, record the memory access
-  bool is_shared=l2_thread_write_encoding(lhs, ns);
+  bool is_shared = l2_thread_write_encoding(lhs, ns, access_guard);
 
   if(run_validation_checks)
   {
@@ -584,15 +585,22 @@ goto_symex_statet::write_is_shared_resultt goto_symex_statet::write_is_shared(
 /// \return true if \p expr is shared between threads
 bool goto_symex_statet::l2_thread_write_encoding(
   const ssa_exprt &expr,
-  const namespacet &ns)
+  const namespacet &ns,
+  const exprt &access_guard)
 {
+  guardt write_guard = guard;
+  write_guard.add(access_guard);
   switch(write_is_shared(expr, ns))
   {
   case write_is_shared_resultt::NOT_SHARED:
     return false;
   case write_is_shared_resultt::IN_ATOMIC_SECTION:
   {
-    written_in_atomic_section[remove_level_2(expr)].push_back(guard);
+    written_in_atomic_section[remove_level_2(expr)].push_back(write_guard);
+    if(source.pc->source_location().is_built_in() &&
+       (source.function_id == "pthread_mutex_lock" ||
+        source.function_id == "pthread_mutex_unlock"))
+      mutex_access_guards[remove_level_2(expr)].push_back(access_guard);
     written_in_atomic_section_sources.emplace_back(remove_level_2(expr), source);
     return false;
   }
@@ -602,7 +610,7 @@ bool goto_symex_statet::l2_thread_write_encoding(
 
   // record a shared write
   symex_target->shared_write(
-    guard.as_expr(),
+    write_guard.as_expr(),
     expr,
     atomic_section_id,
     source);

@@ -1,0 +1,9 @@
+FUTURE
+main.c
+
+^EXIT=10$
+^SIGNAL=0$
+^\*\*\*\* WARNING: no body for function f$
+^VERIFICATION FAILED$
+--
+^warning: ignoring

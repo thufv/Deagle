@@ -1,6 +1,6 @@
 let sync = [M]; po; [Fsync]; po; [M]
 let lwsync = ([R]; po; [Flwsync]; po; [M]) | ([M]; po; [Flwsync]; po; [W])
-let ctrlisync = [R]; ctrl; [Fisync]; po
+let ctrlisync = [R]; po; [Fisync]; po
 
 let com = rf | fr | co
 acyclic poloc | com as uniproc

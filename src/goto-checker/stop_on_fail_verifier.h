@@ -64,8 +64,8 @@ public:
         incremental_goto_checker.get_namespace(),
         trace_optionst(options),
         ui_message_handler);
-      report_failure(ui_message_handler);
       incremental_goto_checker.output_error_witness(goto_trace);
+      report_failure(ui_message_handler);
       break;
     }
 

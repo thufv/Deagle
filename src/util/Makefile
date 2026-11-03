@@ -121,7 +121,7 @@ include ../common
 
 # get version from git
 GIT_INFO = $(shell git describe --tags --always --dirty || echo "n/a")
-RELEASE_INFO = const char *CBMC_VERSION="$(CBMC_VERSION) ($(GIT_INFO))";
+RELEASE_INFO = const char *CBMC_VERSION="$(CBMC_VERSION)";\nconst char *DEAGLE_VERSION="$(DEAGLE_VERSION) ($(GIT_INFO))";
 GIT_INFO_FILE = version.cpp
 
 $(GIT_INFO_FILE):

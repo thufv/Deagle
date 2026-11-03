@@ -1,0 +1,13 @@
+KNOWNBUG
+main.c
+global_var --harness-type initialize-with-memory-snapshot --initial-source-location main.c:20
+^EXIT=10$
+^SIGNAL=0$
+^\[foo.assertion.1\] line [0-9]+ assertion global_var == 0: SUCCESS$
+^\[foo.assertion.2\] line [0-9]+ assertion global_var == 0: FAILURE$
+VERIFICATION FAILED
+--
+^warning: ignoring
+--
+The first assertion is succeeding because unreachable.
+For more information take a look at github#5351

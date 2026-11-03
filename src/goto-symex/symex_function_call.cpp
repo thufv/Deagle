@@ -375,7 +375,7 @@ void goto_symext::symex_function_call_post_clean(
 static void pop_frame(
   goto_symext::statet &state,
   const path_storaget &path_storage,
-  bool doing_path_exploration)
+  bool preserve_guard)
 {
   PRECONDITION(!state.call_stack().empty());
 
@@ -400,7 +400,9 @@ static void pop_frame(
   // If we're doing path exploration then we do tail-duplication, and we
   // actually *are* in a more-restricted context than we were when the
   // function began.
-  if(state.threads.size() == 1 && !doing_path_exploration)
+  // Deadlock checking also preserves blocked-acquisition guards across calls,
+  // including calls made before the first thread is created.
+  if(state.threads.size() == 1 && !preserve_guard)
   {
     state.guard = frame.guard_at_function_start;
   }
@@ -438,7 +440,8 @@ void goto_symext::symex_end_of_function(statet &state)
   auto return_value_symbol = state.call_stack().top().return_value_symbol;
 
   // now get rid of the frame
-  pop_frame(state, path_storage, symex_config.doing_path_exploration);
+  pop_frame(
+    state, path_storage, symex_config.doing_path_exploration || enable_deadlock);
 
   // after dropping the frame, assign the return value, if any
   if(state.reachable && call_lhs.is_not_nil())

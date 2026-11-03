@@ -1,6 +1,0 @@
-"// clang-format off\n"
-"int __assume(int);\n"
-"unsigned short __lzcnt16(unsigned short value);\n"
-"unsigned int __lzcnt(unsigned int value);\n"
-"unsigned __int64 __lzcnt64(unsigned __int64 value);\n"
-"// clang-format on\n"

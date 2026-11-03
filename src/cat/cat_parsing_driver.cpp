@@ -50,6 +50,7 @@ cat_parsing_drivert::cat_parsing_drivert() : module(new cat_modulet)
 	module->addBase("Fsync", 1);
 	module->addBase("Flwsync", 1);
 	module->addBase("Fisync", 1);
+	module->addBase("Fmfence", 1);
 	module->addBase("A", 1);
 	module->addBase("I", 1);
 	module->addBase("IR", 1);

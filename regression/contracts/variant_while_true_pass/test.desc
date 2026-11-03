@@ -1,0 +1,15 @@
+CORE
+main.c
+--apply-loop-contracts
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[main\.\d+\] .* Check decreases clause on loop iteration: SUCCESS$
+^\[main.assigns.\d+\] .* Check that i is assignable: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+^EXIT=0$
+^SIGNAL=0$
+--
+--
+The purpose of this test is to check whether a decreases clause can
+successfully prove the termination of a loop (i) whose exit condition is 
+1 == 1 (i.e. true) and (ii) that will eventually exit via a break statement. 

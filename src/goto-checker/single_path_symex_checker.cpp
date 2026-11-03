@@ -16,6 +16,7 @@ Author: Daniel Kroening, Peter Schrammel
 #include "bmc_util.h"
 #include "counterexample_beautification.h"
 #include "symex_bmc.h"
+#include "violation_witness.h"
 
 single_path_symex_checkert::single_path_symex_checkert(
   const optionst &options,
@@ -180,7 +181,10 @@ const namespacet &single_path_symex_checkert::get_namespace() const
 void single_path_symex_checkert::output_error_witness(
   const goto_tracet &goto_trace)
 {
-  output_graphml(goto_trace, ns, options);
+  output_violation_witness(
+    goto_trace, property_decider->get_equation(),
+    property_decider->get_decision_procedure(), ns, options,
+    ui_message_handler);
 }
 
 void single_path_symex_checkert::output_proof()

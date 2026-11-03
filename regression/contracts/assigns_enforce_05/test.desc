@@ -1,0 +1,10 @@
+CORE
+main.c
+--enforce-contract f1 --enforce-contract f2 --enforce-contract f3
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test checks that verification succeeds when enforcing a contract
+for functions, without assigns clauses, that don't modify anything.

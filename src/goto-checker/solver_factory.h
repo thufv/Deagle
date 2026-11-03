@@ -102,6 +102,7 @@ void parse_solver_options(const cmdlinet &cmdline, optionst &options);
   "(fpa)"                                                                      \
   "(cvc3)"                                                                     \
   "(cvc4)(boolector)(yices)(z3)"                                               \
+  "(zord)"                                                                     \
   "(mathsat)"                                                                  \
   "(cprover-smt2)"                                                             \
   "(incremental-smt2-solver):"                                                 \
@@ -131,6 +132,9 @@ void parse_solver_options(const cmdlinet &cmdline, optionst &options);
   " --mathsat                    use MathSAT\n"                                \
   " --yices                      use Yices\n"                                  \
   " --z3                         use Z3\n"                                     \
+  " --deagle-icd                 (SZH) use Deagle's ICD solver\n"              \
+  " --deagle-closure             (SZH) use Deagle's closure solver (default)\n"\
+  " --deagle-segment             (SZH) use Deagle's segment-tree solver\n"     \
   " --fpa                        use theory of floating-point arithmetic\n"    \
   " --refine                     use refinement procedure (experimental)\n"    \
   " --refine-arrays              use refinement for arrays only\n"             \

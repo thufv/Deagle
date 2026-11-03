@@ -1,3 +1,5 @@
+#include <assert.h>
+
 /* Copy new sign bit to the left */
 int test_extend2(int x, unsigned width)
 {
@@ -8,14 +10,14 @@ int test_extend2(int x, unsigned width)
     x = bit | (~mask & x);
     mask <<= 1;
     bit <<= 1;
-  } 
+  }
   return x;
 }
 
 int main()
 {
   int r;
-  
+
   r=test_extend2(4, 3);
   assert(r==-4);
 }

@@ -1,11 +1,11 @@
-# Deagle V4.1.0
+# Deagle V4.2.0
 
 ## Introduction
-Deagle is an SMT-based concurrent program verification tool. It is built on top of CBMC-5 (front-end) and MiniSAT-2.2.1 (back-end). The basic idea of Deagle is to integrate into the SAT solver an ordering consistency theory that handles ordering relations over shared variable accesses in the program. The front-end encodes the input program into an extended Boolean formula that contains ordering constraints. The back-end is reinforced with a solver for the ordering consistency theory.
+Deagle is an SMT-based concurrent program verification tool that supports assertion checking, data race detection, and deadlock detection. It is built on top of CBMC-5 (front-end) and MiniSAT-2.2.1 (back-end). The basic idea of Deagle is to integrate into the SAT solver an ordering consistency theory that handles ordering relations over shared variable accesses in the program. The front-end encodes the input program into an extended Boolean formula that contains ordering constraints. The back-end is reinforced with a solver for the ordering consistency theory.
 The source code of Deagle is available on https://github.com/thufv/deagle.
 
 ## Deagle's Capability
-For programs under simple memory models SC, TSO, and PSO, Deagle verifies user-defined assertions, detecting data races, memory failures (such as null pointer dereferences), and overflows.
+Deagle verifies user-defined assertions under SC, TSO, and PSO. It also detects data races, deadlocks, memory failures (such as null pointer dereferences), and overflows.
 
 ## Installation
 ### Dependencies
@@ -54,7 +54,8 @@ Deagle unwinds it over and over again and never terminates.
 ``<specifications>`` includes:
 - **--unwinding-assertions**: generate an assertion for whether each loop is fully unwinded. This specification is strongly preferred in academic usage: if the user-defined assertion is TRUE but an unwinding assertion is violated, this TRUE result of used-defined assertion is not conclusive, indicating that one needs to enlarge the unwind limit and try again. This option is directly inherited from CBMC.
 - **--no-assertions** : disable user-defined assertion (default enabled). This option is directly inherited from CBMC.
-- **--datarace** : enable data race detection (default disabled). This option is freshly developed in Deagle.
+- **--datarace** : enable data race detection (default disabled).
+- **--deadlock** : enable deadlock detection (default disabled). This option automatically enables **--unwinding-assertions** to check whether loops are fully unwound and **--no-self-loops-to-assumptions** to prevent self-loops from being replaced by assumptions. These two options do not need to be specified separately.
 - **--pointer-check** : enable null pointer dereference detection (default disabled). This option is directly inherited from CBMC.
 - **--alloc-check** : enable malloc/calloc/... validity detection (default disabled). This option is newly developed in Deagle.
 - **--memory-leak-check** : enable memory leak detection (default disabled). This option is inherited from CBMC but further developed in Deagle.

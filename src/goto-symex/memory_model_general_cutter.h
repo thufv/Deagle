@@ -77,12 +77,10 @@ public:
             get_node(label.e_str);
     }
 
-    void build_kind_id(std::vector<oc_edget>& oc_edges, std::vector<oc_labelt>& oc_labels)
+    void build_kind_id(cat_modulet& cat)
     {
-        for(auto& edge : oc_edges)
-            get_kind(edge.kind);
-        for(auto& label : oc_labels)
-            get_kind(label.label);
+        for(auto kind_str : cat.necessary_relations)
+            get_kind(kind_str);
     }
 
     cuttert() {}
@@ -90,7 +88,7 @@ public:
         cat(_cat)
     {
         build_node_id(oc_edges, oc_labels);
-        build_kind_id(oc_edges, oc_labels);
+        build_kind_id(_cat);
 
         unary_musts.resize(kind_id2str.size());
         unary_mays.resize(kind_id2str.size());

@@ -1,0 +1,8 @@
+CORE test-c++-front-end
+main.c
+
+^EXIT=(1|64)$
+^SIGNAL=0$
+^CONVERSION ERROR$
+--
+^warning: ignoring

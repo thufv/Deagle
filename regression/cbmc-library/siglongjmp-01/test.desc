@@ -1,0 +1,10 @@
+CORE unix
+main.c
+--pointer-check --bounds-check
+^\[siglongjmp.assertion.1\] line 14 siglongjmp requires instrumentation: FAILURE$
+^\[main.assertion.1\] line 8 unreachable: SUCCESS$
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+^warning: ignoring

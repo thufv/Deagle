@@ -1,4 +1,4 @@
-KNOWNBUG
+CORE broken-test-c++-front-end
 main.c
 
 ^EXIT=0$

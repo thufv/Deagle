@@ -307,6 +307,8 @@ public:
   void clear()
   {
     SSA_steps.clear();
+    lock_acquisitions.clear();
+    witness_spawn_events.clear();
   }
 
   bool has_threads() const
@@ -331,11 +333,25 @@ public:
 
   std::map<std::string, int> oc_result_order;
 
+  struct witness_spawn_eventt
+  {
+    unsigned creator_thread;
+    unsigned child_thread;
+    sourcet call_site;
+    exprt guard;
+    exprt clock;
+  };
+  std::vector<witness_spawn_eventt> witness_spawn_events;
+
   std::set<std::string> preserved_accesses;
 
   std::vector<std::pair<event_it, event_it>> numbered_dataraces;
-  std::map<event_it, exprt> read_dirties;
+  // std::map<event_it, exprt> read_dirties;
   // __SZH_ADD_END__
+
+  // __WP_ADD_BEGIN__
+  std::map<event_it, exprt::operandst> r2race_vars;
+  // __WP_ADD_END__
 
 protected:
   messaget log;
@@ -369,6 +385,10 @@ public:
   void dynamic_object_atomicity(const namespacet& ns);
   bool symbol_is_atomic(const namespacet& ns, irep_idt symbol_name);
 
+  void remove_repeating_updates();
+  std::set<std::string> build_shared_symbols();
+  std::set<std::string> build_symbols_in_use();
+  void concurrency_slice();
   void remove_dummy_accesses();
 
   struct race_identifier_t
@@ -404,8 +424,14 @@ public:
   // __SZH_ADD_END__
 
   // __WP_ADD_BEGIN__ for deadlock information
-  std::map<unsigned, std::vector<event_it>> per_thread_lock_writes;
-  std::map<unsigned, std::vector<event_it>> per_thread_lock_begins;
+  struct lock_acquisitiont
+  {
+    exprt guard;
+    exprt condition;
+    sourcet source;
+  };
+  // Capture the SSA-renamed assume before it is folded into the path guard.
+  std::vector<lock_acquisitiont> lock_acquisitions;
   std::vector<event_it> program_returns;
   std::vector<event_it> loop_asserts_in_critical;
   void build_deadlock();

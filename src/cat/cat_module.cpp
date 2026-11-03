@@ -130,7 +130,7 @@ void cat_modulet::addConstraint(rel_axiomt axiom_type, cat_relationt relation)
     bool positivity = (axiom_type != rel_axiomt::NOT_EMPTY);
     build_arity(relation.name);
     build_positivity(relation.name, positivity);
-    build_need_must_may_set(relation.name, false);
+    build_need_must_may_set(relation.name);
     build_necessary(relation.name);
 
     build_need_cutting(relation.name, false);
@@ -275,8 +275,9 @@ void cat_modulet::build_positivity(std::string relation_name, bool positivity)
     }
 }
 
-void cat_modulet::build_need_must_may_set(std::string relation_name, bool need_must_may_set)
+void cat_modulet::build_need_must_may_set(std::string relation_name)
 {
+    bool need_must_may_set = false;
     if(contains(negative_relations, relation_name))
         need_must_may_set = true;
 
@@ -292,7 +293,7 @@ void cat_modulet::build_need_must_may_set(std::string relation_name, bool need_m
 
     auto relation = relation_map[relation_name];
     for(auto& operand : relation.operands)
-        build_need_must_may_set(operand, need_must_may_set);
+        build_need_must_may_set(operand);
 }
 
 void cat_modulet::build_necessary(std::string relation_name)
@@ -307,14 +308,14 @@ void cat_modulet::build_necessary(std::string relation_name)
 
 void cat_modulet::build_need_cutting(std::string relation_name, bool passing_negativity)
 {
-    static std::set<std::string> visited_relations;
+    passing_negativity = passing_negativity || contains(negative_relations, relation_name);
+
+    static std::set<std::string> need_relations;
+    static std::set<std::string> need_not_relations;
+    auto& visited_relations = passing_negativity ? need_relations : need_not_relations;
     if(contains(visited_relations, relation_name))
         return;
     visited_relations.insert(relation_name);
-
-    if(contains(need_cutting_relations, relation_name))
-        return;
-    passing_negativity = passing_negativity || contains(negative_relations, relation_name);
 
     if(passing_negativity)
         need_cutting_relations.insert(relation_name);

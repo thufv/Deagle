@@ -1,8 +1,0 @@
-CORE
-assert2.class
---function assert2.main
-^EXIT=10$
-^SIGNAL=0$
-^VERIFICATION FAILED$
---
-^warning: ignoring

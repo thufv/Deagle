@@ -906,6 +906,17 @@ IREP_ID_TWO(overflow_result_mult, overflow_result-*)
 IREP_ID_TWO(overflow_result_shl, overflow_result-shl)
 IREP_ID_TWO(overflow_result_unary_minus, overflow_result-unary-)
 
+// __SZH_ADD_BEGIN__ : For Zord solver
+IREP_ID_ONE(event)
+IREP_ID_ONE(pred_po)
+IREP_ID_ONE(pred_atom)
+IREP_ID_ONE(pred_rf)
+IREP_ID_ONE(pred_ws)
+IREP_ID_ONE(pred_race)
+IREP_ID_ONE(guard_of)
+IREP_ID_ONE(addr_of)
+// __SZH_ADD_END__
+
 // Projects depending on this code base that wish to extend the list of
 // available ids should provide a file local_irep_ids.def in their source tree
 // and add -D'LOCAL_IREP_IDS=<project/local_irep_ids.def>' to their compiler

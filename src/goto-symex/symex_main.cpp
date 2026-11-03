@@ -212,6 +212,11 @@ void goto_symext::symex_assume(statet &state, const exprt &cond)
   simplified_cond = state.rename(std::move(simplified_cond), ns).get();
   do_simplify(simplified_cond);
 
+  if(enable_deadlock && state.atomic_section_id != 0 &&
+     state.source.function_id == "pthread_mutex_lock")
+    target.lock_acquisitions.push_back(
+      {state.guard.as_expr(), simplified_cond, state.source});
+
   // It would be better to call try_filter_value_sets after apply_condition,
   // but it is not currently possible. See the comment at the beginning of
   // \ref apply_goto_condition for more information.
@@ -239,7 +244,9 @@ void goto_symext::symex_assume_l2(statet &state, const exprt &cond)
   if(has_subexpr(rewritten_cond, ID_exists))
     rewrite_quantifiers(rewritten_cond, state);
 
-  if(state.threads.size()==1)
+  if(state.threads.size() == 1 &&
+     !(enable_deadlock && state.atomic_section_id != 0 &&
+       state.source.function_id == "pthread_mutex_lock"))
   {
     exprt tmp = state.guard.guard_expr(rewritten_cond);
     target.assumption(state.guard.as_expr(), tmp, state.source);
@@ -1201,7 +1208,7 @@ void goto_symext::symex_datarace(std::string filename)
       auto cond = conjunction(conds);
       simplify(cond, ns);
       if(!cond.is_true())
-        target.constraint(implies_exprt(race_var, conjunction(conds)), "", race.first->source);
+        target.constraint(implies_exprt(race_var, conjunction(conds)), "rc-cond", race.first->source);
 
       target.numbered_dataraces.push_back(race);
       race_source = &(race.first->source);
@@ -1284,6 +1291,11 @@ void goto_symext::symex_alloc_check()
   }
 }
 
+void goto_symext::concurrency_slice()
+{
+  target.concurrency_slice();
+}
+
 void goto_symext::remove_dummy_accesses()
 {
   target.remove_dummy_accesses();
@@ -1349,131 +1361,29 @@ void goto_symext::remove_dummy_accesses()
 void goto_symext::symex_deadlock()
 {
   std::cout << "Handling deadlock!\n";
-
   target.build_deadlock();
-  // std::cout << "target.build_deadlock() over!\n";
-  // std::cout << "per_thread_locks:\n";
 
-  // int function_return_assert_id = 0;
-  // for(auto& event_return : target.function_returns) {
-  //   std::string msg = "No return-problem on function ";
-  //   msg += id2string(event_return->source.function_id);
-
-  //   std::string assert_id = "no-return-problem.assertion." + std::to_string(function_return_assert_id);
-  //   deadlock_assert_id++;
-
-  //   stateless_vcc(event_return->guard, msg, assert_id, event_return->source);
-  // }
   exprt::operandst integrity_constraint;
-
-  for(auto& event_return : target.program_returns) {
+  for(const auto &event_return : target.program_returns)
     integrity_constraint.push_back(boolean_negate(event_return->guard));
-  }
-
-  for(auto& event_assert : target.loop_asserts_in_critical) {
+  for(const auto &event_assert : target.loop_asserts_in_critical)
     integrity_constraint.push_back(event_assert->cond_expr);
-    // std::cout << "event_assert->cond_expr.pretty(): " << event_assert->cond_expr.pretty() << "\n";
+
+  unsigned deadlock_assert_id = 0;
+  for(const auto &acquisition : target.lock_acquisitions)
+  {
+    // Access-selection guards may be appended to shared events independently.
+    // A blocked acquisition is the prefix guard AND NOT its actual assume.
+    const and_exprt blocked(
+      acquisition.guard,
+      boolean_negate(acquisition.condition),
+      conjunction(integrity_constraint));
+    stateless_vcc(
+      boolean_negate(blocked),
+      "No deadlock on mutex acquisition",
+      "nodeadlock.assertion." + std::to_string(deadlock_assert_id++),
+      acquisition.source);
   }
-
-  // std::cout << "integrity_constraint generate over!\n";
-
-  int deadlock_assert_id = 0;
-
-  for(auto& p : target.per_thread_lock_writes) {
-    // std::cout << "p.first:" << p.first << ":\n";
-    // std::cout << "p.second.size():" << p.second.size() << ":\n";
-    // std::cout << "target.per_thread_lock_begins[p.first].size():" << target.per_thread_lock_begins[p.first].size() << ":\n";
-
-    // bool is_single_lock_begin = true;
-    //   for(int i = 1; i < target.per_thread_lock_begins[p.first].size(); i++) {
-    //     if (target.per_thread_lock_begins[p.first][i] != target.per_thread_lock_begins[p.first][0])
-    //       is_single_lock_begin = false;
-    //   }
-    //   if (is_single_lock_begin)
-    //     continue;
-
-    for(unsigned i = 0; i < p.second.size(); i++) {
-
-      // std::cout << "p.second[" << i << "] starts!\n";
-
-      auto& lock_write = p.second[i];
-      // symex_target_equationt::event_it lock_begin;
-      // std::cout << "lock_write->guard: " << lock_write->guard.pretty() << "\n";
-      // if (i < target.per_thread_lock_begins[p.first].size()) {
-      //   lock_begin = target.per_thread_lock_begins[p.first][i];
-
-      //   // std::cout << "lock_begin->guard: " << lock_begin->guard.pretty() << "\n";
-
-      //   if (lock_write->guard == lock_begin->guard)
-      //     continue;
-      // }
-      
-      auto& lock_begin = target.per_thread_lock_begins[p.first][i];
-
-      if (lock_write->guard == lock_begin->guard)
-        continue;
-      // std::cout << "\nvar_name:" << lock_write->ssa_lhs.get_identifier()
-      // << "\nline:" << lock_write->source.pc->source_location().get_line().c_str()
-      // << "\nvar_guard:" << lock_write->guard.pretty() << "\n------\n";
-
-      exprt::operandst deadlock_error;
-
-      if (lock_write->guard.id() == ID_and) {
-        // std::cout << "AND_______lock_write->guard: " << lock_write->guard.pretty() << "\n";
-        // std::cout << "AND_______lock_write->guard.operands().back(): " << lock_write->guard.operands().back().pretty() << "\n";
-
-        deadlock_error.push_back(boolean_negate(lock_write->guard.operands().back()));
-
-        // if(lock_write->ssa_lhs.type().pretty().find("#typedef: pthread_mutex_t") != std::string::npos)
-        // int pos = lock_write->ssa_lhs.type().pretty().find("#typedef: pthread_mutex_t");
-        // std::cout << "lock_write->ssa_lhs.type():" << lock_write->ssa_lhs.type().pretty().at(pos) << "\n";
-
-        auto lock_guard = lock_write->guard;
-        lock_guard.operands().pop_back();
-
-        // std::cout << "AND_______lock_guard: " << lock_guard.pretty() << "\n";
-
-        deadlock_error.push_back(lock_guard);
-
-        std::string msg = "No deadlock on variable ";
-        msg += id2string(lock_write->ssa_lhs.get_identifier());
-
-        std::string assert_id = "nodeadlock.assertion." + std::to_string(deadlock_assert_id);
-        deadlock_assert_id++;
-
-        stateless_vcc(boolean_negate(make_and(conjunction(deadlock_error), conjunction(integrity_constraint))), msg, assert_id, lock_write->source);
-      }
-      else {
-        // std::cout << "The lock_write's guard is NotAND, then the lock's guard is True!!!\n";
-
-        deadlock_error.push_back(boolean_negate(lock_write->guard));
-
-        // std::cout << "The deadlock_error is done!\n";
-
-        std::string msg = "No deadlock on variable ";
-        msg += id2string(lock_write->ssa_lhs.get_identifier());
-
-        std::string assert_id = "nodeadlock.assertion." + std::to_string(deadlock_assert_id);
-        deadlock_assert_id++;
-
-        // std::cout << "The preparation of vcc is over!\n";
-
-        stateless_vcc(boolean_negate(make_and(conjunction(deadlock_error), conjunction(integrity_constraint))), msg, assert_id, lock_write->source);
-
-        // std::cout << "The vcc is done!\n";
-      }
-
-      // std::cout << "p.second[" << i << "] is done!\n";
-    }
-
-  }
-
-  // std::cout << "The symex_deadlock is done!\n";
-  
-  // int deadlock_assert_id = 0;
-  // std::vector<symex_target_equationt::event_it> locks_tuples;
-  // std::map<unsigned, std::vector<symex_target_equationt::event_it>>::iterator it1 = target.per_thread_locks.begin();
-  // backtracing_for_deadlock(locks_tuples, it1, deadlock_assert_id);
 }
 
 // __WP_ADD_END__

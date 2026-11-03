@@ -106,7 +106,10 @@ void multi_path_symex_only_checkert::generate_equation()
   }
   // __SZH_ADD_END__
 
-  symex.remove_dummy_accesses();
+  if(options.get_bool_option("concurrency-slice"))
+    symex.concurrency_slice();
+  else
+    symex.remove_dummy_accesses();
 
   equation.dynamic_object_atomicity(ns);
 

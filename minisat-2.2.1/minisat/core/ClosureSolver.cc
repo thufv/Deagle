@@ -47,7 +47,7 @@ void ClosureSolver::set_graph()
     oc_edge_tablet apo_table;
     oc_edge_tablet po_table;
     oc_edge_tablet rf_table;
-    oc_edge_tablet ws_table;
+    // oc_edge_tablet ws_table;
 
     for(auto pair: oc_edge_table) //init nodes first
     {
@@ -66,8 +66,8 @@ void ClosureSolver::set_graph()
             po_table.push_back(pair);
         else if(kind == OC_RF)
             rf_table.push_back(pair);
-        else if(kind == OC_WS)
-            ws_table.push_back(pair);
+        // else if(kind == OC_WS)
+        //     ws_table.push_back(pair);
     }
 
     // for(auto pair: oc_guard_map)
@@ -796,10 +796,9 @@ void ClosureSolver::addMissingCoClauses()
         if(guard_lit2.x != -1)
             co_clause.push(~guard_lit2);
 
-        CRef cr = ca.alloc(co_clause, true);
-        learnts.push(cr);
+        CRef cr = ca.alloc(co_clause, false);
+        clauses.push(cr);
         attachClause(cr);
-        claBumpActivity(ca[cr]);
 
         graph.init_reasonable_edge(node1, node2, OC_NA, lit12);
         graph.init_reasonable_edge(node2, node1, OC_NA, lit21);

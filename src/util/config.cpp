@@ -1085,6 +1085,8 @@ bool configt::set(const cmdlinet &cmdline)
   else
     ansi_c.string_abstraction=false;
 
+  ansi_c.deadlock_check = cmdline.isset("deadlock");
+
   if(cmdline.isset("no-library"))
     ansi_c.lib=configt::ansi_ct::libt::LIB_NONE;
 

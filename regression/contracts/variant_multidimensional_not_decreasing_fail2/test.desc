@@ -1,0 +1,17 @@
+CORE
+main.c
+--apply-loop-contracts
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[main\.\d+\] .* Check decreases clause on loop iteration: FAILURE$
+^\[main.assigns.\d+\] line 14 Check that j is assignable: SUCCESS$
+^\[main.assigns.\d+\] line 18 Check that i is assignable: SUCCESS$
+^\[main.assigns.\d+\] line 19 Check that j is assignable: SUCCESS$
+^VERIFICATION FAILED$
+^EXIT=10$
+^SIGNAL=0$
+--
+--
+This test fails because the given multidimensional decreases clause does not 
+monotonically decrease. A mistake is in the first component of the
+decreases clause: i. It should instead be N - i. 

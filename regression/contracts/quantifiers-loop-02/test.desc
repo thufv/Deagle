@@ -1,0 +1,20 @@
+CORE smt-backend broken-cprover-smt-backend thorough-smt-backend
+main.c
+--apply-loop-contracts _ --z3
+^EXIT=0$
+^SIGNAL=0$
+^\[main.\d+\] line .* Check loop invariant before entry: SUCCESS$
+^\[main.\d+\] line .* Check that loop invariant is preserved: SUCCESS$
+^\[main.assigns.\d+\] line .* Check that i is assignable: SUCCESS$
+^\[main.assigns.\d+\] line .* Check that a\[\(signed long (long )?int\)i\] is assignable: SUCCESS$
+^\[main.assertion.\d+\] line .* assertion .*: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+--
+This test case checks the handling of a universal quantifier, with a symbolic
+upper bound, within a loop invariant.
+
+TODO: This test should:
+- not use the `_ --z3` parameters:
+  once SMT-related tags are supported by the `Makefile`.

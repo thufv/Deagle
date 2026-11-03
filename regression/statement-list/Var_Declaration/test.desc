@@ -1,0 +1,31 @@
+CORE
+main.awl
+--show-parse-tree
+^EXIT=0$
+^SIGNAL=0$
+^Name: Var_assign_FB$
+^Name: Var_assign_FC$
+^Version: 0[.]1$
+^  \* type: bool$
+^  \* type: floatbv$
+^  \* type: signedbv$
+^      \* width: 32$
+^      \* width: 16$
+^      \* f: 23$
+^  \* identifier: "! #\$%&'\(\)\*\+,\-\./0123456789:;<=>\?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\[\\\]\^_`abcdefghijklmnopqrstuvwxyz\{|\}~"$
+^  \* identifier: inout$
+^  \* identifier: out$
+^  \* identifier: "constant"$
+^  \* identifier: temp$
+^  \* identifier: static$
+^  \* identifier: inFC$
+^  \* identifier: inoutFC$
+^  \* identifier: outFC$
+^  \* identifier: constFC$
+^  \* identifier: tempFC$
+^  \* default_value: true$
+^  \* default_value: 6$
+^  \* default_value: 134142$
+^  \* default_value: 4.5$
+--
+^warning: ignoring

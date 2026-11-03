@@ -1,0 +1,11 @@
+CORE broken-cprover-smt-backend
+main.c
+
+^EXIT=0$
+^SIGNAL=0$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+--
+The SMT back-end does not correctly support structs with non-constant size,
+unless named data types are used (as is the case with Z3).

@@ -4,6 +4,7 @@
 add_library(minisat2-condensed
     minisat/simp/SimpSolver.cc
     minisat/core/Solver.cc
+    minisat/utils/Options.cc
 )
 
 set_target_properties(
@@ -13,6 +14,10 @@ set_target_properties(
     CXX_STANDARD_REQUIRED true
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Developer ID Application: Daniel Kroening"
 )
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
+    target_compile_options(minisat2-condensed PUBLIC /w)
+endif()
 
 target_include_directories(minisat2-condensed
     PUBLIC

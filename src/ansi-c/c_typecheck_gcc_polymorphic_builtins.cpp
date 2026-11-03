@@ -1123,7 +1123,7 @@ static void instantiate_atomic_exchange(
   const symbol_exprt memorder =
     memorder_symbol(identifier_with_type, signed_int_type(), source_location, symbol_table)
       .symbol_expr();
-  block.add(code_frontend_assignt{memorder, parameter_exprs[2]});
+  block.add(code_frontend_assignt{memorder, parameter_exprs[3]});
 
   block.add(code_frontend_assignt{dereference_exprt{parameter_exprs[2]},
                                   dereference_exprt{parameter_exprs[0]}});

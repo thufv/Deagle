@@ -1,0 +1,13 @@
+CORE
+sensitivity_test_two_value_pointer_to_two_value_pointer.c
+--variable-sensitivity --verify
+^EXIT=0$
+^SIGNAL=0$
+^\[main.assertion.1\] .* \*\*x==0: UNKNOWN$
+^\[main.assertion.2\] .* \*\*x==1: UNKNOWN$
+^\[main.assertion.3\] .* \*\*x==1: UNKNOWN$
+^\[main.assertion.4\] .* \*\*x==0: UNKNOWN$
+^\[main.assertion.5\] .* a==2: UNKNOWN$
+^\[main.assertion.6\] .* a==1: UNKNOWN$
+--
+^warning: ignoring

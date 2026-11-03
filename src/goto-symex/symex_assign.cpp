@@ -175,7 +175,8 @@ void symex_assignt::assign_non_struct_symbol(
                                ns,
                                symex_config.simplify_opt,
                                symex_config.constant_propagation,
-                               symex_config.allow_pointer_unsoundness)
+                               symex_config.allow_pointer_unsoundness,
+                               conjunction(guard))
                              .get();
 
   state.record_events.push(false);
@@ -214,7 +215,9 @@ void symex_assignt::assign_non_struct_symbol(
       l1_lhs,
       assignment.rhs,
       target,
-      symex_config.allow_pointer_unsoundness);
+      symex_config.allow_pointer_unsoundness,
+      l2_full_lhs,
+      conjunction(guard));
     // Erase the composite symbol from our working state. Note that we need to
     // have it in the propagation table and the value set while doing the field
     // assignments, thus we cannot skip putting it in there above.

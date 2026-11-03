@@ -231,8 +231,10 @@ int pthread_mutex_unlock(pthread_mutex_t *mutex)
   __CPROVER_fence("WWfence", "RRfence", "RWfence", "WRfence",
                     "WWcumul", "RRcumul", "RWcumul", "WRcumul");
   __CPROVER_atomic_begin();
-  // __CPROVER_assert(*((__CPROVER_mutex_t *)mutex)==1,
-  //   "must hold lock upon unlock");
+  #if __CPROVER_DEADLOCK_CHECK
+  __CPROVER_assert(*((__CPROVER_mutex_t *)mutex)==1,
+    "must hold lock upon unlock");
+  #endif
   *((__CPROVER_mutex_t *)mutex)=0;
   __CPROVER_atomic_end();
   #endif

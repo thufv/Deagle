@@ -78,6 +78,7 @@ protected:
   " --unwind nr                  unwind nr times\n"                            \
   " --unwindset [T:]L:B,...      unwind loop L with a bound of B\n"            \
   "                              (optionally restricted to thread T)\n"        \
-  "                              (use --show-loops to get the loop IDs)\n"
+  "                              (use --show-loops to get the loop IDs)\n"     \
+  " --unwind-suggest             (SZH) suggest unwind bounds with static analysis\n"
 
 #endif // CPROVER_GOTO_INSTRUMENT_UNWINDSET_H

@@ -1,0 +1,11 @@
+CORE
+main.c
+--enforce-contract foo
+^EXIT=0$
+^SIGNAL=0$
+\[foo.postcondition.\d+\] line \d+ Check ensures clause: SUCCESS
+\[main.assertion.\d+\] line \d+ assertion foo\(\&x, \&y\) \=\= 10: SUCCESS
+^VERIFICATION SUCCESSFUL$
+--
+--
+Checks whether function contracts are properly propagated to function pointers.

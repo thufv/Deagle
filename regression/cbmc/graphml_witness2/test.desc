@@ -1,0 +1,13 @@
+CORE
+main.c
+--graphml-witness - --unwindset main.0:1 --unwinding-assertions --stack-trace
+^EXIT=10$
+^SIGNAL=0$
+^VERIFICATION FAILED$
+<data key="assumption">foo = \(\(unsigned( long( long)?)? int \*\)0\);</data>
+--
+^warning: ignoring
+__CPROVER_size_t
+--
+In the GraphML witness, typedef names should be expanded.
+Accept the expanded size_t type for both 32-bit and 64-bit targets.

@@ -177,16 +177,12 @@ cadical-download:
 	@cd ../cadical && CXX=$(CXX) ./configure -O3 -s && make -j
 	@$(RM) $(cadical_release).tar.gz
 
-doc :
-	doxygen
-
 install: all
 	for b in \
 		cbmc crangler \
 		goto-analyzer goto-cc goto-diff goto-instrument goto-harness \
 		symtab2gb ; do \
 		  cp $$b/$$b $(PREFIX)/bin/ ; \
-			cp ../doc/man/$$b.1 $(PREFIX)/doc/man/man1/ ; \
 	done
 	ln -sf $(PREFIX)/bin/goto-cc $(PREFIX)/bin/goto-gcc
 	ln -sf $(PREFIX)/bin/goto-cc $(PREFIX)/bin/goto-ld

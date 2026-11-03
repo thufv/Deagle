@@ -1,0 +1,16 @@
+CORE
+main.c
+--apply-loop-contracts _ --pointer-check --bounds-check --signed-overflow-check
+^EXIT=0$
+^SIGNAL=0$
+^\[binary_search\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[binary_search\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[binary_search\.\d+\] .* Check decreases clause on loop iteration: SUCCESS$
+^\[binary_search.assigns.\d+\] .* Check that lb is assignable: SUCCESS$
+^\[binary_search.assigns.\d+\] .* Check that ub is assignable: SUCCESS$
+^\[binary_search.assigns.\d+\] .* Check that mid is assignable: SUCCESS$
+^\[main\.assertion\.\d+\] .* assertion buf\[idx\] == val: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+--
+This test case verifies memory safety and termination of a binary search implementation.

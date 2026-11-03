@@ -52,14 +52,18 @@ public:
     void add_must_may_label(int node, int kind, Lit lit)
     {
         unary_mays[kind].set(node);
-        if(lit.x == -1) // always true
+        // if lit.x == -1, the label is always there
+        // for non-rf and non-co relations, the label is also always there (don't consider guard condition here)
+        if((kind_id2str[kind] != "rf" && kind_id2str[kind] != "co") || lit.x == -1)
             unary_musts[kind].set(node);
     }
 
     void add_must_may_edge(int node1, int node2, int kind, Lit lit)
     {
         binary_mays[kind].set(node1, node2);
-        if(lit.x == -1) // always true
+        // if lit.x == -1, the edge is always there
+        // for non-rf and non-co relations, the edge is also always there (don't consider guard condition here)
+        if((kind_id2str[kind] != "rf" && kind_id2str[kind] != "co") || lit.x == -1)
             binary_musts[kind].set(node1, node2);
     }
 

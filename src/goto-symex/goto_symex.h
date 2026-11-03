@@ -81,7 +81,9 @@ public:
     enable_alloc = options.get_bool_option("alloc-check");
     // __SZH_ADD_END__
 
+    // __WP_ADD_BEGIN__
     enable_deadlock = options.get_bool_option("deadlock");
+    // __WP_ADD_END__
   }
 
   /// A virtual destructor allowing derived classes to be cleaned up correctly
@@ -181,6 +183,7 @@ public:
 
   void symex_alloc_check();
 
+  void concurrency_slice();
   void remove_dummy_accesses();
 
   bool try_finding_value_set = false;

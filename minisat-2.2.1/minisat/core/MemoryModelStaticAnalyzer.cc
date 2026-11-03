@@ -145,7 +145,17 @@ void MemoryModelStaticAnalyzert::calc_unary_union(const unary_must_may_sett& lef
 
 void MemoryModelStaticAnalyzert::calc_binary_union(const binary_must_may_sett& left, const binary_must_may_sett& right, binary_must_may_sett& result)
 {
-    std::set_union(left.elements.begin(), left.elements.end(), right.elements.begin(), right.elements.end(), std::inserter(result.elements, result.elements.begin()));
+    result.outs.clear();
+    for(int node1 = 0; node1 < std::max(int(left.outs.size()), int(right.outs.size())); node1++)
+    {
+        result.outs.push_back(std::set<int>());
+        if(node1 < int(left.outs.size()) && node1 < int(right.outs.size()))
+            std::set_union(left.outs[node1].begin(), left.outs[node1].end(), right.outs[node1].begin(), right.outs[node1].end(), std::inserter(result.outs[node1], result.outs[node1].begin()));
+        else if(node1 < int(left.outs.size()))
+            result.outs[node1] = left.outs[node1];
+        else if(node1 < int(right.outs.size()))
+            result.outs[node1] = right.outs[node1];
+    }
 }
 
 void MemoryModelStaticAnalyzert::calc_unary_intersection(const unary_must_may_sett& left, const unary_must_may_sett& right, unary_must_may_sett& result)
@@ -155,7 +165,12 @@ void MemoryModelStaticAnalyzert::calc_unary_intersection(const unary_must_may_se
 
 void MemoryModelStaticAnalyzert::calc_binary_intersection(const binary_must_may_sett& left, const binary_must_may_sett& right, binary_must_may_sett& result)
 {
-    std::set_intersection(left.elements.begin(), left.elements.end(), right.elements.begin(), right.elements.end(), std::inserter(result.elements, result.elements.begin()));
+    result.outs.clear();
+    for(int node1 = 0; node1 < std::min(int(left.outs.size()), int(right.outs.size())); node1++)
+    {
+        result.outs.push_back(std::set<int>());
+        std::set_intersection(left.outs[node1].begin(), left.outs[node1].end(), right.outs[node1].begin(), right.outs[node1].end(), std::inserter(result.outs[node1], result.outs[node1].begin()));
+    }
 }
 
 void MemoryModelStaticAnalyzert::calc_unary_difference(const unary_must_may_sett& left, const unary_must_may_sett& right, unary_must_may_sett& result)
@@ -165,15 +180,27 @@ void MemoryModelStaticAnalyzert::calc_unary_difference(const unary_must_may_sett
 
 void MemoryModelStaticAnalyzert::calc_binary_difference(const binary_must_may_sett& left, const binary_must_may_sett& right, binary_must_may_sett& result)
 {
-    std::set_difference(left.elements.begin(), left.elements.end(), right.elements.begin(), right.elements.end(), std::inserter(result.elements, result.elements.begin()));
+    result.outs.clear();
+    for(int node1 = 0; node1 < int(left.outs.size()); node1++)
+    {
+        result.outs.push_back(std::set<int>());
+        if(node1 < int(right.outs.size()))
+            std::set_difference(left.outs[node1].begin(), left.outs[node1].end(), right.outs[node1].begin(), right.outs[node1].end(), std::inserter(result.outs[node1], result.outs[node1].begin()));
+        else
+            result.outs[node1] = left.outs[node1];
+    }
 }
 
 void MemoryModelStaticAnalyzert::calc_composition(const binary_must_may_sett& left, const binary_must_may_sett& right, binary_must_may_sett& result)
 {
-    for(auto left_edge : left.elements)
-        for(auto right_edge : right.elements)
-            if(left_edge.second == right_edge.first)
-                result.set(left_edge.first, right_edge.second);
+    for(int node1 = 0; node1 < int(left.outs.size()); node1++)
+        for(auto node2 : left.outs[node1])
+        {
+            if(node2 >= int(right.outs.size()))
+                continue;
+            for(auto node3 : right.outs[node2])
+                result.set(node1, node3);
+        }
 }
 
 void MemoryModelStaticAnalyzert::calc_product(const unary_must_may_sett& left, const unary_must_may_sett& right, binary_must_may_sett& result)
@@ -191,19 +218,43 @@ void MemoryModelStaticAnalyzert::calc_bracket(const unary_must_may_sett& source,
 
 void MemoryModelStaticAnalyzert::calc_flip(const binary_must_may_sett& source, binary_must_may_sett& result)
 {
-    for(auto edge : source.elements)
-        result.set(edge.second, edge.first);
+    for(int node1 = 0; node1 < int(source.outs.size()); node1++)
+        for(auto node2 : source.outs[node1])
+            result.set(node2, node1);
 }
 
 void MemoryModelStaticAnalyzert::calc_transitive_closure(const binary_must_may_sett& source, binary_must_may_sett& result)
 {
-    int result_size_before = 0;
-    result.elements = source.elements;
-    do
+    std::vector<std::pair<int, int>> waiting_list;
+    for(int node1 = 0; node1 < int(source.outs.size()); node1++)
+        for(auto node2 : source.outs[node1])
+            waiting_list.push_back(std::make_pair(node1, node2));
+
+    std::vector<std::set<int>> ins;
+    std::vector<std::set<int>> outs;
+
+    while(!waiting_list.empty())
     {
-        result_size_before = result.elements.size();
-        calc_composition(source, source, result);
-    } while (result_size_before < int(result.elements.size()));
+        auto edge = waiting_list.back();
+        waiting_list.pop_back();
+        int from = edge.first, to = edge.second;
+        if(int(outs.size()) <= from)
+            outs.resize(from + 1);
+        if(int(ins.size()) <= to)
+            ins.resize(to + 1);
+        if(outs[from].find(to) == outs[from].end())
+        {
+            outs[from].insert(to);
+            ins[to].insert(from);
+            if(to < int(outs.size()))
+                for(auto next : source.outs[to])
+                    waiting_list.push_back(std::make_pair(from, next));
+            if(from < int(ins.size()))
+                for(auto prev : ins[from])
+                    waiting_list.push_back(std::make_pair(prev, to));
+        }
+    }
+    result.outs = outs;
 }
 
 void MemoryModelStaticAnalyzert::calc_single_kind(int kind, std::string kind_str, int arity)
@@ -323,13 +374,32 @@ void MemoryModelStaticAnalyzert::calc_must_may_sets()
 
         // bool need_must_may_set = false;
         // for(auto kind : scc)
-        //     if(cat.need_must_may_set_relations.find(kind) != cat.need_must_may_set_relations.end())
+        //     if(cat.need_must_may_set_relations.find(kind_id2str[kind]) != cat.need_must_may_set_relations.end())
         //     {
         //         need_must_may_set = true;
         //         break;
         //     }
-        // if(!need_must_may_set)
-        //     continue;
+
+        bool need_must_may_set = true;
+
+        if(!need_must_may_set)
+        {
+            for(auto kind : scc)
+            {
+                auto kind_str = kind_id2str[kind];
+                if(cat.get_arity(kind_str) == 1)
+                {
+                    unary_mays[kind].trivial = true;
+                    unary_musts[kind].trivial = true;
+                }
+                if(cat.get_arity(kind_str) == 2)
+                {
+                    binary_mays[kind].trivial = true;
+                    binary_musts[kind].trivial = true;
+                }
+            }
+            continue;
+        }
 
         if(scc.size() == 1) // not recursive
         {

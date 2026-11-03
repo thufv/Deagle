@@ -186,7 +186,7 @@ void goto_convert_functionst::convert_function(
   const codet &code = to_code(symbol.value);
 
   auto new_code = code;
-  simplify_pthread_create_join(new_code);
+  // Keep thread boundaries: folding create/join can hide self-deadlocks.
 
   source_locationt end_location;
 

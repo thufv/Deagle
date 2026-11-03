@@ -1,0 +1,19 @@
+CORE
+main.c
+--apply-loop-contracts
+^EXIT=0$
+^SIGNAL=0$
+^\[main\.\d+\] .* Check loop invariant before entry: SUCCESS$
+^\[main\.\d+\] .* Check that loop invariant is preserved: SUCCESS$
+^\[main.assigns.\d+\] .* Check that i is assignable: SUCCESS$
+^\[main.assigns.\d+\] .* Check that a\[\(signed long (long )?int\)i\] is assignable: SUCCESS$
+^\[main\.assertion\.\d+\] line .* assertion .*: SUCCESS$
+^VERIFICATION SUCCESSFUL$
+--
+^warning: ignoring
+--
+This test case checks the handling of an existential quantifier, with a symbolic
+upper bound, within a loop invariant.
+
+This test case uses explicit constant bounds on the quantified variable,
+so that it can be unrolled (to conjunctions) with the SAT backend.

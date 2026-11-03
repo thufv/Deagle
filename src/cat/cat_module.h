@@ -77,7 +77,7 @@ private:
     }
 
     void build_positivity(std::string relation_name, bool positivity);
-    void build_need_must_may_set(std::string relation_name, bool need_must_may_set);
+    void build_need_must_may_set(std::string relation_name);
     void build_arity(std::string relation_name);
     void build_necessary(std::string relation_name);
     void build_need_cutting(std::string relation_name, bool passing_negativity);

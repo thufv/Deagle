@@ -41,7 +41,8 @@ lbool closure::get_assignment(Lit l)
 {
     if(l.x == -1)
         return l_True;
-
+    if(l.x == -2)
+        return l_False;
     return solver->value(l);
 }
 

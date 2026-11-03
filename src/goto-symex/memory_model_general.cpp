@@ -21,13 +21,16 @@ void memory_model_generalt::operator()(symex_target_equationt &equation, message
     build_event_lists(equation, message_handler);
     build_clock_type();
 
-    build_labels(equation);
+    std::map<event_it, std::string> event_mo;
+
+    build_labels(equation, event_mo);
     build_lkmm_nesting(equation);
     build_loc(equation);
     build_thd(equation);
     build_id(equation);
 
-    build_po(equation);
+    std::map<event_it, event_it> rmw_counterparts;
+    build_po(equation, rmw_counterparts);
     build_co(equation);
     build_rf(equation);
 
@@ -38,6 +41,8 @@ void memory_model_generalt::operator()(symex_target_equationt &equation, message
     build_ctrl(equation, reads);
 
     build_lkmm_crit(equation);
+
+    build_compiled_fences(equation, event_mo, rmw_counterparts);
 
     if(enable_cutting && really_need_cutting())
     {
@@ -53,18 +58,8 @@ void memory_model_generalt::operator()(symex_target_equationt &equation, message
     // equation.output(std::cout);
 }
 
-//useless now
-exprt memory_model_generalt::before(event_it e1, event_it e2)
-{
-  return partial_order_concurrencyt::before(
-    e1, e2, AX_PROPAGATION);
-}
-
 void memory_model_generalt::add_necessary_oc_edge(symex_target_equationt &equation, event_it e1, event_it e2, std::string kind, exprt guard_expr)
 {
-    if(guard_expr == true_exprt() && strict_guard)
-        guard_expr = simplify_expr(and_exprt(e1->guard, e2->guard), ns);
-
     add_necessary_oc_edge(equation, get_name(e1), get_name(e2), kind, guard_expr);
 }
 
@@ -72,25 +67,11 @@ void memory_model_generalt::add_necessary_oc_edge(symex_target_equationt &equati
 {
     if(cat.binary_relations.find(kind) == cat.binary_relations.end())
         return;
-
-    if(guard_expr == true_exprt() && strict_guard)
-    {
-        exprt guard1 = true_exprt();
-        if(id_to_guard.find(e1_str) != id_to_guard.end())
-            guard1 = id_to_guard[e1_str];
-        exprt guard2 = true_exprt();
-        if(id_to_guard.find(e2_str) != id_to_guard.end())
-            guard2 = id_to_guard[e2_str];
-        guard_expr = simplify_expr(and_exprt(guard1, guard2), ns);
-    }
     add_oc_edge(equation, e1_str, e2_str, kind, guard_expr);
 }
 
 void memory_model_generalt::add_necessary_oc_label(symex_target_equationt &equation, event_it e, std::string label, exprt guard_expr)
 {
-    if(guard_expr == true_exprt() && strict_guard)
-        guard_expr = simplify_expr(e->guard, ns);
-
     add_necessary_oc_label(equation, get_name(e), label, guard_expr);
 }
 
@@ -98,32 +79,25 @@ void memory_model_generalt::add_necessary_oc_label(symex_target_equationt &equat
 {
     if(cat.unary_relations.find(label) == cat.unary_relations.end())
         return;
-
-    if(guard_expr == true_exprt() && strict_guard)
-    {
-        if(id_to_guard.find(e_str) != id_to_guard.end())
-            guard_expr = simplify_expr(id_to_guard[e_str], ns);
-    }
-
     add_oc_label(equation, e_str, label, guard_expr);
 }
 
-void memory_model_generalt::add_apo(symex_target_equationt &equation, event_it e1, event_it e2, std::set<event_it>& added_rmw_labels)
+void memory_model_generalt::add_apo(symex_target_equationt &equation, event_it e1, event_it e2, std::map<event_it, event_it>& rmw_counterparts)
 {
-    add_necessary_oc_edge(equation, e1, e2, "rmw", true_exprt());
-    if(added_rmw_labels.find(e1) == added_rmw_labels.end())
+    add_necessary_oc_edge(equation, e1, e2, "rmw", get_two_guards(e1, e2));
+    if(rmw_counterparts.find(e1) == rmw_counterparts.end())
     {
-        added_rmw_labels.insert(e1);
-        add_necessary_oc_label(equation, e1, "RMW", true_exprt());
+        rmw_counterparts[e1] = e2;
+        add_necessary_oc_label(equation, e1, "RMW", get_guard(e1));
         if(e1->is_shared_write())
-            add_necessary_oc_label(equation, e1, "STRONG", true_exprt());
+            add_necessary_oc_label(equation, e1, "STRONG", get_guard(e1));
     }
-    if(added_rmw_labels.find(e2) == added_rmw_labels.end())
+    if(rmw_counterparts.find(e2) == rmw_counterparts.end())
     {
-        added_rmw_labels.insert(e2);
-        add_necessary_oc_label(equation, e2, "RMW", true_exprt());
+        rmw_counterparts[e2] = e1;
+        add_necessary_oc_label(equation, e2, "RMW", get_guard(e2));
         if(e2->is_shared_write())
-            add_necessary_oc_label(equation, e2, "STRONG", true_exprt());
+            add_necessary_oc_label(equation, e2, "STRONG", get_guard(e2));
     }
 }
 
@@ -161,43 +135,31 @@ std::vector<std::string> lkmm_mos{"Relaxed", "Once", "Acquire", "Release", "Mb",
     "Rcu-lock", "Rcu-unlock", "Sync-rcu",
     "Before-atomic", "After-atomic", "After-spinlock", "Barrier", "After-unlock-lock"};
 
-void memory_model_generalt::build_labels(symex_target_equationt& equation)
+void memory_model_generalt::build_labels(symex_target_equationt& equation, std::map<event_it, std::string>& event_mo)
 {
     for(eventst::const_iterator e_it=equation.SSA_steps.begin(); e_it!=equation.SSA_steps.end(); e_it++)
     {
+        auto guard = get_guard(e_it);
+
         if(e_it->is_shared_read())
         {
-            add_necessary_oc_label(equation, e_it, "R", true_exprt());
-            add_necessary_oc_label(equation, e_it, "M", true_exprt());
-            add_necessary_oc_label(equation, e_it, "_", true_exprt());
+            add_necessary_oc_label(equation, e_it, "R", guard);
+            add_necessary_oc_label(equation, e_it, "M", guard);
+            add_necessary_oc_label(equation, e_it, "_", guard);
         }
         else if(e_it->is_shared_write())
         {
-            add_necessary_oc_label(equation, e_it, "W", true_exprt());
-            add_necessary_oc_label(equation, e_it, "M", true_exprt());
-            add_necessary_oc_label(equation, e_it, "_", true_exprt());
+            add_necessary_oc_label(equation, e_it, "W", guard);
+            add_necessary_oc_label(equation, e_it, "M", guard);
+            add_necessary_oc_label(equation, e_it, "_", guard);
             if(e_it->is_init())
-                add_necessary_oc_label(equation, e_it, "IW", true_exprt());
+                add_necessary_oc_label(equation, e_it, "IW", guard);
         }
         else if(e_it->is_memory_barrier())
         {
-            add_necessary_oc_label(equation, e_it, "F", true_exprt());
-            add_necessary_oc_label(equation, e_it, "~M", true_exprt());
-            add_necessary_oc_label(equation, e_it, "_", true_exprt());
-
-            // Here we model sync/lwsync/isync as fences: Fsync, Flwsync, Fisync.
-            // Binary sync relations are modeled as:
-            // let sync = [M]; po; [Fsync]; po; [M]
-            // let lwsync = ([R]; po; [Flwsync]; po; [M]) | ([M]; po; [Flwsync]; po; [W])
-            // let ctrlisync = [R]; ctrl; [Fisync]; po
-            // Please manually add those definitions into cat modules.
-            std::string function_id = e_it->source.function_id.c_str();
-            if(function_id == "fence" || function_id == "sync")
-                add_necessary_oc_label(equation, e_it, "Fsync", true_exprt());
-            if(function_id == "lwfence" || function_id == "lwsync")
-                add_necessary_oc_label(equation, e_it, "Flwsync", true_exprt());
-            if(function_id == "isync")
-                add_necessary_oc_label(equation, e_it, "Fisync", true_exprt());
+            add_necessary_oc_label(equation, e_it, "F", guard);
+            add_necessary_oc_label(equation, e_it, "~M", guard);
+            add_necessary_oc_label(equation, e_it, "_", guard);
         }
 
         bool is_c11 = false;
@@ -211,7 +173,7 @@ void memory_model_generalt::build_labels(symex_target_equationt& equation)
                 function_id.find("__atomic_exchange") != std::string::npos ||
                 function_id.find("__atomic_compare_exchange") != std::string::npos)
             {
-                add_necessary_oc_label(equation, e_it, "A", true_exprt());
+                add_necessary_oc_label(equation, e_it, "A", guard);
                 is_c11 = true;
             }
             if(function_id == "__LKMM_STORE")
@@ -225,7 +187,7 @@ void memory_model_generalt::build_labels(symex_target_equationt& equation)
                 function_id.find("__atomic_exchange") != std::string::npos ||
                 function_id.find("__atomic_compare_exchange") != std::string::npos)
             {
-                add_necessary_oc_label(equation, e_it, "A", true_exprt());
+                add_necessary_oc_label(equation, e_it, "A", guard);
                 is_c11 = true;
             }
             if(function_id == "__LKMM_LOAD")
@@ -236,7 +198,7 @@ void memory_model_generalt::build_labels(symex_target_equationt& equation)
         {
             if(function_id == "__atomic_thread_fence")
             {
-                add_necessary_oc_label(equation, e_it, "A", true_exprt());
+                add_necessary_oc_label(equation, e_it, "A", guard);
                 is_c11 = true;
             }
             if(function_id == "__LKMM_FENCE")
@@ -275,7 +237,8 @@ void memory_model_generalt::build_labels(symex_target_equationt& equation)
                         if(e_it->is_shared_read() && mo_label == "REL")
                             mo_label = "RLX";
                     }
-                    add_necessary_oc_label(equation, e_it, mo_label, true_exprt());
+                    add_necessary_oc_label(equation, e_it, mo_label, guard);
+                    event_mo[e_it] = mo_label;
 
                     if(mos[mo] == "Rcu-lock")
                         lkmm_locks.push_back(e_it);
@@ -285,7 +248,22 @@ void memory_model_generalt::build_labels(symex_target_equationt& equation)
                     break;
                 }
             }
-            
+        }
+        else
+        {
+            // Special case:
+            // For variables defined as atomic, such as ``atomic_int x;'',
+            // any access is implicitly treated as atomic operation with memory order SC!
+
+            if((e_it->is_shared_read() || e_it->is_shared_write()) && equation.symbol_is_atomic(ns, e_it->ssa_lhs.get_l1_object_identifier()))
+            {
+                // std::cout << "find an operation, which should be treated as atomic! " << get_name(e_it) << "\n";
+                auto guard = get_guard(e_it);
+
+                add_necessary_oc_label(equation, e_it, "A", guard);
+                add_necessary_oc_label(equation, e_it, "SC", guard);
+                event_mo[e_it] = "SC";
+            }
         }
     }
 }
@@ -328,17 +306,19 @@ void memory_model_generalt::build_lkmm_nesting(symex_target_equationt &equation)
             in_atomic_op = false;
         }
 
+        auto guard = get_guard(e_it);
+
         if(in_spin_lock && e_it->is_shared_read())
-            add_necessary_oc_label(equation, e_it, "LKR", true_exprt());
+            add_necessary_oc_label(equation, e_it, "LKR", guard);
         if(in_spin_lock && e_it->is_shared_write())
-            add_necessary_oc_label(equation, e_it, "LKW", true_exprt());
+            add_necessary_oc_label(equation, e_it, "LKW", guard);
         if(in_spin_unlock && (e_it->is_shared_write() || e_it->is_shared_read()))
-            add_necessary_oc_label(equation, e_it, "UL", true_exprt());
+            add_necessary_oc_label(equation, e_it, "UL", guard);
 
         if(in_atomic_op && e_it->is_shared_read())
-            add_necessary_oc_label(equation, e_it, "Noreturn", true_exprt());
+            add_necessary_oc_label(equation, e_it, "Noreturn", guard);
         else if(e_it->is_shared_read() || e_it->is_shared_write() || e_it->is_memory_barrier())
-            add_necessary_oc_label(equation, e_it, "~Noreturn", true_exprt());
+            add_necessary_oc_label(equation, e_it, "~Noreturn", guard);
     }
 }
 
@@ -352,7 +332,7 @@ void memory_model_generalt::build_loc(symex_target_equationt &equation)
         auto& list = pair.second;
         for(auto e_it1 = list.begin(); e_it1 != list.end(); e_it1++)
             for(auto e_it2 = list.begin(); e_it2 != list.end(); e_it2++)
-                add_necessary_oc_edge(equation, *e_it1, *e_it2, "loc", true_exprt());
+                add_necessary_oc_edge(equation, *e_it1, *e_it2, "loc", get_two_guards(*e_it1, *e_it2));
     }
 }
 
@@ -367,7 +347,7 @@ void memory_model_generalt::build_thd(symex_target_equationt &equation)
         auto& list = pair.second;
         for(auto e_it1 = list.begin(); e_it1 != list.end(); e_it1++)
             for(auto e_it2 = list.begin(); e_it2 != list.end(); e_it2++)
-                add_necessary_oc_edge(equation, *e_it1, *e_it2, "int", true_exprt());
+                add_necessary_oc_edge(equation, *e_it1, *e_it2, "int", get_two_guards(*e_it1, *e_it2));
     }
 
     // external
@@ -380,7 +360,7 @@ void memory_model_generalt::build_thd(symex_target_equationt &equation)
             auto& list2 = pair2.second;
         for(auto e_it1 = list1.begin(); e_it1 != list1.end(); e_it1++)
             for(auto e_it2 = list2.begin(); e_it2 != list2.end(); e_it2++)
-                add_necessary_oc_edge(equation, *e_it1, *e_it2, "ext", true_exprt());
+                add_necessary_oc_edge(equation, *e_it1, *e_it2, "ext", get_two_guards(*e_it1, *e_it2));
         }
 }
 
@@ -389,7 +369,7 @@ void memory_model_generalt::build_id(symex_target_equationt &equation)
     for(auto e_it=equation.SSA_steps.begin(); e_it!=equation.SSA_steps.end(); e_it++)
     {
         if(e_it->is_shared_write() || e_it->is_shared_read() || e_it->is_memory_barrier() || e_it->is_spawn())
-            add_necessary_oc_edge(equation, e_it, e_it, "id", true_exprt());
+            add_necessary_oc_edge(equation, e_it, e_it, "id", get_guard(e_it));
     }
 }
 
@@ -442,7 +422,7 @@ bool memory_model_generalt::is_mm_apo(event_it e1, event_it e2)
     return is_apo(e1, e2);
 }
 
-void memory_model_generalt::build_po(symex_target_equationt &equation)
+void memory_model_generalt::build_po(symex_target_equationt &equation, std::map<event_it, event_it>& rmw_counterparts)
 {
     std::vector<std::string> event_names;
     std::map<std::string, int> event_name_to_id;
@@ -469,8 +449,6 @@ void memory_model_generalt::build_po(symex_target_equationt &equation)
         join_events.push_back(e_it);
     }
 
-    std::set<event_it> added_rmw_labels;
-
     unsigned next_thread_id=0;
     for(auto e_it=equation.SSA_steps.begin(); e_it!=equation.SSA_steps.end(); e_it++)
     {
@@ -487,9 +465,8 @@ void memory_model_generalt::build_po(symex_target_equationt &equation)
                 if(!(*n_it)->is_memory_barrier())
                 {
                     add_po_closure(event_names, event_name_to_id, outs, ins, get_name(e_it), get_name(*n_it));
-                    // add_necessary_oc_edge(equation, e_it, *n_it, "po", true_exprt());
                     if(is_mm_apo(e_it, *n_it))
-                        add_apo(equation, e_it, *n_it, added_rmw_labels);
+                        add_apo(equation, e_it, *n_it, rmw_counterparts);
                 }
             }
 
@@ -502,9 +479,8 @@ void memory_model_generalt::build_po(symex_target_equationt &equation)
                     if(!(*n_it)->is_memory_barrier())
                     {
                         add_po_closure(event_names, event_name_to_id, outs, ins, get_name(*n_it), get_name(join_event));
-                        // add_necessary_oc_edge(equation, *n_it, join_event, "po", true_exprt());
                         if(is_mm_apo(e_it, *n_it))
-                            add_apo(equation, *n_it, join_event, added_rmw_labels);
+                            add_apo(equation, *n_it, join_event, rmw_counterparts);
                     }
                 }
             }
@@ -527,27 +503,9 @@ void memory_model_generalt::build_po(symex_target_equationt &equation)
                 if(e1_it == e2_it)
                     continue;
                 add_po_closure(event_names, event_name_to_id, outs, ins, get_name(*e1_it), get_name(*e2_it));
-                // add_necessary_oc_edge(equation, *e1_it, *e2_it, "po", true_exprt());
                 if(is_mm_apo(*e1_it, *e2_it))
-                    add_apo(equation, *e1_it, *e2_it, added_rmw_labels);
+                    add_apo(equation, *e1_it, *e2_it, rmw_counterparts);
             }
-        // this ignores those can be derived through transitivity
-        // event_it previous=equation.SSA_steps.end();
-        // for(auto e_it=events.begin(); e_it!=events.end(); e_it++)
-        // {
-        //     if((*e_it)->is_memory_barrier())
-        //         continue;
-        //     if(previous==equation.SSA_steps.end())
-        //     {
-        //         // first one?
-        //         previous=*e_it;
-        //         continue;
-        //     }
-        //     add_necessary_oc_edge(equation, previous, *e_it, "po", true_exprt());
-        //     if(is_mm_apo(previous, *e_it))
-        //         add_apo(equation, previous, *e_it, added_rmw_labels);
-        //     previous=*e_it;
-        // }
     }
 
     for(int e1_id = 0; e1_id < int(event_names.size()); e1_id++)
@@ -556,7 +514,7 @@ void memory_model_generalt::build_po(symex_target_equationt &equation)
         {
             std::string e1 = event_names[e1_id];
             std::string e2 = event_names[e2_id];
-            add_necessary_oc_edge(equation, e1, e2, "po", true_exprt());
+            add_necessary_oc_edge(equation, e1, e2, "po", get_two_guards(e1, e2));
         }
     }
 
@@ -569,10 +527,10 @@ void memory_model_generalt::build_po(symex_target_equationt &equation)
             if(!(*e_it)->is_shared_write() && !(*e_it)->is_shared_read())
                 continue;
             auto str = get_name(*e_it);
-            if(str.find("__CPROVER") != std::string::npos && added_rmw_labels.find(*e_it) == added_rmw_labels.end())
-                add_necessary_oc_label(equation, *e_it, "RMW", true_exprt());
+            if(str.find("__CPROVER") != std::string::npos && rmw_counterparts.find(*e_it) == rmw_counterparts.end())
+                add_necessary_oc_label(equation, *e_it, "RMW", get_guard(*e_it));
             if(str.find("__CPROVER") != std::string::npos)
-                add_necessary_oc_label(equation, *e_it, "A", true_exprt());
+                add_necessary_oc_label(equation, *e_it, "A", get_guard(*e_it));
         }
     }
 }
@@ -693,7 +651,7 @@ void memory_model_generalt::build_data(symex_target_equationt &equation, std::se
             {
                 std::string dependent_symbol_name = dependent_symbol.get_identifier().c_str();
                 if(reads.find(dependent_symbol_name) != reads.end())
-                    add_necessary_oc_edge(equation, dependent_symbol_name, e_str, "data", true_exprt());
+                    add_necessary_oc_edge(equation, dependent_symbol_name, e_str, "data", get_two_guards(dependent_symbol_name, e_str));
             }
         }
 }
@@ -755,7 +713,7 @@ void memory_model_generalt::build_addr(symex_target_equationt &equation, std::se
             {
                 std::string offset_symbol_name = offset_symbol.get_identifier().c_str();
                 if(reads.find(offset_symbol_name) != reads.end())
-                    add_necessary_oc_edge(equation, offset_symbol_name, e_str, "addr", true_exprt());
+                    add_necessary_oc_edge(equation, offset_symbol_name, e_str, "addr", get_two_guards(offset_symbol_name, e_str));
             }
         }
 }
@@ -813,7 +771,7 @@ void memory_model_generalt::build_ctrl(symex_target_equationt &equation, std::se
         {
             std::string dependent_symbol_name = dependent_symbol.get_identifier().c_str();
             if(reads.find(dependent_symbol_name) != reads.end())
-                add_necessary_oc_edge(equation, dependent_symbol_name, e_str, "ctrl", true_exprt());
+                add_necessary_oc_edge(equation, dependent_symbol_name, e_str, "ctrl", get_two_guards(dependent_symbol_name, e_str));
         }
     }
 }
@@ -823,7 +781,7 @@ void memory_model_generalt::build_lkmm_crit(symex_target_equationt &equation)
     for(auto lkmm_lock : lkmm_locks)
         for(auto lkmm_unlock : lkmm_unlocks)
             if(po(lkmm_lock, lkmm_unlock))
-                add_necessary_oc_edge(equation, lkmm_lock, lkmm_unlock, "rcu-rscs", true_exprt());
+                add_necessary_oc_edge(equation, lkmm_lock, lkmm_unlock, "rcu-rscs", get_two_guards(lkmm_lock, lkmm_unlock));
 }
 
 #include "memory_model_general_cutter.h"
@@ -873,5 +831,218 @@ void memory_model_generalt::build_cutting(symex_target_equationt &equation)
     for(auto& constraint : cutter.cutting_constraints)
     {
         add_constraint(equation, constraint, "cutting", equation.SSA_steps.begin()->source);
+    }
+}
+
+std::string memory_model_generalt::relabel_fence(std::string compile_target, event_it e_it, std::map<event_it, std::string>& event_mo)
+{
+    if(event_mo.find(e_it) == event_mo.end()) // this event has no memory order, so no fence
+        return "";
+
+    auto mo = event_mo[e_it];
+    if(compile_target == "power")
+    {
+        if(mo == "SC")
+            return "Fsync";
+        else
+            return "Flwsync";
+    }
+    if(compile_target == "imm")
+    {
+        return mo; // IMM uses the same mo as C11
+    }
+    if(compile_target == "tso")
+    {
+        if(mo == "SC")
+            return "Fmfence";
+        else
+            return "";
+    }
+
+    // todo: add compilation to other targets
+    return "";
+}
+
+std::pair<std::string, std::string> memory_model_generalt::get_compiled_fence(std::string compile_target, event_it e_it, std::map<event_it, std::string>& event_mo)
+{
+    if(event_mo.find(e_it) == event_mo.end()) // this event has no memory order, so no fence
+        return std::make_pair("", "");
+
+    auto mo = event_mo[e_it];
+    if(compile_target == "power")
+    {
+        if(mo == "SC")
+        {
+            if(e_it->is_shared_read())
+                return std::make_pair("Fsync", "Fisync");
+            if(e_it->is_shared_write())
+                return std::make_pair("Fsync", "");
+        }
+        if(mo == "ACQ") // must be read
+            return std::make_pair("", "Fisync");
+        if(mo == "REL") // must be write
+            return std::make_pair("Flwsync", "");
+
+        return std::make_pair("", "");
+    }
+    if(compile_target == "imm")
+    {
+        if(mo == "SC")
+            return std::make_pair("SC", "");
+    }
+    if(compile_target == "tso")
+    {
+        if(mo == "SC" && e_it->is_shared_write())
+            return std::make_pair("", "Fmfence");
+    }
+
+    // todo: add compilation to other targets
+    return std::make_pair("", "");
+}
+
+std::pair<std::string, std::string> memory_model_generalt::get_compiled_fence_rmw(std::string compile_target, event_it e_it, std::map<event_it, std::string>& event_mo, event_it counterpart)
+{
+    if(event_mo.find(e_it) == event_mo.end()) // this event has no memory order, so no fence
+        return std::make_pair("", "");
+    if(event_mo.find(counterpart) == event_mo.end()) // this event has no memory order, so no fence
+        return std::make_pair("", "");
+
+    auto mo = event_mo[e_it];
+    auto mo_counterpart = event_mo[counterpart];
+    if(compile_target == "power")
+    {
+        // For SC: sync, r, w, isync
+        if(mo == "SC" && e_it->is_shared_read())
+            return std::make_pair("Fsync", "");
+        if(mo == "SC" && e_it->is_shared_write())
+            return std::make_pair("", "Fisync");
+        // For ACQ_REL: lwsync, r, w, isync
+        if(mo == "ACQ" && mo_counterpart == "REL" && e_it->is_shared_read())
+            return std::make_pair("Flwsync", "");
+        if(mo == "REL" && mo_counterpart == "ACQ" && e_it->is_shared_write())
+            return std::make_pair("", "Fisync");
+        // For ACQ: r, w, isync
+        if(mo != "REL" && mo_counterpart == "ACQ" && e_it->is_shared_write())
+            return std::make_pair("", "Fisync");
+        // For REL: lwsync, r, w
+        if(mo != "ACQ" && mo_counterpart == "REL" && e_it->is_shared_read())
+            return std::make_pair("Flwsync", "");
+
+        return std::make_pair("", "");
+    }
+    if(compile_target == "imm")
+    {
+        // For SC: SC, r, SC, w
+        if(mo == "SC")
+            return std::make_pair("SC", "");
+
+        return std::make_pair("", "");
+    }
+    if(compile_target == "tso")
+    {
+        return std::make_pair("", ""); // TSO's RMW does not need fences
+    }
+
+    // todo: add compilation to other targets
+    return std::make_pair("", "");
+}
+
+std::string get_fence_name(std::string fence_label)
+{
+    static int counter = 0;
+    return fence_label + std::to_string(counter++);
+}
+
+void memory_model_generalt::build_compiled_fences(symex_target_equationt &equation, std::map<event_it, std::string>& event_mo, std::map<event_it, event_it>& rmw_counterparts)
+{
+    if(compile_target == "")
+        return;
+
+    if(compile_target != "power" && compile_target != "tso" && compile_target != "imm" && compile_target != "riscv")
+    {
+        std::cout << "Unknown compile-target: " << compile_target;
+        std::exit(1);
+    }
+
+    std::cout << "we are compiling to " << compile_target << "!\n";
+
+    per_thread_mapt per_thread_map;
+    build_per_thread_map(equation, per_thread_map);
+
+    for(auto& pair: per_thread_map)
+    {
+        auto& event_list = pair.second;
+        std::vector<std::pair<std::string, exprt>> new_event_guard_list;
+        std::vector<std::pair<std::string, exprt>> added_fence_guard_list;
+
+        for(auto e_it : event_list)
+        {
+            if(e_it->is_memory_barrier()) // it itself is a fence, relabel it
+            {
+                auto new_label = relabel_fence(compile_target, e_it, event_mo);
+                if(new_label != "")
+                    add_necessary_oc_label(equation, e_it, new_label, e_it->guard);
+
+                // std::cout << "since fence" << get_name(e_it) << "'s mo is " << event_mo[e_it] << ", it has a new label: " << new_label << "\n";
+
+                // adding event itself
+                new_event_guard_list.push_back(std::make_pair(get_name(e_it), e_it->guard));
+                for(auto& fence_guard_pair : added_fence_guard_list)
+                    add_necessary_oc_edge(equation, fence_guard_pair.first, get_name(e_it), "po", and_exprt(fence_guard_pair.second, e_it->guard));
+            }
+            else // sandwith it between before and after fences
+            {
+                auto fences = rmw_counterparts.find(e_it) != rmw_counterparts.end() ?
+                    get_compiled_fence_rmw(compile_target, e_it, event_mo, rmw_counterparts[e_it]) :
+                    get_compiled_fence(compile_target, e_it, event_mo);
+
+                // adding fence before
+                auto fence_before = fences.first;
+                if(fence_before != "")
+                {
+                    // std::cout << "since " << get_name(e_it) << "'s mo is " << event_mo[e_it] << ", we need a fence before: " << fence_before << "\n";
+
+                    std::string fence_name = get_fence_name(fence_before);
+                    add_necessary_oc_label(equation, fence_name, "F", e_it->guard);
+                    add_necessary_oc_label(equation, fence_name, fence_before, e_it->guard);
+
+                    for(auto& event_guard_pair : new_event_guard_list)
+                        add_necessary_oc_edge(equation, event_guard_pair.first, fence_name, "po", and_exprt(e_it->guard, event_guard_pair.second));
+
+                    new_event_guard_list.push_back(std::make_pair(fence_name, e_it->guard));
+                    added_fence_guard_list.push_back(std::make_pair(fence_name, e_it->guard));
+                }
+
+                // adding event itself
+                new_event_guard_list.push_back(std::make_pair(get_name(e_it), e_it->guard));
+                for(auto& fence_guard_pair : added_fence_guard_list)
+                    add_necessary_oc_edge(equation, fence_guard_pair.first, get_name(e_it), "po", and_exprt(fence_guard_pair.second, e_it->guard));
+
+                // adding fence after
+                auto fence_after = fences.second;
+                if(fence_after != "")
+                {
+                    // std::cout << "since " << get_name(e_it) << "'s mo is " << event_mo[e_it] << ", we need a fence after: " << fence_after << "\n";
+
+                    std::string fence_name = get_fence_name(fence_after);
+                    add_necessary_oc_label(equation, fence_name, "F", e_it->guard);
+                    add_necessary_oc_label(equation, fence_name, fence_after, e_it->guard);
+
+                    for(auto& event_guard_pair : new_event_guard_list)
+                        add_necessary_oc_edge(equation, event_guard_pair.first, fence_name, "po", and_exprt(e_it->guard, event_guard_pair.second));
+
+                    new_event_guard_list.push_back(std::make_pair(fence_name, e_it->guard));
+                    added_fence_guard_list.push_back(std::make_pair(fence_name, e_it->guard));
+                }
+            }
+        }
+
+        // std::cout << "Adding fence to thread" << pair.first << ":\n";
+        // std::cout << "Original event list:\n";
+        // for(auto e_it : event_list)
+        //     std::cout << "\t" << get_name(e_it) << "\n";
+        // std::cout << "New event list:\n";
+        // for(auto eg : new_event_guard_list)
+        //     std::cout << "\t" << eg.first << "\n";
     }
 }

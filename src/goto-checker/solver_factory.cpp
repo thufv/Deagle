@@ -177,6 +177,10 @@ smt2_dect::solvert solver_factoryt::get_smt2_solver_type() const
     s = smt2_dect::solvert::YICES;
   else if(options.get_bool_option("z3"))
     s = smt2_dect::solvert::Z3;
+// __SZH_ADD_BEGIN__
+  else if(options.get_bool_option("zord"))
+    s = smt2_dect::solvert::Z3;
+// __SZH_ADD_END__
   else if(options.get_bool_option("generic"))
     s = smt2_dect::solvert::GENERIC;
 
@@ -575,6 +579,15 @@ static void parse_smt2_options(const cmdlinet &cmdline, optionst &options)
     options.set_option("smt2", true);
   }
 
+// __SZH_ADD_BEGIN__
+  if(cmdline.isset("zord"))
+  {
+    options.set_option("zord", true);
+    options.set_option("z3", true), solver_set = true;
+    options.set_option("smt2", true);
+  }
+// __SZH_ADD_END__
+
   if(cmdline.isset("smt2") && !solver_set)
   {
     if(cmdline.isset("outfile"))
@@ -607,8 +620,9 @@ static void parse_smt2_options(const cmdlinet &cmdline, optionst &options)
   
   if(cmdline.isset("deadlock"))
     options.set_option("deadlock", true);
-  
-  options.set_option("filename", cmdline.args[0]);
+
+  if(cmdline.args.size() > 0)
+    options.set_option("filename", cmdline.args[0]);
 
   if(cmdline.isset("goblint"))
     options.set_option("goblint", true);

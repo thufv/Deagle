@@ -1,5 +1,8 @@
-#define STATIC_ASSERT(condition) \
-  int some_array##__LINE__[(condition) ? 1 : -1]
+#define CONCAT(a, b) a##b
+#define CONCAT2(a, b) CONCAT(a, b)
+
+#define STATIC_ASSERT(condition)                                               \
+  int CONCAT2(some_array, __LINE__)[(condition) ? 1 : -1]
 
 #ifndef __GNUC__
 #define __builtin_offsetof(a, b) ((unsigned long long)&(((a *)0)->b))
@@ -19,7 +22,7 @@ STATIC_ASSERT(__builtin_offsetof(struct my_struct1a, ch2)==5);
 struct my_struct1b {
   char ch1;
   // this would normally be padded, but it won't!
-  int i __attribute__((packed)); 
+  int i __attribute__((packed));
   char ch2;
 };
 
@@ -31,7 +34,7 @@ struct my_struct1c {
   // this would normally be padded, but it won't!
   struct
   {
-    int i; 
+    int i;
   } sub __attribute__((packed));
   char ch2;
 };
@@ -99,8 +102,8 @@ struct my_struct3 {
   char ch3;
   long long i2; // this should be padded for 8-byte alignment
   char ch4;
-  int bf1:1;  // this should not be padded
-  int bf2:1;  // this should not be padded
+  int bf1 : 1; // MSVC pads this, the gcc/clang do not
+  int bf2 : 1; // MSVC pads this, the gcc/clang do not
   int i3;    // this should be padded for 4-byte alignment
 };
 
@@ -110,9 +113,13 @@ STATIC_ASSERT(__builtin_offsetof(struct my_struct3, i1)==4);
 STATIC_ASSERT(__builtin_offsetof(struct my_struct3, ch3)==8);
 STATIC_ASSERT(__builtin_offsetof(struct my_struct3, i2)==16);
 STATIC_ASSERT(__builtin_offsetof(struct my_struct3, ch4)==24);
+
+#ifdef _MSC_VER
+STATIC_ASSERT(__builtin_offsetof(struct my_struct3, i3) == 32);
+#else
 STATIC_ASSERT(__builtin_offsetof(struct my_struct3, i3)==28);
+#endif
 
 int main()
 {
 }
-
